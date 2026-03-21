@@ -1,0 +1,604 @@
+import { useState, useRef, useEffect, useCallback } from "react";
+import {
+  Music, X, Volume2, VolumeX, ChevronUp, ChevronDown, ExternalLink,
+  Repeat, Play, Pause, SkipForward, SkipBack, Settings, Plus, Trash2, Calendar, RefreshCw,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
+import { useAuth } from "@/hooks/use-auth";
+
+interface Track {
+  id: number;
+  sunoId: string;
+  title: string;
+  scheduleDate: string | null;
+  active: boolean;
+  sortOrder: number;
+}
+
+function getSunoAudioUrl(sunoId: string) {
+  return `https://cdn1.suno.ai/${sunoId}.mp3`;
+}
+
+function AdminPanel({ onClose }: { onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const [newSunoUrl, setNewSunoUrl] = useState("");
+  const [newTitle, setNewTitle] = useState("");
+  const [newDate, setNewDate] = useState("");
+
+  const { data: allTracks = [] } = useQuery<Track[]>({
+    queryKey: ["/api/music/tracks/all"],
+    queryFn: async () => {
+      const res = await fetch("/api/music/tracks/all", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  const addTrack = useMutation({
+    mutationFn: async (data: { sunoId: string; title: string; scheduleDate?: string }) => {
+      const res = await apiRequest("POST", "/api/music/tracks", {
+        ...data,
+        scheduleDate: data.scheduleDate || null,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      setNewSunoUrl("");
+      setNewTitle("");
+      setNewDate("");
+      queryClient.invalidateQueries({ queryKey: ["/api/music/tracks/all"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/music/tracks"] });
+    },
+  });
+
+  const deleteTrack = useMutation({
+    mutationFn: async (id: number) => {
+      await apiRequest("DELETE", `/api/music/tracks/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/music/tracks/all"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/music/tracks"] });
+    },
+  });
+
+  const toggleActive = useMutation({
+    mutationFn: async ({ id, active }: { id: number; active: boolean }) => {
+      const res = await apiRequest("PATCH", `/api/music/tracks/${id}`, { active });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/music/tracks/all"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/music/tracks"] });
+    },
+  });
+
+  const parseSunoId = (url: string): string | null => {
+    const patterns = [
+      /suno\.com\/song\/([a-f0-9-]+)/i,
+      /suno\.com\/embed\/([a-f0-9-]+)/i,
+      /^([a-f0-9-]{36})$/i,
+    ];
+    for (const p of patterns) {
+      const m = url.trim().match(p);
+      if (m) return m[1];
+    }
+    return null;
+  };
+
+  const handleAdd = () => {
+    const sunoId = parseSunoId(newSunoUrl);
+    if (!sunoId || !newTitle.trim()) return;
+    addTrack.mutate({
+      sunoId,
+      title: newTitle.trim(),
+      scheduleDate: newDate || undefined,
+    });
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h4 className="text-sm font-display font-bold flex items-center gap-1.5">
+          <Settings size={14} className="text-primary" /> Manage Playlist
+        </h4>
+        <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
+          <X size={14} />
+        </button>
+      </div>
+
+      <div className="space-y-2 max-h-40 overflow-y-auto">
+        {allTracks.length === 0 ? (
+          <p className="text-xs text-muted-foreground text-center py-2">No tracks yet</p>
+        ) : (
+          allTracks.map((track) => (
+            <div
+              key={track.id}
+              className={`flex items-center gap-2 p-2 rounded-lg border text-sm ${
+                track.active ? "border-primary/20 bg-primary/5" : "border-white/5 bg-white/5 opacity-50"
+              }`}
+              data-testid={`admin-track-${track.id}`}
+            >
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-medium truncate">{track.title}</p>
+                <p className="text-[10px] text-muted-foreground">
+                  {track.scheduleDate || "Always active"}
+                </p>
+              </div>
+              <button
+                onClick={() => toggleActive.mutate({ id: track.id, active: !track.active })}
+                className={`text-[10px] px-2 py-0.5 rounded ${
+                  track.active
+                    ? "bg-primary/20 text-primary"
+                    : "bg-white/10 text-muted-foreground"
+                }`}
+                data-testid={`button-toggle-active-${track.id}`}
+              >
+                {track.active ? "ON" : "OFF"}
+              </button>
+              <button
+                onClick={() => deleteTrack.mutate(track.id)}
+                className="text-muted-foreground hover:text-red-400"
+                data-testid={`button-delete-track-${track.id}`}
+              >
+                <Trash2 size={12} />
+              </button>
+            </div>
+          ))
+        )}
+      </div>
+
+      <div className="border-t border-white/5 pt-2 space-y-2">
+        <p className="text-xs text-muted-foreground font-medium">Add New Track</p>
+        <input
+          type="text"
+          value={newTitle}
+          onChange={(e) => setNewTitle(e.target.value)}
+          placeholder="Track title..."
+          className="w-full bg-background/50 border border-white/10 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-primary/50"
+          data-testid="input-admin-title"
+        />
+        <input
+          type="text"
+          value={newSunoUrl}
+          onChange={(e) => setNewSunoUrl(e.target.value)}
+          placeholder="Suno song URL or ID..."
+          className="w-full bg-background/50 border border-white/10 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-primary/50"
+          data-testid="input-admin-suno-url"
+        />
+        <div className="flex gap-2">
+          <div className="flex-1 relative">
+            <Calendar size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="date"
+              value={newDate}
+              onChange={(e) => setNewDate(e.target.value)}
+              className="w-full bg-background/50 border border-white/10 rounded-lg px-3 py-1.5 text-sm pl-8 focus:outline-none focus:border-primary/50"
+              data-testid="input-admin-date"
+            />
+          </div>
+          <Button
+            size="sm"
+            onClick={handleAdd}
+            disabled={!newSunoUrl.trim() || !newTitle.trim() || addTrack.isPending}
+            className="gap-1"
+            data-testid="button-admin-add"
+          >
+            <Plus size={14} /> Add
+          </Button>
+        </div>
+        <p className="text-[10px] text-muted-foreground">
+          Leave date empty for the track to play every day. Set a date for day-specific playlists.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+export function MusicPlayer() {
+  const { user, isAuthenticated } = useAuth();
+  const [isOpen, setIsOpen] = useState(true);
+  const [isMinimized, setIsMinimized] = useState(true);
+  const [currentTrack, setCurrentTrack] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+  const [isLooping] = useState(true);
+  const [progress, setProgress] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [showAdmin, setShowAdmin] = useState(false);
+  const [hasAutoPlayed, setHasAutoPlayed] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const progressInterval = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const isAdminUser = isAuthenticated && !!user?.id;
+
+  const { data: tracks = [] } = useQuery<Track[]>({
+    queryKey: ["/api/music/tracks"],
+    queryFn: async () => {
+      const res = await fetch("/api/music/tracks");
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  useEffect(() => {
+    if (tracks.length > 0 && !hasAutoPlayed && !audioRef.current) {
+      setHasAutoPlayed(true);
+      const audio = new Audio(getSunoAudioUrl(tracks[0].sunoId));
+      audio.loop = true;
+      audio.volume = 0.5;
+      audio.muted = true;
+      audioRef.current = audio;
+      setCurrentTrack(0);
+
+      const unmuteOnInteraction = () => {
+        if (audioRef.current) {
+          audioRef.current.muted = false;
+          setIsMuted(false);
+        }
+        document.removeEventListener("click", unmuteOnInteraction);
+        document.removeEventListener("keydown", unmuteOnInteraction);
+        document.removeEventListener("scroll", unmuteOnInteraction);
+        document.removeEventListener("touchstart", unmuteOnInteraction);
+      };
+
+      const tryAutoPlay = () => {
+        audio.play().then(() => {
+          setIsPlaying(true);
+          setIsMuted(true);
+          startProgressTracking();
+          document.addEventListener("click", unmuteOnInteraction, { once: true });
+          document.addEventListener("keydown", unmuteOnInteraction, { once: true });
+          document.addEventListener("scroll", unmuteOnInteraction, { once: true });
+          document.addEventListener("touchstart", unmuteOnInteraction, { once: true });
+        }).catch(() => {
+          const handleInteraction = () => {
+            audio.muted = false;
+            setIsMuted(false);
+            audio.play().then(() => {
+              setIsPlaying(true);
+              startProgressTracking();
+            }).catch(() => {});
+            document.removeEventListener("click", handleInteraction);
+            document.removeEventListener("keydown", handleInteraction);
+          };
+          document.addEventListener("click", handleInteraction, { once: true });
+          document.addEventListener("keydown", handleInteraction, { once: true });
+        });
+      };
+
+      audio.addEventListener("canplay", tryAutoPlay, { once: true });
+      audio.addEventListener("ended", () => {
+        audio.currentTime = 0;
+        audio.play().catch(() => {});
+      });
+      audio.load();
+    }
+  }, [tracks, hasAutoPlayed]);
+
+  const startProgressTracking = useCallback(() => {
+    if (progressInterval.current) clearInterval(progressInterval.current);
+    progressInterval.current = setInterval(() => {
+      if (audioRef.current) {
+        setProgress(audioRef.current.currentTime);
+        setDuration(audioRef.current.duration || 0);
+      }
+    }, 500);
+  }, []);
+
+  const stopProgressTracking = useCallback(() => {
+    if (progressInterval.current) {
+      clearInterval(progressInterval.current);
+      progressInterval.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => stopProgressTracking();
+  }, [stopProgressTracking]);
+
+  const playTrack = useCallback((index: number) => {
+    if (tracks.length === 0) return;
+    const trackIndex = index % tracks.length;
+
+    if (audioRef.current) {
+      audioRef.current.pause();
+    }
+
+    const audio = new Audio(getSunoAudioUrl(tracks[trackIndex].sunoId));
+    audio.loop = true;
+    audio.muted = isMuted;
+    audioRef.current = audio;
+
+    audio.addEventListener("ended", () => {
+      audio.currentTime = 0;
+      audio.play().catch(() => {});
+    });
+    audio.addEventListener("canplay", () => {
+      audio.play().catch(() => {});
+      setIsPlaying(true);
+      startProgressTracking();
+    });
+    audio.addEventListener("error", () => {
+      setIsPlaying(false);
+      stopProgressTracking();
+    });
+
+    setCurrentTrack(trackIndex);
+    audio.load();
+  }, [tracks, isLooping, isMuted, startProgressTracking, stopProgressTracking]);
+
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.muted = isMuted;
+    }
+  }, [isMuted]);
+
+  const togglePlayPause = () => {
+    if (!audioRef.current || tracks.length === 0) {
+      if (tracks.length > 0) playTrack(currentTrack);
+      return;
+    }
+    if (isPlaying) {
+      audioRef.current.pause();
+      setIsPlaying(false);
+      stopProgressTracking();
+    } else {
+      audioRef.current.play().catch(() => {});
+      setIsPlaying(true);
+      startProgressTracking();
+    }
+  };
+
+  const skipNext = () => {
+    if (tracks.length <= 1) return;
+    playTrack((currentTrack + 1) % tracks.length);
+  };
+
+  const skipPrev = () => {
+    if (tracks.length <= 1) return;
+    playTrack((currentTrack - 1 + tracks.length) % tracks.length);
+  };
+
+  const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!audioRef.current || !duration) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const pct = (e.clientX - rect.left) / rect.width;
+    audioRef.current.currentTime = pct * duration;
+    setProgress(pct * duration);
+  };
+
+  const handleClose = () => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+    setIsPlaying(false);
+    stopProgressTracking();
+    setIsOpen(false);
+    setProgress(0);
+    setShowAdmin(false);
+  };
+
+  const formatTime = (s: number) => {
+    if (!s || isNaN(s)) return "0:00";
+    const m = Math.floor(s / 60);
+    const sec = Math.floor(s % 60);
+    return `${m}:${sec.toString().padStart(2, "0")}`;
+  };
+
+  if (!isOpen) {
+    return (
+      <button
+        onClick={() => setIsOpen(true)}
+        className="fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full bg-primary shadow-[0_0_20px_rgba(34,197,94,0.4)] flex items-center justify-center hover:scale-110 transition-transform animate-pulse"
+        data-testid="button-open-music"
+      >
+        <Music size={24} className="text-primary-foreground" />
+      </button>
+    );
+  }
+
+  return (
+    <div
+      className={`fixed bottom-6 right-6 z-50 bg-card/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-[0_0_30px_rgba(0,0,0,0.5)] transition-all duration-300 ${
+        isMinimized ? "w-72" : "w-80"
+      }`}
+      data-testid="card-music-player"
+    >
+      <div className="flex items-center justify-between p-3 border-b border-white/5">
+        <div className="flex items-center gap-2">
+          <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${isPlaying ? "bg-primary/20 animate-pulse" : "bg-primary/20"}`}>
+            <Music size={16} className="text-primary" />
+          </div>
+          <div className="min-w-0">
+            <h3 className="text-sm font-display font-bold truncate">
+              {isPlaying && tracks.length > 0 ? tracks[currentTrack]?.title : "BetFans Radio"}
+            </h3>
+            <p className="text-[10px] text-muted-foreground">
+              {isPlaying ? "Now Playing" : "Powered by Suno AI"}
+              {isLooping && isPlaying && " · Looping"}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-1">
+          {isAdminUser && (
+            <button
+              onClick={() => { setShowAdmin(!showAdmin); setIsMinimized(false); }}
+              className={`p-1.5 rounded-lg transition-colors ${showAdmin ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground hover:bg-white/5"}`}
+              data-testid="button-admin-panel"
+            >
+              <Settings size={16} />
+            </button>
+          )}
+          <button
+            onClick={() => setIsMinimized(!isMinimized)}
+            className="p-1.5 rounded-lg hover:bg-white/5 text-muted-foreground hover:text-foreground transition-colors"
+            data-testid="button-toggle-player"
+          >
+            {isMinimized ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+          </button>
+          <button
+            onClick={handleClose}
+            className="p-1.5 rounded-lg hover:bg-white/5 text-muted-foreground hover:text-foreground transition-colors"
+            data-testid="button-close-music"
+          >
+            <X size={16} />
+          </button>
+        </div>
+      </div>
+
+      {isMinimized && (isPlaying || progress > 0) && (
+        <div className="px-3 py-2 flex items-center gap-2">
+          <button onClick={togglePlayPause} className="text-primary" data-testid="button-play-mini">
+            {isPlaying ? <Pause size={18} /> : <Play size={18} />}
+          </button>
+          <div className="flex-1 h-1 bg-white/10 rounded-full cursor-pointer" onClick={handleSeek}>
+            <div
+              className="h-full bg-primary rounded-full transition-all"
+              style={{ width: duration ? `${(progress / duration) * 100}%` : "0%" }}
+            />
+          </div>
+          <button
+            onClick={() => setIsMuted(!isMuted)}
+            className={`${isMuted ? "text-red-400" : "text-muted-foreground hover:text-foreground"} transition-colors`}
+            data-testid="button-mute-mini"
+          >
+            {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
+          </button>
+        </div>
+      )}
+
+      {!isMinimized && (
+        <div className="p-3 space-y-3">
+          {showAdmin ? (
+            <AdminPanel onClose={() => setShowAdmin(false)} />
+          ) : (
+            <>
+              <div className="bg-background/30 rounded-xl p-4 text-center">
+                <div
+                  className={`w-16 h-16 mx-auto rounded-full bg-primary/10 border-2 border-primary/20 flex items-center justify-center mb-3 ${isPlaying ? "animate-spin" : ""}`}
+                  style={isPlaying ? { animationDuration: "3s" } : {}}
+                >
+                  <Music size={28} className="text-primary" />
+                </div>
+                <p className="text-sm font-bold truncate">
+                  {tracks.length > 0 ? tracks[currentTrack]?.title : "No Tracks Available"}
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {formatTime(progress)} / {formatTime(duration)}
+                </p>
+              </div>
+
+              <div
+                className="h-1.5 bg-white/10 rounded-full cursor-pointer"
+                onClick={handleSeek}
+                data-testid="progress-bar"
+              >
+                <div
+                  className="h-full bg-gradient-to-r from-primary to-green-400 rounded-full transition-all relative"
+                  style={{ width: duration ? `${(progress / duration) * 100}%` : "0%" }}
+                >
+                  <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-white shadow-lg" />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-center gap-4">
+                <div className="p-2 rounded-lg text-primary bg-primary/10" title="Looping continuously">
+                  <Repeat size={18} />
+                </div>
+                <button
+                  onClick={skipPrev}
+                  className="p-2 rounded-lg text-muted-foreground hover:text-foreground transition-colors"
+                  data-testid="button-prev"
+                >
+                  <SkipBack size={20} />
+                </button>
+                <button
+                  onClick={togglePlayPause}
+                  className="w-12 h-12 rounded-full bg-primary flex items-center justify-center hover:bg-primary/80 transition-colors shadow-[0_0_15px_rgba(34,197,94,0.3)]"
+                  disabled={tracks.length === 0}
+                  data-testid="button-play-pause"
+                >
+                  {isPlaying ? <Pause size={22} className="text-primary-foreground" /> : <Play size={22} className="text-primary-foreground ml-0.5" />}
+                </button>
+                <button
+                  onClick={skipNext}
+                  className="p-2 rounded-lg text-muted-foreground hover:text-foreground transition-colors"
+                  data-testid="button-next"
+                >
+                  <SkipForward size={20} />
+                </button>
+                <button
+                  onClick={() => setIsMuted(!isMuted)}
+                  className={`p-2 rounded-lg transition-colors ${isMuted ? "text-red-400" : "text-muted-foreground hover:text-foreground"}`}
+                  title={isMuted ? "Unmute" : "Mute"}
+                  data-testid="button-mute"
+                >
+                  {isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
+                </button>
+              </div>
+
+              {tracks.length > 0 && (
+                <div className="space-y-1.5 max-h-32 overflow-y-auto">
+                  {tracks.map((track, i) => (
+                    <button
+                      key={track.id}
+                      onClick={() => playTrack(i)}
+                      className={`w-full flex items-center gap-2 p-2 rounded-lg text-left transition-colors ${
+                        currentTrack === i
+                          ? "bg-primary/10 border border-primary/20"
+                          : "hover:bg-white/5"
+                      }`}
+                      data-testid={`button-track-${i}`}
+                    >
+                      <div className={`w-6 h-6 rounded-md flex items-center justify-center text-xs font-bold ${
+                        currentTrack === i
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-white/5 text-muted-foreground"
+                      }`}>
+                        {currentTrack === i && isPlaying ? "▶" : i + 1}
+                      </div>
+                      <span className="text-sm truncate flex-1">{track.title}</span>
+                      {track.scheduleDate && (
+                        <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
+                          <Calendar size={10} /> {track.scheduleDate}
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {tracks.length === 0 && (
+                <div className="text-center py-4">
+                  <p className="text-sm text-muted-foreground">No tracks scheduled for today</p>
+                  {isAdminUser && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="mt-2 gap-1"
+                      onClick={() => setShowAdmin(true)}
+                    >
+                      <Plus size={14} /> Add Tracks
+                    </Button>
+                  )}
+                </div>
+              )}
+
+              <a
+                href="https://suno.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-center gap-1 text-[10px] text-muted-foreground hover:text-primary transition-colors"
+              >
+                <ExternalLink size={10} /> Browse Suno AI for tracks
+              </a>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
