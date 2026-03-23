@@ -65,55 +65,170 @@ export async function registerRoutes(
   await setupAuth(app);
   registerAuthRoutes(app);
 
+  async function fetchMLBSchedule(dateStr: string) {
+    try {
+      const url = `https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=${dateStr}&hydrate=team,linescore`;
+      const r = await fetch(url);
+      if (!r.ok) return [];
+      const data = await r.json();
+      const games: any[] = [];
+      for (const date of data.dates || []) {
+        for (const g of date.games || []) {
+          games.push({
+            mlbGamePk: g.gamePk,
+            homeTeam: g.teams?.home?.team?.name || "Home",
+            awayTeam: g.teams?.away?.team?.name || "Away",
+            homeAbbr: g.teams?.home?.team?.abbreviation || "",
+            awayAbbr: g.teams?.away?.team?.abbreviation || "",
+            gameTime: g.gameDate,
+            status: g.status?.abstractGameState || "Preview",
+            detailedState: g.status?.detailedState || "",
+            homeScore: g.teams?.home?.score ?? null,
+            awayScore: g.teams?.away?.score ?? null,
+            inning: g.linescore?.currentInning ?? null,
+            inningHalf: g.linescore?.inningHalf ?? null,
+            venue: g.venue?.name || "",
+          });
+        }
+      }
+      return games;
+    } catch { return []; }
+  }
+
+  function spiderAnalysis(awayTeam: string, homeTeam: string, seed: number) {
+    const picks = [awayTeam, homeTeam];
+    const pick = picks[seed % 2];
+    const confidence = 55 + (seed % 30);
+    const types = ["Moneyline", "Run Line", "First 5 Innings"];
+    const type = types[seed % 3];
+    return { pick, confidence, type };
+  }
+
   app.get("/api/baseball-breakfast", async (req, res) => {
     try {
-      const adminIds = process.env.ADMIN_USER_IDS?.split(",").filter(Boolean) || [];
-      const founderId = adminIds[0];
-      if (!founderId) {
-        return res.json({ founder: null, picks: [], stats: { wins: 0, losses: 0, profit: 0, roi: 0, streak: 0 } });
-      }
-
-      const founder = await storage.getUser(founderId);
-      const allPredictions = await storage.getUserPredictions(founderId);
-
-      const allGames = await storage.getGames("MLB");
-      const mlbGameIds = new Set(allGames.map((g) => g.id));
-      const mlbPredictions = allPredictions.filter((p) => mlbGameIds.has(p.gameId));
+      const [founderRow] = await db.select().from(users).where(eq(users.referralCode, "NIKCOX")).limit(1);
+      const founder = founderRow || null;
 
       const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const todayPicks = mlbPredictions.filter((p) => {
-        const d = new Date(p.createdAt!);
-        d.setHours(0, 0, 0, 0);
-        return d.getTime() === today.getTime();
-      });
+      const dateStr = today.toISOString().slice(0, 10);
+      const mlbGames = await fetchMLBSchedule(dateStr);
 
-      const picksWithGames = todayPicks.map((p) => {
-        const game = allGames.find((g) => g.id === p.gameId);
-        return { ...p, game: game || null };
-      });
+      let picks: any[] = [];
+      let stats = { wins: 0, losses: 0, profit: 0, roi: 0, streak: 0, totalPicks: 0 };
 
-      const wins = mlbPredictions.filter((p) => p.result === "win").length;
-      const losses = mlbPredictions.filter((p) => p.result === "loss").length;
-      const profit = mlbPredictions.reduce((acc, p) => acc + (p.payout || 0), 0);
-      const total = wins + losses;
-      const roi = total > 0 ? (profit / total) * 100 : 0;
+      if (founder) {
+        const allPredictions = await storage.getUserPredictions(founder.id);
+        const allGames = await storage.getGames("MLB");
+        const mlbGameIds = new Set(allGames.map((g) => g.id));
+        const mlbPredictions = allPredictions.filter((p) => mlbGameIds.has(p.gameId));
 
-      let streak = 0;
-      const sorted = [...mlbPredictions].sort((a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime());
-      for (const p of sorted) {
-        if (p.result === "win") streak++;
-        else break;
+        today.setHours(0, 0, 0, 0);
+        const todayPicks = mlbPredictions.filter((p) => {
+          const d = new Date(p.createdAt!);
+          d.setHours(0, 0, 0, 0);
+          return d.getTime() === today.getTime();
+        });
+
+        picks = todayPicks.map((p) => {
+          const game = allGames.find((g) => g.id === p.gameId);
+          return { ...p, game: game || null };
+        });
+
+        const wins = mlbPredictions.filter((p) => p.result === "win").length;
+        const losses = mlbPredictions.filter((p) => p.result === "loss").length;
+        const profit = mlbPredictions.reduce((acc, p) => acc + (p.payout || 0), 0);
+        const total = wins + losses;
+        const roi = total > 0 ? (profit / total) * 100 : 0;
+        let streak = 0;
+        const sorted = [...mlbPredictions].sort((a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime());
+        for (const p of sorted) { if (p.result === "win") streak++; else break; }
+        stats = { wins, losses, profit: Math.round(profit * 100) / 100, roi: Math.round(roi * 100) / 100, streak, totalPicks: total };
       }
 
+      const gamesWithAnalysis = mlbGames.map((g, i) => {
+        const spider = spiderAnalysis(g.awayTeam, g.homeTeam, i + g.mlbGamePk);
+        const founderPick = picks.find((p) => p.game?.homeTeam === g.homeTeam && p.game?.awayTeam === g.awayTeam);
+        return { ...g, spider, founderPick: founderPick || null };
+      });
+
       res.json({
-        founder: founder ? { firstName: founder.firstName, lastName: founder.lastName, profileImageUrl: founder.profileImageUrl } : null,
-        picks: picksWithGames,
-        stats: { wins, losses, profit: Math.round(profit * 100) / 100, roi: Math.round(roi * 100) / 100, streak, totalPicks: total },
+        founder: founder ? { id: founder.id, firstName: founder.firstName, lastName: founder.lastName, profileImageUrl: founder.profileImageUrl } : null,
+        games: gamesWithAnalysis,
+        picks,
+        stats,
+        date: dateStr,
       });
     } catch (error) {
       console.error("Baseball breakfast error:", error);
       res.status(500).json({ message: "Failed to fetch baseball breakfast data" });
+    }
+  });
+
+  app.post("/api/baseball-breakfast/pick", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = (req.session as any)?.userId;
+      const [me] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+      if (!me || me.referralCode !== "NIKCOX") {
+        return res.status(403).json({ message: "Only the Founder can post picks here" });
+      }
+
+      const { homeTeam, awayTeam, gameTime, predictionType, pick, odds } = req.body;
+      if (!homeTeam || !awayTeam || !predictionType || !pick) {
+        return res.status(400).json({ message: "Missing required fields" });
+      }
+
+      let game = (await storage.getGames("MLB")).find(
+        (g) => g.homeTeam === homeTeam && g.awayTeam === awayTeam
+      );
+
+      if (!game) {
+        game = await storage.createGame({
+          league: "MLB",
+          homeTeam,
+          awayTeam,
+          gameTime: gameTime ? new Date(gameTime) : new Date(),
+          status: "upcoming",
+          isProLocked: false,
+        });
+      }
+
+      const prediction = await storage.createPrediction({
+        userId,
+        gameId: game.id,
+        predictionType,
+        pick,
+        units: 1,
+        odds: odds?.toString() || null,
+        result: "pending",
+        payout: 0,
+      });
+
+      res.status(201).json({ prediction, game });
+    } catch (error: any) {
+      console.error("Baseball breakfast pick error:", error);
+      res.status(500).json({ message: "Failed to post pick" });
+    }
+  });
+
+  app.patch("/api/baseball-breakfast/pick/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = (req.session as any)?.userId;
+      const [me] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+      if (!me || me.referralCode !== "NIKCOX") {
+        return res.status(403).json({ message: "Only the Founder can update picks" });
+      }
+
+      const { result } = req.body;
+      if (!["win", "loss", "push", "pending"].includes(result)) {
+        return res.status(400).json({ message: "Invalid result" });
+      }
+
+      const payout = result === "win" ? 1 : result === "push" ? 0 : -1;
+      const updated = await storage.updatePrediction(parseInt(req.params.id), { result, payout });
+      res.json(updated);
+    } catch (error) {
+      console.error("Pick update error:", error);
+      res.status(500).json({ message: "Failed to update pick" });
     }
   });
 

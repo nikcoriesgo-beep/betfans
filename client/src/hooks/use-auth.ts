@@ -10,6 +10,7 @@ interface AuthUser {
   stripeSubscriptionId: string | null;
   membershipTier: string | null;
   walletBalance: string | null;
+  referralCode: string | null;
   createdAt: string | null;
 }
 
