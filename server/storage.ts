@@ -640,7 +640,18 @@ export class DatabaseStorage implements IStorage {
     const user = await this.getUser(userId);
     if (user?.referralCode) return user.referralCode;
 
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const base = (user?.firstName || user?.phone?.slice(-4) || "FAN")
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, "")
+      .slice(0, 6);
+    const suffix = Math.floor(100 + Math.random() * 900).toString();
+    let code = base + suffix;
+
+    const existing = await db.select().from(users).where(eq(users.referralCode, code)).limit(1);
+    if (existing.length > 0) {
+      code = base + Math.floor(100 + Math.random() * 900).toString();
+    }
+
     await db.update(users).set({ referralCode: code }).where(eq(users.id, userId));
     return code;
   }
