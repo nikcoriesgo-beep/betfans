@@ -225,58 +225,42 @@ export function MusicPlayer() {
   });
 
   useEffect(() => {
-    if (tracks.length > 0 && !hasAutoPlayed && !audioRef.current) {
+    if (tracks.length === 0 || hasAutoPlayed) return;
+
+    const onFirstInteraction = () => {
+      if (audioRef.current) return;
       setHasAutoPlayed(true);
+
       const audio = new Audio(getSunoAudioUrl(tracks[0].sunoId));
       audio.loop = true;
       audio.volume = 0.5;
+      audio.muted = false;
       audioRef.current = audio;
       setCurrentTrack(0);
 
-      const startPlaying = () => {
-        audio.muted = false;
-        setIsMuted(false);
-        audio.play().then(() => {
-          setIsPlaying(true);
-          startProgressTracking();
-        }).catch(() => {});
-      };
-
-      // Try silent autoplay first
-      audio.muted = true;
       audio.play().then(() => {
         setIsPlaying(true);
-        setIsMuted(true);
-        startProgressTracking();
-        // Unmute on first interaction
-        const unmute = () => {
-          audio.muted = false;
-          setIsMuted(false);
-          document.removeEventListener("click", unmute);
-          document.removeEventListener("touchstart", unmute);
-          document.removeEventListener("scroll", unmute);
-          document.removeEventListener("keydown", unmute);
-        };
-        document.addEventListener("click", unmute);
-        document.addEventListener("touchstart", unmute);
-        document.addEventListener("scroll", unmute);
-        document.addEventListener("keydown", unmute);
-      }).catch(() => {
-        // Autoplay blocked — start on first interaction
         setIsMuted(false);
-        const onInteraction = () => {
-          startPlaying();
-          document.removeEventListener("click", onInteraction);
-          document.removeEventListener("touchstart", onInteraction);
-          document.removeEventListener("keydown", onInteraction);
-          document.removeEventListener("scroll", onInteraction);
-        };
-        document.addEventListener("click", onInteraction);
-        document.addEventListener("touchstart", onInteraction);
-        document.addEventListener("keydown", onInteraction);
-        document.addEventListener("scroll", onInteraction);
-      });
-    }
+        startProgressTracking();
+      }).catch(() => {});
+
+      document.removeEventListener("click", onFirstInteraction);
+      document.removeEventListener("touchstart", onFirstInteraction);
+      document.removeEventListener("scroll", onFirstInteraction);
+      document.removeEventListener("keydown", onFirstInteraction);
+    };
+
+    document.addEventListener("click", onFirstInteraction);
+    document.addEventListener("touchstart", onFirstInteraction);
+    document.addEventListener("scroll", onFirstInteraction);
+    document.addEventListener("keydown", onFirstInteraction);
+
+    return () => {
+      document.removeEventListener("click", onFirstInteraction);
+      document.removeEventListener("touchstart", onFirstInteraction);
+      document.removeEventListener("scroll", onFirstInteraction);
+      document.removeEventListener("keydown", onFirstInteraction);
+    };
   }, [tracks, hasAutoPlayed]);
 
   const startProgressTracking = useCallback(() => {
