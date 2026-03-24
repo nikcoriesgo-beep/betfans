@@ -20,6 +20,7 @@ export function Navbar() {
     { label: "Sports News", href: "/news" },
     { label: "Dashboard", href: "/dashboard" },
     { label: "Membership", href: "/membership" },
+    { label: "Daily Picks", href: "/daily-picks" },
     { label: "Baseball For Breakfast", href: "/baseball-breakfast" },
     { label: "Winners", href: "/winners" },
     { label: "Bragging Rights", href: "/bragging" },

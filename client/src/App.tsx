@@ -22,6 +22,7 @@ import Winners from "@/pages/winners";
 import WinnersProbability from "@/pages/winners-probability";
 import SportsNews from "@/pages/sports-news";
 import BaseballBreakfast from "@/pages/baseball-breakfast";
+import DailyPicks from "@/pages/daily-picks";
 import ArticleReader from "@/pages/article-reader";
 import Referrals from "@/pages/referrals";
 import ResidualIncome from "@/pages/residual-income";
@@ -51,6 +52,7 @@ function Router() {
       <Route path="/news" component={SportsNews} />
       <Route path="/article" component={ArticleReader} />
       <Route path="/baseball-breakfast" component={BaseballBreakfast} />
+      <Route path="/daily-picks" component={DailyPicks} />
       <Route path="/referrals" component={Referrals} />
       <Route path="/residual-income" component={ResidualIncome} />
       <Route path="/auth" component={Auth} />
