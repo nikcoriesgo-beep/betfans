@@ -34,6 +34,8 @@ export const games = pgTable("games", {
   spiderPick: text("spider_pick"),
   spiderConfidence: integer("spider_confidence"),
   isProLocked: boolean("is_pro_locked").default(false),
+  homePitcher: text("home_pitcher"),
+  awayPitcher: text("away_pitcher"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

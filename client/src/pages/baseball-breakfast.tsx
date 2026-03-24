@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Trophy, TrendingUp, Flame, Target, CircleDot, Clock, Loader2, Coffee,
-  Sun, Zap, CheckCircle2, XCircle, Plus, Edit2, RotateCcw, Lock
+  Sun, Zap, CheckCircle2, XCircle, Plus, Edit2, RotateCcw, Lock, UserCircle2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -31,6 +31,8 @@ interface MLBGame {
   inning: number | null;
   inningHalf: string | null;
   venue: string;
+  homePitcher: string | null;
+  awayPitcher: string | null;
   spider: { pick: string; confidence: number; type: string };
   founderPick: any | null;
 }
@@ -301,7 +303,7 @@ export default function BaseballBreakfast() {
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center justify-between mb-3">
                     <div className="text-center flex-1">
                       <p className="text-[10px] text-muted-foreground mb-0.5">AWAY</p>
                       <p className="font-display font-bold text-sm leading-tight">{game.awayAbbr || game.awayTeam}</p>
@@ -320,6 +322,20 @@ export default function BaseballBreakfast() {
                       <p className="text-[10px] text-muted-foreground/60 truncate max-w-[80px] mx-auto">{game.homeTeam}</p>
                     </div>
                   </div>
+
+                  {(game.awayPitcher || game.homePitcher) && (
+                    <div className="flex items-center justify-between mb-3 px-1 py-2 rounded-lg bg-white/3 border border-white/5">
+                      <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                        <UserCircle2 size={11} className="text-muted-foreground/50 shrink-0" />
+                        <span className="text-[10px] text-muted-foreground/70 truncate">{game.awayPitcher || "TBD"}</span>
+                      </div>
+                      <span className="text-[9px] text-muted-foreground/30 px-2 shrink-0">SP</span>
+                      <div className="flex items-center gap-1.5 flex-1 min-w-0 justify-end">
+                        <span className="text-[10px] text-muted-foreground/70 truncate text-right">{game.homePitcher || "TBD"}</span>
+                        <UserCircle2 size={11} className="text-muted-foreground/50 shrink-0" />
+                      </div>
+                    </div>
+                  )}
 
                   <div className="bg-primary/5 border border-primary/10 rounded-lg p-3 mb-3">
                     <div className="flex items-center gap-1.5 mb-1.5">

@@ -93,7 +93,7 @@ export async function registerRoutes(
 
   async function fetchMLBSchedule(dateStr: string) {
     try {
-      const url = `https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=${dateStr}&hydrate=team,linescore`;
+      const url = `https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=${dateStr}&hydrate=team,linescore,probablePitcher`;
       const r = await fetch(url);
       if (!r.ok) return [];
       const data = await r.json();
@@ -114,6 +114,8 @@ export async function registerRoutes(
             inning: g.linescore?.currentInning ?? null,
             inningHalf: g.linescore?.inningHalf ?? null,
             venue: g.venue?.name || "",
+            homePitcher: g.teams?.home?.probablePitcher?.fullName || null,
+            awayPitcher: g.teams?.away?.probablePitcher?.fullName || null,
           });
         }
       }
