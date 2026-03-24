@@ -230,52 +230,52 @@ export function MusicPlayer() {
       const audio = new Audio(getSunoAudioUrl(tracks[0].sunoId));
       audio.loop = true;
       audio.volume = 0.5;
-      audio.muted = true;
       audioRef.current = audio;
       setCurrentTrack(0);
 
-      const unmuteOnInteraction = () => {
-        if (audioRef.current) {
-          audioRef.current.muted = false;
-          setIsMuted(false);
-        }
-        document.removeEventListener("click", unmuteOnInteraction);
-        document.removeEventListener("keydown", unmuteOnInteraction);
-        document.removeEventListener("scroll", unmuteOnInteraction);
-        document.removeEventListener("touchstart", unmuteOnInteraction);
-      };
-
-      const tryAutoPlay = () => {
+      const startPlaying = () => {
+        audio.muted = false;
+        setIsMuted(false);
         audio.play().then(() => {
           setIsPlaying(true);
-          setIsMuted(true);
           startProgressTracking();
-          document.addEventListener("click", unmuteOnInteraction, { once: true });
-          document.addEventListener("keydown", unmuteOnInteraction, { once: true });
-          document.addEventListener("scroll", unmuteOnInteraction, { once: true });
-          document.addEventListener("touchstart", unmuteOnInteraction, { once: true });
-        }).catch(() => {
-          const handleInteraction = () => {
-            audio.muted = false;
-            setIsMuted(false);
-            audio.play().then(() => {
-              setIsPlaying(true);
-              startProgressTracking();
-            }).catch(() => {});
-            document.removeEventListener("click", handleInteraction);
-            document.removeEventListener("keydown", handleInteraction);
-          };
-          document.addEventListener("click", handleInteraction, { once: true });
-          document.addEventListener("keydown", handleInteraction, { once: true });
-        });
+        }).catch(() => {});
       };
 
-      audio.addEventListener("canplay", tryAutoPlay, { once: true });
-      audio.addEventListener("ended", () => {
-        audio.currentTime = 0;
-        audio.play().catch(() => {});
+      // Try silent autoplay first
+      audio.muted = true;
+      audio.play().then(() => {
+        setIsPlaying(true);
+        setIsMuted(true);
+        startProgressTracking();
+        // Unmute on first interaction
+        const unmute = () => {
+          audio.muted = false;
+          setIsMuted(false);
+          document.removeEventListener("click", unmute);
+          document.removeEventListener("touchstart", unmute);
+          document.removeEventListener("scroll", unmute);
+          document.removeEventListener("keydown", unmute);
+        };
+        document.addEventListener("click", unmute);
+        document.addEventListener("touchstart", unmute);
+        document.addEventListener("scroll", unmute);
+        document.addEventListener("keydown", unmute);
+      }).catch(() => {
+        // Autoplay blocked — start on first interaction
+        setIsMuted(false);
+        const onInteraction = () => {
+          startPlaying();
+          document.removeEventListener("click", onInteraction);
+          document.removeEventListener("touchstart", onInteraction);
+          document.removeEventListener("keydown", onInteraction);
+          document.removeEventListener("scroll", onInteraction);
+        };
+        document.addEventListener("click", onInteraction);
+        document.addEventListener("touchstart", onInteraction);
+        document.addEventListener("keydown", onInteraction);
+        document.addEventListener("scroll", onInteraction);
       });
-      audio.load();
     }
   }, [tracks, hasAutoPlayed]);
 
