@@ -112,7 +112,18 @@ async function initStripe() {
   );
 
   await initStripe();
-  startSportsDataSync(15);
+  startSportsDataSync(5);
+
+  if (process.env.NODE_ENV === "production") {
+    const selfUrl = process.env.RENDER_EXTERNAL_URL || `http://localhost:${port}`;
+    setInterval(async () => {
+      try {
+        await fetch(`${selfUrl}/api/member-count`);
+        log("Keep-alive ping sent", "keepalive");
+      } catch (_) {}
+    }, 10 * 60 * 1000);
+    log("Keep-alive self-ping started (every 10 min)", "keepalive");
+  }
 
   try {
     const existingTracks = await storage.getMusicTracks();
