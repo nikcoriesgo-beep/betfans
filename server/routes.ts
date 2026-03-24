@@ -65,6 +65,32 @@ export async function registerRoutes(
   await setupAuth(app);
   registerAuthRoutes(app);
 
+  app.get("/api/auth/replit-auto", async (req: any, res) => {
+    try {
+      const replitUserName = req.headers["x-replit-user-name"] as string;
+      const replitUserId = req.headers["x-replit-user-id"] as string;
+      if (!replitUserName || !replitUserId) {
+        return res.json({ recognized: false });
+      }
+      const replOwner = process.env.REPL_OWNER || "nikcoriesgo-beep";
+      if (replitUserName.toLowerCase() !== replOwner.toLowerCase()) {
+        return res.json({ recognized: false });
+      }
+      const [founder] = await db.select().from(users).where(eq(users.referralCode, "NIKCOX")).limit(1);
+      if (!founder) {
+        return res.json({ recognized: false, message: "Founder account not yet created — please sign up once." });
+      }
+      (req.session as any).userId = founder.id;
+      req.session.save((err: any) => {
+        if (err) return res.status(500).json({ recognized: false });
+        const { passwordHash, ...safe } = founder as any;
+        res.json({ recognized: true, user: safe });
+      });
+    } catch (err) {
+      res.status(500).json({ recognized: false });
+    }
+  });
+
   async function fetchMLBSchedule(dateStr: string) {
     try {
       const url = `https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=${dateStr}&hydrate=team,linescore`;

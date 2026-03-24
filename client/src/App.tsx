@@ -77,12 +77,27 @@ function AffiliateCodeCapture() {
   return null;
 }
 
+function ReplitFounderAutoLogin() {
+  useEffect(() => {
+    fetch("/api/auth/replit-auto", { credentials: "include" })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.recognized) {
+          queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+        }
+      })
+      .catch(() => {});
+  }, []);
+  return null;
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <Toaster />
         <AffiliateCodeCapture />
+        <ReplitFounderAutoLogin />
         <Router />
         <PhoneConsentModal />
         <MusicPlayer />
