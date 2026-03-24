@@ -1183,23 +1183,34 @@ export async function registerRoutes(
 
   app.get("/api/music/stream/:sunoId", (req, res) => {
     const { sunoId } = req.params;
+    const reqHeaders: Record<string, string> = {
+      "User-Agent": "Mozilla/5.0",
+      "Accept": "audio/*,*/*",
+    };
+    if (req.headers.range) reqHeaders["Range"] = req.headers.range;
+
     import("https").then(({ get }) => {
-      const options = {
-        hostname: "audiopipe.suno.ai",
-        path: `/?item_id=${sunoId}`,
-        headers: { "User-Agent": "Mozilla/5.0", "Accept": "audio/*,*/*" },
-      };
-      get(options, (upstream) => {
-        if (!upstream.statusCode || upstream.statusCode >= 400) {
-          res.status(502).json({ message: "Audio unavailable" });
-          return;
+      const upstream = get(
+        { hostname: "cdn1.suno.ai", path: `/${sunoId}.mp3`, headers: reqHeaders },
+        (uRes) => {
+          if (!uRes.statusCode || uRes.statusCode >= 400) {
+            uRes.resume();
+            if (!res.headersSent) res.status(502).json({ message: "Audio unavailable" });
+            return;
+          }
+          res.status(uRes.statusCode);
+          res.setHeader("Content-Type", uRes.headers["content-type"] || "audio/mpeg");
+          res.setHeader("Accept-Ranges", "bytes");
+          res.setHeader("Cache-Control", "public, max-age=3600");
+          res.setHeader("Access-Control-Allow-Origin", "*");
+          if (uRes.headers["content-length"]) res.setHeader("Content-Length", uRes.headers["content-length"]);
+          if (uRes.headers["content-range"]) res.setHeader("Content-Range", uRes.headers["content-range"]);
+          uRes.pipe(res);
+          req.on("close", () => uRes.destroy());
         }
-        res.setHeader("Content-Type", upstream.headers["content-type"] || "audio/mpeg");
-        res.setHeader("Cache-Control", "public, max-age=3600");
-        res.setHeader("Access-Control-Allow-Origin", "*");
-        upstream.pipe(res);
-        upstream.on("error", () => { if (!res.headersSent) res.status(500).end(); });
-      }).on("error", () => { if (!res.headersSent) res.status(500).json({ message: "Stream failed" }); });
+      );
+      upstream.on("error", () => { if (!res.headersSent) res.status(502).json({ message: "Stream error" }); });
+      upstream.setTimeout(10000, () => { upstream.destroy(); if (!res.headersSent) res.status(504).json({ message: "Stream timeout" }); });
     });
   });
 
