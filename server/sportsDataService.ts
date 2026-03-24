@@ -1,6 +1,6 @@
 import { db } from "./db";
-import { games } from "@shared/schema";
-import { eq, sql } from "drizzle-orm";
+import { games, predictions } from "@shared/schema";
+import { eq, and, sql } from "drizzle-orm";
 
 const ESPN_ENDPOINTS: Record<string, string> = {
   NFL: "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard",
@@ -17,19 +17,11 @@ const ESPN_ENDPOINTS: Record<string, string> = {
 interface ESPNEvent {
   id: string;
   date: string;
-  status: {
-    type: {
-      name: string;
-      state: string;
-    };
-  };
+  status: { type: { name: string; state: string } };
   competitions: Array<{
     competitors: Array<{
       homeAway: string;
-      team: {
-        displayName: string;
-        abbreviation: string;
-      };
+      team: { displayName: string; abbreviation: string };
       score?: string;
     }>;
     odds?: Array<{
@@ -41,7 +33,7 @@ interface ESPNEvent {
   }>;
 }
 
-function mapStatus(espnState: string, espnName: string): string {
+function mapStatus(espnState: string): string {
   if (espnState === "pre") return "upcoming";
   if (espnState === "in") return "live";
   if (espnState === "post") return "finished";
@@ -49,13 +41,9 @@ function mapStatus(espnState: string, espnName: string): string {
 }
 
 function generateSpiderPick(
-  homeTeam: string,
-  awayTeam: string,
-  spread: string | null,
-  total: string | null,
-  moneylineHome: string | null,
-  moneylineAway: string | null,
-  league: string
+  homeTeam: string, awayTeam: string,
+  spread: string | null, total: string | null,
+  moneylineHome: string | null, moneylineAway: string | null,
 ): { pick: string; confidence: number; isProLocked: boolean } {
   const seed = (homeTeam + awayTeam + new Date().toDateString()).split("").reduce((a, c) => a + c.charCodeAt(0), 0);
   const rng = (offset: number) => ((seed + offset) * 9301 + 49297) % 233280 / 233280;
@@ -86,22 +74,105 @@ function generateSpiderPick(
     confidence = Math.floor(50 + rng(8) * 30);
   }
 
-  const isProLocked = confidence >= 75;
+  return { pick, confidence, isProLocked: confidence >= 75 };
+}
 
-  return { pick, confidence, isProLocked };
+function gradePick(
+  pickText: string,
+  predType: string,
+  homeTeam: string,
+  awayTeam: string,
+  homeScore: number,
+  awayScore: number,
+  spread: string | null,
+  total: string | null,
+): "win" | "loss" | "push" | "pending" {
+  const pick = pickText.toLowerCase();
+  const homeWords = homeTeam.toLowerCase().split(" ").filter((w) => w.length > 2);
+  const awayWords = awayTeam.toLowerCase().split(" ").filter((w) => w.length > 2);
+  const homeWon = homeScore > awayScore;
+  const totalScore = homeScore + awayScore;
+
+  const pickMentionsHome = homeWords.some((w) => pick.includes(w));
+  const pickMentionsAway = awayWords.some((w) => pick.includes(w));
+
+  if (pick.includes("over") || pick.includes("under")) {
+    const line = parseFloat(total || "0");
+    if (!line) return "pending";
+    if (totalScore === line) return "push";
+    if (pick.includes("over")) return totalScore > line ? "win" : "loss";
+    if (pick.includes("under")) return totalScore < line ? "win" : "loss";
+  }
+
+  const type = predType.toLowerCase();
+  const isSpread = type.includes("spread") || type.includes("run line") || type.includes("puck line") || type.includes("handicap");
+
+  if (isSpread && spread) {
+    const line = parseFloat(spread);
+    if (pickMentionsHome) {
+      const adj = homeScore + line;
+      if (adj > awayScore) return "win";
+      if (adj < awayScore) return "loss";
+      return "push";
+    }
+    if (pickMentionsAway) {
+      const adj = awayScore - line;
+      if (adj > homeScore) return "win";
+      if (adj < homeScore) return "loss";
+      return "push";
+    }
+  }
+
+  if (pickMentionsHome) return homeWon ? "win" : homeScore === awayScore ? "push" : "loss";
+  if (pickMentionsAway) return !homeWon ? "win" : homeScore === awayScore ? "push" : "loss";
+
+  return "pending";
+}
+
+async function autoGradePredictions(
+  gameId: number,
+  homeTeam: string,
+  awayTeam: string,
+  homeScore: number,
+  awayScore: number,
+  spread: string | null,
+  total: string | null,
+): Promise<number> {
+  const pending = await db
+    .select()
+    .from(predictions)
+    .where(and(eq(predictions.gameId, gameId), eq(predictions.result, "pending")));
+
+  let graded = 0;
+  for (const pred of pending) {
+    const result = gradePick(
+      pred.pick,
+      pred.predictionType,
+      homeTeam,
+      awayTeam,
+      homeScore,
+      awayScore,
+      spread,
+      total,
+    );
+    if (result !== "pending") {
+      const payout = result === "win" ? 1 : result === "push" ? 0 : -1;
+      await db.update(predictions).set({ result, payout }).where(eq(predictions.id, pred.id));
+      graded++;
+    }
+  }
+  return graded;
 }
 
 async function fetchLeagueGames(league: string): Promise<any[]> {
   try {
     const url = ESPN_ENDPOINTS[league];
     if (!url) return [];
-
     const response = await fetch(url);
     if (!response.ok) {
       console.log(`[spider] ESPN ${league} returned ${response.status}`);
       return [];
     }
-
     const data = await response.json();
     const events: ESPNEvent[] = data.events || [];
     const results: any[] = [];
@@ -109,15 +180,13 @@ async function fetchLeagueGames(league: string): Promise<any[]> {
     for (const event of events) {
       const comp = event.competitions?.[0];
       if (!comp) continue;
-
       const homeComp = comp.competitors.find((c) => c.homeAway === "home");
       const awayComp = comp.competitors.find((c) => c.homeAway === "away");
       if (!homeComp || !awayComp) continue;
 
       const homeTeam = homeComp.team.displayName;
       const awayTeam = awayComp.team.displayName;
-      const gameTime = new Date(event.date);
-      const status = mapStatus(event.status.type.state, event.status.type.name);
+      const status = mapStatus(event.status.type.state);
       const homeScore = homeComp.score ? parseInt(homeComp.score) : null;
       const awayScore = awayComp.score ? parseInt(awayComp.score) : null;
 
@@ -129,34 +198,26 @@ async function fetchLeagueGames(league: string): Promise<any[]> {
 
       if (odds) {
         if (odds.details) {
-          const spreadMatch = odds.details.match(/([-+]?\d+\.?\d*)/);
-          if (spreadMatch) spread = spreadMatch[1];
+          const m = odds.details.match(/([-+]?\d+\.?\d*)/);
+          if (m) spread = m[1];
         }
         if (odds.overUnder) total = odds.overUnder.toString();
         if (odds.homeTeamOdds?.moneyLine) moneylineHome = odds.homeTeamOdds.moneyLine.toString();
         if (odds.awayTeamOdds?.moneyLine) moneylineAway = odds.awayTeamOdds.moneyLine.toString();
       }
 
-      const spider = generateSpiderPick(homeTeam, awayTeam, spread, total, moneylineHome, moneylineAway, league);
+      const spider = generateSpiderPick(homeTeam, awayTeam, spread, total, moneylineHome, moneylineAway);
 
       results.push({
-        league,
-        homeTeam,
-        awayTeam,
-        gameTime,
-        status,
-        homeScore,
-        awayScore,
-        spread,
-        total,
-        moneylineHome,
-        moneylineAway,
+        league, homeTeam, awayTeam,
+        gameTime: new Date(event.date),
+        status, homeScore, awayScore,
+        spread, total, moneylineHome, moneylineAway,
         spiderPick: spider.pick,
         spiderConfidence: spider.confidence,
         isProLocked: spider.isProLocked,
       });
     }
-
     return results;
   } catch (error) {
     console.log(`[spider] Error fetching ${league}:`, error);
@@ -182,6 +243,7 @@ export async function syncSportsData(): Promise<{ synced: number; leagues: strin
   };
 
   let totalSynced = 0;
+  let totalGraded = 0;
   const syncedLeagues: string[] = [];
 
   for (const league of Object.keys(ESPN_ENDPOINTS)) {
@@ -201,18 +263,39 @@ export async function syncSportsData(): Promise<{ synced: number; leagues: strin
         );
 
       if (existing.length > 0) {
-        await db
-          .update(games)
-          .set({
-            status: game.status,
-            homeScore: game.homeScore,
-            awayScore: game.awayScore,
-            spread: game.spread || existing[0].spread,
-            total: game.total || existing[0].total,
-            moneylineHome: game.moneylineHome || existing[0].moneylineHome,
-            moneylineAway: game.moneylineAway || existing[0].moneylineAway,
-          })
-          .where(eq(games.id, existing[0].id));
+        const prev = existing[0];
+        await db.update(games).set({
+          status: game.status,
+          homeScore: game.homeScore,
+          awayScore: game.awayScore,
+          spread: game.spread || prev.spread,
+          total: game.total || prev.total,
+          moneylineHome: game.moneylineHome || prev.moneylineHome,
+          moneylineAway: game.moneylineAway || prev.moneylineAway,
+          spiderPick: game.spiderPick,
+          spiderConfidence: game.spiderConfidence,
+          isProLocked: game.isProLocked,
+        }).where(eq(games.id, prev.id));
+
+        if (
+          game.status === "finished" &&
+          game.homeScore !== null &&
+          game.awayScore !== null
+        ) {
+          const graded = await autoGradePredictions(
+            prev.id,
+            game.homeTeam,
+            game.awayTeam,
+            game.homeScore,
+            game.awayScore,
+            game.spread || prev.spread,
+            game.total || prev.total,
+          );
+          if (graded > 0) {
+            totalGraded += graded;
+            console.log(`[spider] Auto-graded ${graded} picks for ${game.awayTeam} @ ${game.homeTeam}`);
+          }
+        }
       } else {
         await db.insert(games).values(game);
         totalSynced++;
@@ -222,19 +305,17 @@ export async function syncSportsData(): Promise<{ synced: number; leagues: strin
     syncedLeagues.push(`${league}(${liveGames.length})`);
   }
 
-  console.log(`[spider] Sync complete: ${totalSynced} new games, leagues: ${syncedLeagues.join(", ")}`);
+  console.log(`[spider] Sync complete: ${totalSynced} new games, ${totalGraded} picks graded, leagues: ${syncedLeagues.join(", ")}`);
   return { synced: totalSynced, leagues: syncedLeagues };
 }
 
 let syncInterval: ReturnType<typeof setInterval> | null = null;
 
-export function startSportsDataSync(intervalMinutes = 15) {
+export function startSportsDataSync(intervalMinutes = 5) {
   syncSportsData().catch(console.error);
-
   syncInterval = setInterval(() => {
     syncSportsData().catch(console.error);
   }, intervalMinutes * 60 * 1000);
-
   console.log(`[spider] Auto-sync started (every ${intervalMinutes} minutes)`);
 }
 
