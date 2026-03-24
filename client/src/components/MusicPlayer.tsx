@@ -21,11 +21,16 @@ function getSunoAudioUrl(sunoId: string) {
   return `/api/music/stream/${sunoId}`;
 }
 
+type TestStatus = "idle" | "testing" | "ok" | "fail";
+
 function AdminPanel({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient();
   const [newSunoUrl, setNewSunoUrl] = useState("");
   const [newTitle, setNewTitle] = useState("");
   const [newDate, setNewDate] = useState("");
+  const [testStatus, setTestStatus] = useState<TestStatus>("idle");
+  const [testMsg, setTestMsg] = useState("");
+  const [trackStatuses, setTrackStatuses] = useState<Record<number, TestStatus>>({});
 
   const { data: allTracks = [] } = useQuery<Track[]>({
     queryKey: ["/api/music/tracks/all"],
@@ -48,6 +53,8 @@ function AdminPanel({ onClose }: { onClose: () => void }) {
       setNewSunoUrl("");
       setNewTitle("");
       setNewDate("");
+      setTestStatus("idle");
+      setTestMsg("");
       queryClient.invalidateQueries({ queryKey: ["/api/music/tracks/all"] });
       queryClient.invalidateQueries({ queryKey: ["/api/music/tracks"] });
     },
@@ -89,14 +96,56 @@ function AdminPanel({ onClose }: { onClose: () => void }) {
     return null;
   };
 
-  const handleAdd = () => {
+  const testStream = async (sunoId: string, trackId?: number): Promise<boolean> => {
+    if (trackId !== undefined) {
+      setTrackStatuses(s => ({ ...s, [trackId]: "testing" }));
+    } else {
+      setTestStatus("testing");
+      setTestMsg("Checking stream...");
+    }
+    try {
+      // Test our own stream endpoint — the exact path the player uses
+      const ctrl = new AbortController();
+      const timeout = setTimeout(() => ctrl.abort(), 8000);
+      const res = await fetch(`/api/music/stream/${sunoId}`, { signal: ctrl.signal });
+      clearTimeout(timeout);
+      // Cancel the body immediately — we only care about headers
+      res.body?.cancel();
+      const ct = res.headers.get("content-type") || "";
+      const ok = res.ok && (ct.includes("audio") || ct.includes("octet"));
+      if (trackId !== undefined) {
+        setTrackStatuses(s => ({ ...s, [trackId]: ok ? "ok" : "fail" }));
+      } else {
+        setTestStatus(ok ? "ok" : "fail");
+        setTestMsg(ok ? "Stream works! Click Save Track." : "Stream failed — this Suno ID can't be played. Try a different song.");
+      }
+      return ok;
+    } catch {
+      if (trackId !== undefined) {
+        setTrackStatuses(s => ({ ...s, [trackId]: "fail" }));
+      } else {
+        setTestStatus("fail");
+        setTestMsg("Could not reach audio server — check your connection");
+      }
+      return false;
+    }
+  };
+
+  const handleTestAndAdd = async () => {
     const sunoId = parseSunoId(newSunoUrl);
-    if (!sunoId || !newTitle.trim()) return;
-    addTrack.mutate({
-      sunoId,
-      title: newTitle.trim(),
-      scheduleDate: newDate || undefined,
-    });
+    if (!sunoId) {
+      setTestStatus("fail");
+      setTestMsg("Can't find a valid Suno ID in that URL");
+      return;
+    }
+    if (!newTitle.trim()) {
+      setTestStatus("fail");
+      setTestMsg("Add a title first");
+      return;
+    }
+    const ok = await testStream(sunoId);
+    if (!ok) return;
+    addTrack.mutate({ sunoId, title: newTitle.trim(), scheduleDate: newDate || undefined });
   };
 
   return (
@@ -110,7 +159,7 @@ function AdminPanel({ onClose }: { onClose: () => void }) {
         </button>
       </div>
 
-      <div className="space-y-2 max-h-40 overflow-y-auto">
+      <div className="space-y-2 max-h-44 overflow-y-auto">
         {allTracks.length === 0 ? (
           <p className="text-xs text-muted-foreground text-center py-2">No tracks yet</p>
         ) : (
@@ -124,16 +173,27 @@ function AdminPanel({ onClose }: { onClose: () => void }) {
             >
               <div className="flex-1 min-w-0">
                 <p className="text-xs font-medium truncate">{track.title}</p>
-                <p className="text-[10px] text-muted-foreground">
-                  {track.scheduleDate || "Always active"}
-                </p>
+                <p className="text-[10px] text-muted-foreground">{track.scheduleDate || "Always active"}</p>
               </div>
+              <button
+                onClick={() => testStream(track.sunoId, track.id)}
+                className={`text-[10px] px-1.5 py-0.5 rounded border ${
+                  trackStatuses[track.id] === "ok" ? "border-green-500/40 text-green-400" :
+                  trackStatuses[track.id] === "fail" ? "border-red-500/40 text-red-400" :
+                  trackStatuses[track.id] === "testing" ? "border-yellow-500/40 text-yellow-400" :
+                  "border-white/10 text-muted-foreground"
+                }`}
+                title="Test stream"
+                data-testid={`button-test-track-${track.id}`}
+              >
+                {trackStatuses[track.id] === "testing" ? "..." :
+                 trackStatuses[track.id] === "ok" ? "✓ OK" :
+                 trackStatuses[track.id] === "fail" ? "✗ FAIL" : "Test"}
+              </button>
               <button
                 onClick={() => toggleActive.mutate({ id: track.id, active: !track.active })}
                 className={`text-[10px] px-2 py-0.5 rounded ${
-                  track.active
-                    ? "bg-primary/20 text-primary"
-                    : "bg-white/10 text-muted-foreground"
+                  track.active ? "bg-primary/20 text-primary" : "bg-white/10 text-muted-foreground"
                 }`}
                 data-testid={`button-toggle-active-${track.id}`}
               >
@@ -164,11 +224,20 @@ function AdminPanel({ onClose }: { onClose: () => void }) {
         <input
           type="text"
           value={newSunoUrl}
-          onChange={(e) => setNewSunoUrl(e.target.value)}
-          placeholder="Suno song URL or ID..."
-          className="w-full bg-background/50 border border-white/10 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-primary/50"
+          onChange={(e) => { setNewSunoUrl(e.target.value); setTestStatus("idle"); setTestMsg(""); }}
+          placeholder="Paste full Suno URL or UUID..."
+          className={`w-full bg-background/50 border rounded-lg px-3 py-1.5 text-sm focus:outline-none ${
+            testStatus === "ok" ? "border-green-500/50" :
+            testStatus === "fail" ? "border-red-500/50" :
+            "border-white/10 focus:border-primary/50"
+          }`}
           data-testid="input-admin-suno-url"
         />
+        {testMsg && (
+          <p className={`text-[11px] font-medium ${testStatus === "ok" ? "text-green-400" : "text-red-400"}`}>
+            {testStatus === "ok" ? "✓" : "✗"} {testMsg}
+          </p>
+        )}
         <div className="flex gap-2">
           <div className="flex-1 relative">
             <Calendar size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
@@ -182,16 +251,18 @@ function AdminPanel({ onClose }: { onClose: () => void }) {
           </div>
           <Button
             size="sm"
-            onClick={handleAdd}
-            disabled={!newSunoUrl.trim() || !newTitle.trim() || addTrack.isPending}
-            className="gap-1"
+            onClick={handleTestAndAdd}
+            disabled={!newSunoUrl.trim() || !newTitle.trim() || addTrack.isPending || testStatus === "testing"}
+            className={`gap-1 ${testStatus === "ok" ? "bg-green-600 hover:bg-green-700" : ""}`}
             data-testid="button-admin-add"
           >
-            <Plus size={14} /> Add
+            {testStatus === "testing" ? <RefreshCw size={14} className="animate-spin" /> :
+             testStatus === "ok" ? <Plus size={14} /> : <RefreshCw size={14} />}
+            {testStatus === "testing" ? "Testing..." : testStatus === "ok" ? "Save Track" : "Test & Add"}
           </Button>
         </div>
         <p className="text-[10px] text-muted-foreground">
-          Leave date empty for the track to play every day. Set a date for day-specific playlists.
+          Stream is verified before saving. Leave date empty to play every day.
         </p>
       </div>
     </div>

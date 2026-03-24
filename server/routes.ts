@@ -1203,6 +1203,7 @@ export async function registerRoutes(
     });
   });
 
+
   app.get("/api/members/locations", async (_req, res) => {
     try {
       const locations = await storage.getMemberLocations();
