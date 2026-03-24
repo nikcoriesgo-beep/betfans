@@ -18,7 +18,7 @@ interface Track {
 }
 
 function getSunoAudioUrl(sunoId: string) {
-  return `https://cdn1.suno.ai/${sunoId}.mp3`;
+  return `https://audiopipe.suno.ai/?item_id=${sunoId}`;
 }
 
 function AdminPanel({ onClose }: { onClose: () => void }) {
