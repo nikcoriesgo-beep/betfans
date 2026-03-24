@@ -129,8 +129,8 @@ async function initStripe() {
     const existingTracks = await storage.getMusicTracks();
     if (existingTracks.length === 0) {
       await storage.createMusicTrack({
-        sunoId: "e7acab70-c7fb-4b2b-b5fb-c882e0a70346",
-        title: "BetFans Daily Anthem",
+        sunoId: "52075738-9521-44e5-806f-55bae98f72bd",
+        title: "BetFans Opening Day Anthem",
         active: true,
         sortOrder: 0,
       });

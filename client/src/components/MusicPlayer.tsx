@@ -78,11 +78,13 @@ function AdminPanel({ onClose }: { onClose: () => void }) {
     const patterns = [
       /suno\.com\/song\/([a-f0-9-]+)/i,
       /suno\.com\/embed\/([a-f0-9-]+)/i,
+      /suno\.com\/s\/([A-Za-z0-9]+)\?.*song[/=]([a-f0-9-]+)/i,
+      /suno\.com\/s\/[A-Za-z0-9]+.*[?&].*([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i,
       /^([a-f0-9-]{36})$/i,
     ];
     for (const p of patterns) {
       const m = url.trim().match(p);
-      if (m) return m[1];
+      if (m) return m[m.length - 1];
     }
     return null;
   };
