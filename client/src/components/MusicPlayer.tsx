@@ -229,14 +229,13 @@ export function MusicPlayer() {
 
     const onFirstInteraction = () => {
       if (audioRef.current) return;
-      setHasAutoPlayed(true);
 
+      // Create and play IMMEDIATELY — must be synchronous inside gesture handler for mobile Safari
       const audio = new Audio(getSunoAudioUrl(tracks[0].sunoId));
       audio.loop = true;
       audio.volume = 0.5;
       audio.muted = false;
       audioRef.current = audio;
-      setCurrentTrack(0);
 
       audio.play().then(() => {
         setIsPlaying(true);
@@ -244,22 +243,20 @@ export function MusicPlayer() {
         startProgressTracking();
       }).catch(() => {});
 
+      // State updates AFTER play() call
+      setHasAutoPlayed(true);
+      setCurrentTrack(0);
+
       document.removeEventListener("click", onFirstInteraction);
       document.removeEventListener("touchstart", onFirstInteraction);
-      document.removeEventListener("scroll", onFirstInteraction);
-      document.removeEventListener("keydown", onFirstInteraction);
     };
 
     document.addEventListener("click", onFirstInteraction);
     document.addEventListener("touchstart", onFirstInteraction);
-    document.addEventListener("scroll", onFirstInteraction);
-    document.addEventListener("keydown", onFirstInteraction);
 
     return () => {
       document.removeEventListener("click", onFirstInteraction);
       document.removeEventListener("touchstart", onFirstInteraction);
-      document.removeEventListener("scroll", onFirstInteraction);
-      document.removeEventListener("keydown", onFirstInteraction);
     };
   }, [tracks, hasAutoPlayed]);
 
@@ -290,6 +287,7 @@ export function MusicPlayer() {
 
     if (audioRef.current) {
       audioRef.current.pause();
+      audioRef.current = null;
     }
 
     const audio = new Audio(getSunoAudioUrl(tracks[trackIndex].sunoId));
@@ -301,19 +299,20 @@ export function MusicPlayer() {
       audio.currentTime = 0;
       audio.play().catch(() => {});
     });
-    audio.addEventListener("canplay", () => {
-      audio.play().catch(() => {});
-      setIsPlaying(true);
-      startProgressTracking();
-    });
     audio.addEventListener("error", () => {
       setIsPlaying(false);
       stopProgressTracking();
     });
 
     setCurrentTrack(trackIndex);
-    audio.load();
-  }, [tracks, isLooping, isMuted, startProgressTracking, stopProgressTracking]);
+
+    // Play immediately — synchronously in the click gesture context (required for mobile Safari)
+    audio.play().then(() => {
+      setIsPlaying(true);
+      setHasAutoPlayed(true);
+      startProgressTracking();
+    }).catch(() => {});
+  }, [tracks, isMuted, startProgressTracking, stopProgressTracking]);
 
   useEffect(() => {
     if (audioRef.current) {
@@ -435,9 +434,13 @@ export function MusicPlayer() {
         </div>
       </div>
 
-      {isMinimized && (isPlaying || progress > 0) && (
+      {isMinimized && tracks.length > 0 && (
         <div className="px-3 py-2 flex items-center gap-2">
-          <button onClick={togglePlayPause} className="text-primary" data-testid="button-play-mini">
+          <button
+            onClick={isPlaying ? togglePlayPause : () => playTrack(currentTrack)}
+            className="text-primary"
+            data-testid="button-play-mini"
+          >
             {isPlaying ? <Pause size={18} /> : <Play size={18} />}
           </button>
           <div className="flex-1 h-1 bg-white/10 rounded-full cursor-pointer" onClick={handleSeek}>
