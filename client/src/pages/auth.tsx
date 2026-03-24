@@ -13,6 +13,7 @@ export default function Auth() {
   const [password, setPassword] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
+  const [referralCode, setReferralCode] = useState("");
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
   const [, setLocation] = useLocation();
@@ -23,6 +24,8 @@ export default function Auth() {
     if (refCode) {
       localStorage.setItem("betfans_affiliate_code", refCode);
     }
+    const stored = localStorage.getItem("betfans_affiliate_code") || refCode || "NIKCOX";
+    setReferralCode(stored.toUpperCase());
   }, []);
 
   const formatPhone = (value: string) => {
@@ -59,6 +62,19 @@ export default function Auth() {
       }
 
       await queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+
+      if (mode === "signup" && referralCode.trim()) {
+        try {
+          await fetch("/api/affiliate/apply-code", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ code: referralCode.trim().toUpperCase() }),
+          });
+          localStorage.removeItem("betfans_affiliate_code");
+        } catch {}
+      }
+
       toast({ title: mode === "signup" ? "Welcome to BetFans!" : "Welcome back!" });
       setLocation("/membership");
     } catch {
@@ -133,6 +149,18 @@ export default function Auth() {
                   className="bg-background/50 border-white/10"
                 />
               </div>
+              {mode === "signup" && (
+                <div>
+                  <label className="text-sm text-muted-foreground mb-1 block">Referral Code <span className="text-xs opacity-60">(optional)</span></label>
+                  <Input
+                    data-testid="input-referral-code"
+                    placeholder="Enter referral code"
+                    value={referralCode}
+                    onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
+                    className="bg-background/50 border-white/10 font-mono tracking-widest"
+                  />
+                </div>
+              )}
               <Button
                 data-testid="button-auth-submit"
                 type="submit"
