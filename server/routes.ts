@@ -1181,6 +1181,25 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/music/stream/:sunoId", async (req, res) => {
+    try {
+      const { sunoId } = req.params;
+      const audioUrl = `https://audiopipe.suno.ai/?item_id=${sunoId}`;
+      const upstream = await fetch(audioUrl, {
+        headers: { "User-Agent": "Mozilla/5.0", "Accept": "audio/*,*/*" },
+      });
+      if (!upstream.ok) return res.status(502).json({ message: "Audio unavailable" });
+      res.setHeader("Content-Type", upstream.headers.get("content-type") || "audio/mpeg");
+      res.setHeader("Accept-Ranges", "bytes");
+      res.setHeader("Cache-Control", "public, max-age=3600");
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      const reader = upstream.body as any;
+      reader.pipe(res);
+    } catch {
+      res.status(500).json({ message: "Stream failed" });
+    }
+  });
+
   app.get("/api/members/locations", async (_req, res) => {
     try {
       const locations = await storage.getMemberLocations();
