@@ -9,6 +9,7 @@ export const users = pgTable("users", {
   profileImageUrl: text("profile_image_url"),
   stripeCustomerId: text("stripe_customer_id"),
   stripeSubscriptionId: text("stripe_subscription_id"),
+  paypalSubscriptionId: text("paypal_subscription_id"),
   membershipTier: text("membership_tier").default("rookie"),
   walletBalance: text("wallet_balance").default("0"),
   city: text("city"),
@@ -21,6 +22,7 @@ export const users = pgTable("users", {
   smsConsentDate: timestamp("sms_consent_date"),
   referralCode: text("referral_code"),
   referredBy: text("referred_by"),
+  subscriptionCancelledAt: timestamp("subscription_cancelled_at"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
