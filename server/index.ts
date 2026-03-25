@@ -119,10 +119,9 @@ async function initStripe() {
     setInterval(async () => {
       try {
         await fetch(`${selfUrl}/api/member-count`);
-        log("Keep-alive ping sent", "keepalive");
       } catch (_) {}
-    }, 10 * 60 * 1000);
-    log("Keep-alive self-ping started (every 10 min)", "keepalive");
+    }, 4 * 60 * 1000);
+    log("Keep-alive self-ping started (every 4 min)", "keepalive");
   }
 
   try {
