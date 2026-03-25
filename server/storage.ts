@@ -23,6 +23,7 @@ import { eq, desc, and, sql, asc } from "drizzle-orm";
 export interface IStorage {
   getUser(id: string): Promise<User | null>;
   getUserByStripeCustomerId(customerId: string): Promise<User | null>;
+  getUserByPaypalSubscriptionId(subscriptionId: string): Promise<User | null>;
   updateUser(id: string, data: Partial<User>): Promise<User | null>;
 
   getGames(league?: string): Promise<Game[]>;
@@ -120,6 +121,11 @@ export class DatabaseStorage implements IStorage {
 
   async getUserByStripeCustomerId(customerId: string): Promise<User | null> {
     const [user] = await db.select().from(users).where(eq(users.stripeCustomerId, customerId));
+    return user || null;
+  }
+
+  async getUserByPaypalSubscriptionId(subscriptionId: string): Promise<User | null> {
+    const [user] = await db.select().from(users).where(eq(users.paypalSubscriptionId, subscriptionId));
     return user || null;
   }
 
