@@ -904,6 +904,15 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/members/recent", async (_req, res) => {
+    try {
+      const members = await storage.getRecentMembers(20);
+      res.json(members);
+    } catch {
+      res.json([]);
+    }
+  });
+
   app.get("/api/prize-pool", async (_req, res) => {
     try {
       const total = await storage.getPrizePoolTotal();
