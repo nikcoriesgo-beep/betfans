@@ -32,7 +32,7 @@ import { MusicPlayer } from "@/components/MusicPlayer";
 import { PhoneConsentModal } from "@/components/PhoneConsentModal";
 
 const PUBLIC_PATHS = ["/", "/auth", "/membership"];
-const FOUNDER_CODES = ["NIKCOX", "DAMON822"];
+const FOUNDER_CODES = ["NIKCOX"];
 const PAID_TIERS = ["rookie", "pro", "legend"];
 
 function PaymentGate({ children }: { children: ReactNode }) {
