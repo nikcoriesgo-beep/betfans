@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Navbar } from "@/components/layout/Navbar";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Zap, Clock, Loader2, CheckCircle2, XCircle, Plus, Lock,
-  Trophy, Target, Flame, TrendingUp, CircleDot, Calendar
+  Trophy, Target, Flame, CircleDot, Calendar
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -173,12 +173,16 @@ export default function DailyPicks() {
 
   const syncGames = useMutation({
     mutationFn: () => apiRequest("POST", "/api/games/sync"),
-    onSuccess: (data: any) => {
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/api/games"] });
-      toast({ title: "Games synced!", description: `${data?.synced ?? 0} new games added from ESPN. Leagues: ${(data?.leagues ?? []).join(", ") || "none"}` });
     },
-    onError: (e: any) => toast({ title: "Sync failed", description: e.message, variant: "destructive" }),
   });
+
+  useEffect(() => {
+    if (isFounder) {
+      syncGames.mutate();
+    }
+  }, [isFounder]);
 
   const todayGames = useMemo(() =>
     allGames.filter((g) => isToday(g.gameTime)),
@@ -230,20 +234,12 @@ export default function DailyPicks() {
             <p className="text-muted-foreground text-sm max-w-xl">
               Pick any game across every sport. Results grade automatically the moment games end.
             </p>
-            <div className="flex items-center gap-4 mt-3">
+            <div className="flex items-center gap-3 mt-3">
               <p className="text-xs text-muted-foreground/50">{today}</p>
-              {isFounder && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-7 text-xs border-primary/30 text-primary hover:bg-primary/10 gap-1.5"
-                  onClick={() => syncGames.mutate()}
-                  disabled={syncGames.isPending}
-                  data-testid="button-sync-games"
-                >
-                  {syncGames.isPending ? <Loader2 size={11} className="animate-spin" /> : <TrendingUp size={11} />}
-                  Sync Today's Games
-                </Button>
+              {isFounder && syncGames.isPending && (
+                <span className="flex items-center gap-1 text-[10px] text-primary/60">
+                  <Loader2 size={10} className="animate-spin" />syncing games…
+                </span>
               )}
             </div>
           </div>
