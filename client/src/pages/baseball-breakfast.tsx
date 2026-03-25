@@ -1,11 +1,11 @@
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { Navbar } from "@/components/layout/Navbar";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Trophy, TrendingUp, Flame, Target, CircleDot, Clock, Loader2, Coffee,
-  Sun, Zap, CheckCircle2, XCircle, UserCircle2, Send, Lock
+  Sun, Zap, CheckCircle2, XCircle, UserCircle2, Send, RotateCcw, ChevronRight
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -108,6 +108,18 @@ export default function BaseballBreakfast() {
       toast({ title: `${count} pick${count !== 1 ? "s" : ""} posted!`, description: "Your picks are live on Baseball Breakfast." });
     },
     onError: (e: any) => toast({ title: "Error posting picks", description: e.message, variant: "destructive" }),
+  });
+
+  const gradePick = useMutation({
+    mutationFn: ({ id, result }: { id: number; result: string }) =>
+      apiRequest("PATCH", `/api/baseball-breakfast/pick/${id}`, { result }),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ["/api/baseball-breakfast"] });
+      qc.invalidateQueries({ queryKey: ["/api/leaderboard"] });
+      const label = vars.result === "win" ? "Win recorded!" : vars.result === "loss" ? "Loss recorded." : "Result updated.";
+      toast({ title: label, description: "Leaderboard updated automatically." });
+    },
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
   const stats = data?.stats || { wins: 0, losses: 0, profit: 0, roi: 0, streak: 0, totalPicks: 0 };
@@ -301,7 +313,7 @@ export default function BaseballBreakfast() {
                     </div>
 
                     {game.founderPick ? (
-                      <div className="bg-yellow-500/5 border border-yellow-500/20 rounded-lg p-3">
+                      <div className="bg-yellow-500/5 border border-yellow-500/20 rounded-lg p-3 space-y-2">
                         <div className="flex items-center justify-between">
                           <div>
                             <div className="flex items-center gap-1.5 mb-1">
@@ -313,6 +325,37 @@ export default function BaseballBreakfast() {
                           </div>
                           <PickResultBadge result={game.founderPick.result} />
                         </div>
+                        {isFounder && (
+                          <div className="flex gap-1.5 pt-1 border-t border-white/5">
+                            <button
+                              onClick={() => gradePick.mutate({ id: game.founderPick.id, result: "win" })}
+                              disabled={gradePick.isPending}
+                              className={cn("flex-1 rounded-md py-1.5 text-[10px] font-bold border transition-all",
+                                game.founderPick.result === "win"
+                                  ? "bg-green-500/30 text-green-300 border-green-500/40"
+                                  : "bg-green-500/10 text-green-400 border-green-500/20 hover:bg-green-500/20")}
+                              data-testid={`button-grade-win-${game.mlbGamePk}`}
+                            >✓ WIN</button>
+                            <button
+                              onClick={() => gradePick.mutate({ id: game.founderPick.id, result: "loss" })}
+                              disabled={gradePick.isPending}
+                              className={cn("flex-1 rounded-md py-1.5 text-[10px] font-bold border transition-all",
+                                game.founderPick.result === "loss"
+                                  ? "bg-red-500/30 text-red-300 border-red-500/40"
+                                  : "bg-red-500/10 text-red-400 border-red-500/20 hover:bg-red-500/20")}
+                              data-testid={`button-grade-loss-${game.mlbGamePk}`}
+                            >✗ LOSS</button>
+                            <button
+                              onClick={() => gradePick.mutate({ id: game.founderPick.id, result: "push" })}
+                              disabled={gradePick.isPending}
+                              className={cn("flex-1 rounded-md py-1.5 text-[10px] font-bold border transition-all",
+                                game.founderPick.result === "push"
+                                  ? "bg-gray-500/30 text-gray-300 border-gray-500/40"
+                                  : "bg-gray-500/10 text-gray-400 border-gray-500/20 hover:bg-gray-500/20")}
+                              data-testid={`button-grade-push-${game.mlbGamePk}`}
+                            >PUSH</button>
+                          </div>
+                        )}
                       </div>
                     ) : isFounder && !isFinished ? (
                       <div className="space-y-2">
@@ -389,6 +432,16 @@ export default function BaseballBreakfast() {
           </div>
         )}
       </div>
+
+      {isFounder && !isLoading && games.length > 0 && draftCount === 0 && (
+        <div className="mt-8 flex justify-center">
+          <a href="/leaderboard" className="flex items-center gap-2 text-xs text-primary/70 hover:text-primary transition-colors" data-testid="link-to-leaderboard">
+            <Trophy size={12} />
+            View your scores on the Leaderboard
+            <ChevronRight size={12} />
+          </a>
+        </div>
+      )}
 
       {isFounder && draftCount > 0 && (
         <div className="fixed bottom-0 left-0 right-0 z-50 bg-background/95 backdrop-blur border-t border-white/10 px-4 py-4">
