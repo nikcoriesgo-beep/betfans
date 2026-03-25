@@ -18,6 +18,7 @@ interface Track {
 }
 
 function getSunoAudioUrl(sunoId: string) {
+  if (sunoId.startsWith("local:")) return "/" + sunoId.slice(6);
   return `/api/music/stream/${sunoId}`;
 }
 
