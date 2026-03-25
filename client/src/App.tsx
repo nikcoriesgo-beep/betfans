@@ -1,9 +1,10 @@
-import { useEffect } from "react";
-import { Switch, Route } from "wouter";
+import { useEffect, type ReactNode } from "react";
+import { Switch, Route, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { useAuth } from "@/hooks/use-auth";
 import NotFound from "@/pages/not-found";
 import Home from "@/pages/home";
 import Dashboard from "@/pages/dashboard";
@@ -30,8 +31,38 @@ import Auth from "@/pages/auth";
 import { MusicPlayer } from "@/components/MusicPlayer";
 import { PhoneConsentModal } from "@/components/PhoneConsentModal";
 
+const PUBLIC_PATHS = ["/", "/auth", "/membership"];
+const FOUNDER_CODES = ["NIKCOX", "DAMON822"];
+const PAID_TIERS = ["rookie", "pro", "legend"];
+
+function PaymentGate({ children }: { children: ReactNode }) {
+  const { user, isLoading } = useAuth();
+  const [location, navigate] = useLocation();
+
+  const isPublic = PUBLIC_PATHS.some(
+    (p) => location === p || location.startsWith(p + "?") || location.startsWith(p + "/")
+  );
+
+  useEffect(() => {
+    if (isLoading || isPublic) return;
+    if (!user) {
+      navigate("/auth");
+      return;
+    }
+    const isFounder = FOUNDER_CODES.includes(user.referralCode ?? "");
+    const isPaid = PAID_TIERS.includes(user.membershipTier ?? "");
+    if (!isFounder && !isPaid) {
+      navigate("/membership");
+    }
+  }, [user, isLoading, location, isPublic]);
+
+  if (isLoading && !isPublic) return null;
+  return <>{children}</>;
+}
+
 function Router() {
   return (
+    <PaymentGate>
     <Switch>
       <Route path="/" component={Home} />
       <Route path="/dashboard" component={Dashboard} />
@@ -60,6 +91,7 @@ function Router() {
       <Route path="/game/:id" component={GameDetail} />
       <Route component={NotFound} />
     </Switch>
+    </PaymentGate>
   );
 }
 
