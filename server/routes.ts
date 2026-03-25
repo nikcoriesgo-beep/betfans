@@ -1212,13 +1212,19 @@ export async function registerRoutes(
   });
 
   const ADMIN_USER_IDS = process.env.ADMIN_USER_IDS?.split(",").filter(Boolean) || [];
+  const FOUNDER_CODES_ADMIN = ["NIKCOX"];
   function isAdmin(req: any, res: any, next: any) {
     const userId = (req.session as any)?.userId;
     if (!userId) return res.status(403).json({ message: "Admin access required" });
-    if (ADMIN_USER_IDS.length > 0 && !ADMIN_USER_IDS.includes(userId)) {
-      return res.status(403).json({ message: "Admin access required" });
-    }
-    next();
+    db.select().from(users).where(eq(users.id, userId)).limit(1).then(([sessionUser]) => {
+      if (sessionUser && FOUNDER_CODES_ADMIN.includes(sessionUser.referralCode ?? "")) {
+        return next();
+      }
+      if (ADMIN_USER_IDS.length > 0 && !ADMIN_USER_IDS.includes(userId)) {
+        return res.status(403).json({ message: "Admin access required" });
+      }
+      next();
+    }).catch(() => res.status(500).json({ message: "Admin check failed" }));
   }
 
   app.get("/api/music/tracks", async (req, res) => {
