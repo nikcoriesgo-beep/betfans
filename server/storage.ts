@@ -87,6 +87,7 @@ export interface IStorage {
   getAllPayouts(limit?: number): Promise<(Payout & { user: User | null })[]>;
 
   getMemberCount(): Promise<number>;
+  getRecentMembers(limit?: number): Promise<{ firstName: string | null; lastName: string | null; membershipTier: string | null; createdAt: Date | null }[]>;
   getProduct(productId: string): Promise<any>;
   getSubscription(subscriptionId: string): Promise<any>;
   listProductsWithPrices(): Promise<any[]>;
@@ -604,11 +605,31 @@ export class DatabaseStorage implements IStorage {
   async getMemberCount(): Promise<number> {
     try {
       const result = await db.execute(sql`
-        SELECT COUNT(*) as count FROM users WHERE stripe_subscription_id IS NOT NULL
+        SELECT COUNT(*) as count FROM users
+        WHERE membership_tier IN ('rookie', 'pro', 'legend')
       `);
       return Number(result.rows[0]?.count || 0);
     } catch {
       return 0;
+    }
+  }
+
+  async getRecentMembers(limit = 10): Promise<{ firstName: string | null; lastName: string | null; membershipTier: string | null; createdAt: Date | null }[]> {
+    try {
+      const result = await db
+        .select({
+          firstName: users.firstName,
+          lastName: users.lastName,
+          membershipTier: users.membershipTier,
+          createdAt: users.createdAt,
+        })
+        .from(users)
+        .where(sql`membership_tier IN ('rookie', 'pro', 'legend')`)
+        .orderBy(desc(users.createdAt))
+        .limit(limit);
+      return result;
+    } catch {
+      return [];
     }
   }
 
