@@ -3,13 +3,9 @@ import { Navbar } from "@/components/layout/Navbar";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
-  Zap, Clock, Loader2, CheckCircle2, XCircle, Plus, Lock,
-  Trophy, Target, Flame, CircleDot, Calendar
+  Zap, Clock, Loader2, CheckCircle2, XCircle, Lock,
+  CircleDot, Calendar, Send
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -66,82 +62,10 @@ function ResultBadge({ result }: { result: string }) {
   return <Badge className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30 text-[10px]">PENDING</Badge>;
 }
 
-function PickDialog({ game, onClose, onSubmit, isSubmitting }: {
-  game: any; onClose: () => void; onSubmit: (data: any) => void; isSubmitting: boolean;
-}) {
-  const betTypes = BET_TYPES[game.league] || ["Moneyline", "Spread", "Over/Under"];
-  const [predType, setPredType] = useState(betTypes[0]);
-  const [pick, setPick] = useState(game.homeTeam);
-  const [odds, setOdds] = useState("");
-
-  const isOverUnder = predType.toLowerCase().includes("over") || predType === "Over/Under";
-
-  return (
-    <Dialog open onOpenChange={onClose}>
-      <DialogContent className="bg-card border-white/10 max-w-sm">
-        <DialogHeader>
-          <DialogTitle className="font-display text-base">
-            <Badge className={cn("mr-2 text-[10px]", LEAGUE_COLORS[game.league] || "bg-white/10 text-white/60")}>{game.league}</Badge>
-            {game.awayTeam} @ {game.homeTeam}
-          </DialogTitle>
-        </DialogHeader>
-        <div className="space-y-4 mt-2">
-          <div>
-            <Label className="text-xs text-muted-foreground">Bet Type</Label>
-            <Select value={predType} onValueChange={(v) => { setPredType(v); setPick(game.homeTeam); }}>
-              <SelectTrigger className="mt-1 bg-white/5 border-white/10 text-sm" data-testid="select-pred-type">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {betTypes.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <Label className="text-xs text-muted-foreground">Your Pick</Label>
-            <Select value={pick} onValueChange={setPick}>
-              <SelectTrigger className="mt-1 bg-white/5 border-white/10 text-sm" data-testid="select-pick">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {isOverUnder ? (
-                  <>
-                    <SelectItem value="Over">Over {game.total || ""}</SelectItem>
-                    <SelectItem value="Under">Under {game.total || ""}</SelectItem>
-                  </>
-                ) : (
-                  <>
-                    <SelectItem value={game.awayTeam}>{game.awayTeam} (Away)</SelectItem>
-                    <SelectItem value={game.homeTeam}>{game.homeTeam} (Home)</SelectItem>
-                    {predType === "Draw" && <SelectItem value="Draw">Draw</SelectItem>}
-                  </>
-                )}
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <Label className="text-xs text-muted-foreground">Odds (optional, e.g. -110, +150)</Label>
-            <Input
-              value={odds}
-              onChange={(e) => setOdds(e.target.value)}
-              placeholder="-110"
-              className="mt-1 bg-white/5 border-white/10 text-sm"
-              data-testid="input-odds"
-            />
-          </div>
-          <Button
-            className="w-full bg-primary text-primary-foreground"
-            onClick={() => onSubmit({ gameId: game.id, predictionType: predType, pick, odds: odds || null, units: 1 })}
-            disabled={isSubmitting}
-            data-testid="button-submit-pick"
-          >
-            {isSubmitting ? <Loader2 size={14} className="animate-spin mr-2" /> : <Plus size={14} className="mr-2" />}
-            Lock In Pick
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
+interface DraftPick {
+  gameId: number;
+  pick: string;
+  predictionType: string;
 }
 
 const FOUNDER_CODE = "NIKCOX";
@@ -151,7 +75,7 @@ export default function DailyPicks() {
   const qc = useQueryClient();
   const { toast } = useToast();
   const [league, setLeague] = useState("All");
-  const [pickGame, setPickGame] = useState<any | null>(null);
+  const [drafts, setDrafts] = useState<Record<number, DraftPick>>({});
 
   const isFounder = user?.referralCode === FOUNDER_CODE;
 
@@ -161,34 +85,30 @@ export default function DailyPicks() {
     enabled: !!user,
   });
 
-  const submitPick = useMutation({
-    mutationFn: (body: any) => apiRequest("POST", "/api/predictions", body),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["/api/predictions"] });
-      setPickGame(null);
-      toast({ title: "Pick locked in!", description: "Good luck — results update automatically." });
-    },
-    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
-  });
-
   const syncGames = useMutation({
     mutationFn: () => apiRequest("POST", "/api/games/sync"),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["/api/games"] });
-    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/games"] }); },
   });
 
   useEffect(() => {
-    if (isFounder) {
-      syncGames.mutate();
-    }
+    if (isFounder) syncGames.mutate();
   }, [isFounder]);
 
-  const todayGames = useMemo(() =>
-    allGames.filter((g) => isToday(g.gameTime)),
-    [allGames]
-  );
+  const submitPicks = useMutation({
+    mutationFn: async (picks: DraftPick[]) => {
+      for (const p of picks) {
+        await apiRequest("POST", "/api/predictions", { ...p, odds: null, units: 1 });
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/predictions"] });
+      setDrafts({});
+      toast({ title: `${Object.keys(drafts).length} picks locked in!`, description: "Results update automatically when games finish." });
+    },
+    onError: (e: any) => toast({ title: "Error submitting picks", description: e.message, variant: "destructive" }),
+  });
 
+  const todayGames = useMemo(() => allGames.filter((g) => isToday(g.gameTime)), [allGames]);
   const filteredGames = useMemo(() =>
     league === "All" ? todayGames : todayGames.filter((g) => g.league === league),
     [todayGames, league]
@@ -200,26 +120,34 @@ export default function DailyPicks() {
       if (!todayGameIds.has(p.gameId)) return false;
       const d = new Date(p.createdAt);
       const now = new Date();
-      return d.getFullYear() === now.getFullYear() &&
-        d.getMonth() === now.getMonth() &&
-        d.getDate() === now.getDate();
+      return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
     });
   }, [myPredictions, todayGames]);
 
   const myPickGameIds = new Set(myPicksToday.map((p) => p.gameId));
-
   const wins = myPicksToday.filter((p) => p.result === "win").length;
   const losses = myPicksToday.filter((p) => p.result === "loss").length;
   const pending = myPicksToday.filter((p) => p.result === "pending").length;
-
   const today = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
-
   const activeLeagues = ["All", ...Array.from(new Set(todayGames.map((g) => g.league)))];
+  const draftCount = Object.keys(drafts).length;
+
+  function selectPick(game: any, pick: string, predictionType: string) {
+    setDrafts((prev) => {
+      const existing = prev[game.id];
+      if (existing?.pick === pick && existing?.predictionType === predictionType) {
+        const next = { ...prev };
+        delete next[game.id];
+        return next;
+      }
+      return { ...prev, [game.id]: { gameId: game.id, pick, predictionType } };
+    });
+  }
 
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
-      <div className="container mx-auto px-4 pt-24 pb-16 max-w-5xl">
+      <div className={cn("container mx-auto px-4 pt-24 max-w-5xl", draftCount > 0 ? "pb-32" : "pb-16")}>
 
         <div className="relative mb-8 overflow-hidden rounded-2xl bg-gradient-to-br from-primary/10 via-card/60 to-blue-900/20 border border-white/5 p-6 md:p-10">
           <div className="absolute top-4 right-4 opacity-10"><Zap size={110} /></div>
@@ -232,7 +160,7 @@ export default function DailyPicks() {
               Today's Games
             </h1>
             <p className="text-muted-foreground text-sm max-w-xl">
-              Pick any game across every sport. Results grade automatically the moment games end.
+              Tap a team to select your pick. When you're done, hit <strong>Submit Picks</strong> at the bottom.
             </p>
             <div className="flex items-center gap-3 mt-3">
               <p className="text-xs text-muted-foreground/50">{today}</p>
@@ -325,7 +253,7 @@ export default function DailyPicks() {
             <CardContent className="p-10 text-center">
               <CircleDot size={36} className="text-muted-foreground/20 mx-auto mb-3" />
               <p className="font-display font-bold text-sm mb-1">No games today for {league}</p>
-              <p className="text-xs text-muted-foreground">Try a different league or check back later.</p>
+              <p className="text-xs text-muted-foreground">Check back later or switch to another league.</p>
             </CardContent>
           </Card>
         ) : (
@@ -333,11 +261,16 @@ export default function DailyPicks() {
             {filteredGames.map((game) => {
               const alreadyPicked = myPickGameIds.has(game.id);
               const myPick = myPicksToday.find((p) => p.gameId === game.id);
+              const draft = drafts[game.id];
+              const betTypes = BET_TYPES[game.league] || ["Moneyline", "Spread", "Over/Under"];
+              const isFinished = game.status === "finished";
+
               return (
                 <Card
                   key={game.id}
                   className={cn(
                     "bg-card/30 border-white/5 hover:border-white/10 transition-all",
+                    draft && "border-primary/40 bg-primary/5",
                     alreadyPicked && "border-primary/20"
                   )}
                   data-testid={`card-game-${game.id}`}
@@ -354,31 +287,8 @@ export default function DailyPicks() {
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="text-center flex-1">
-                        <p className="text-[10px] text-muted-foreground mb-0.5">AWAY</p>
-                        <p className="font-display font-bold text-sm leading-tight">{game.awayTeam}</p>
-                        {game.moneylineAway && <p className="text-[10px] text-muted-foreground/60">{parseInt(game.moneylineAway) > 0 ? "+" : ""}{game.moneylineAway}</p>}
-                      </div>
-                      <div className="text-center px-3">
-                        {game.homeScore !== null && game.awayScore !== null ? (
-                          <p className="font-display font-bold text-2xl">{game.awayScore} - {game.homeScore}</p>
-                        ) : (
-                          <div>
-                            <p className="text-muted-foreground/40 text-xs font-medium">VS</p>
-                            {game.total && <p className="text-[10px] text-muted-foreground/50 mt-0.5">O/U {game.total}</p>}
-                          </div>
-                        )}
-                      </div>
-                      <div className="text-center flex-1">
-                        <p className="text-[10px] text-muted-foreground mb-0.5">HOME</p>
-                        <p className="font-display font-bold text-sm leading-tight">{game.homeTeam}</p>
-                        {game.moneylineHome && <p className="text-[10px] text-muted-foreground/60">{parseInt(game.moneylineHome) > 0 ? "+" : ""}{game.moneylineHome}</p>}
-                      </div>
-                    </div>
-
                     {game.spiderPick && (
-                      <div className="bg-primary/5 border border-primary/10 rounded-lg px-3 py-2 mb-3 flex items-center justify-between">
+                      <div className="bg-primary/5 border border-primary/10 rounded-lg px-3 py-1.5 mb-3 flex items-center justify-between">
                         <div className="flex items-center gap-1.5">
                           <Zap size={10} className="text-primary" />
                           <span className="text-[10px] text-primary uppercase tracking-wider font-medium">Spider AI</span>
@@ -399,24 +309,80 @@ export default function DailyPicks() {
                         </div>
                         <ResultBadge result={myPick.result || "pending"} />
                       </div>
-                    ) : user ? (
-                      game.status === "finished" ? (
-                        <p className="text-center text-[10px] text-muted-foreground/40 py-1">Game finished — picks closed</p>
-                      ) : (
-                        <Button
-                          className="w-full bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 text-xs h-8"
-                          onClick={() => setPickGame(game)}
-                          data-testid={`button-pick-game-${game.id}`}
-                        >
-                          <Plus size={12} className="mr-1.5" />Make Your Pick
-                        </Button>
-                      )
-                    ) : (
+                    ) : isFinished ? (
+                      <p className="text-center text-[10px] text-muted-foreground/40 py-2">Game finished — picks closed</p>
+                    ) : !user ? (
                       <a href="/auth">
                         <Button className="w-full bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 text-xs h-8" data-testid={`button-login-pick-${game.id}`}>
                           <Lock size={12} className="mr-1.5" />Login to Pick
                         </Button>
                       </a>
+                    ) : (
+                      <div className="space-y-2">
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            onClick={() => selectPick(game, game.awayTeam, "Moneyline")}
+                            className={cn(
+                              "rounded-lg p-2.5 text-center transition-all border text-xs font-medium",
+                              draft?.pick === game.awayTeam
+                                ? "bg-primary text-primary-foreground border-primary"
+                                : "bg-white/5 border-white/10 text-muted-foreground hover:border-white/20 hover:text-white"
+                            )}
+                            data-testid={`button-pick-away-${game.id}`}
+                          >
+                            <p className="text-[9px] opacity-60 uppercase tracking-wider mb-0.5">Away</p>
+                            <p className="font-display font-bold text-xs leading-tight">{game.awayTeam.split(" ").slice(-1)[0]}</p>
+                            {game.moneylineAway && <p className="text-[10px] mt-0.5 opacity-70">{parseInt(game.moneylineAway) > 0 ? "+" : ""}{game.moneylineAway}</p>}
+                          </button>
+                          <button
+                            onClick={() => selectPick(game, game.homeTeam, "Moneyline")}
+                            className={cn(
+                              "rounded-lg p-2.5 text-center transition-all border text-xs font-medium",
+                              draft?.pick === game.homeTeam
+                                ? "bg-primary text-primary-foreground border-primary"
+                                : "bg-white/5 border-white/10 text-muted-foreground hover:border-white/20 hover:text-white"
+                            )}
+                            data-testid={`button-pick-home-${game.id}`}
+                          >
+                            <p className="text-[9px] opacity-60 uppercase tracking-wider mb-0.5">Home</p>
+                            <p className="font-display font-bold text-xs leading-tight">{game.homeTeam.split(" ").slice(-1)[0]}</p>
+                            {game.moneylineHome && <p className="text-[10px] mt-0.5 opacity-70">{parseInt(game.moneylineHome) > 0 ? "+" : ""}{game.moneylineHome}</p>}
+                          </button>
+                        </div>
+                        {game.total && (
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              onClick={() => selectPick(game, "Over", "Over/Under")}
+                              className={cn(
+                                "rounded-lg px-3 py-2 text-center transition-all border text-xs font-medium",
+                                draft?.pick === "Over"
+                                  ? "bg-primary text-primary-foreground border-primary"
+                                  : "bg-white/5 border-white/10 text-muted-foreground hover:border-white/20 hover:text-white"
+                              )}
+                              data-testid={`button-pick-over-${game.id}`}
+                            >
+                              Over {game.total}
+                            </button>
+                            <button
+                              onClick={() => selectPick(game, "Under", "Over/Under")}
+                              className={cn(
+                                "rounded-lg px-3 py-2 text-center transition-all border text-xs font-medium",
+                                draft?.pick === "Under"
+                                  ? "bg-primary text-primary-foreground border-primary"
+                                  : "bg-white/5 border-white/10 text-muted-foreground hover:border-white/20 hover:text-white"
+                              )}
+                              data-testid={`button-pick-under-${game.id}`}
+                            >
+                              Under {game.total}
+                            </button>
+                          </div>
+                        )}
+                        {draft && (
+                          <p className="text-center text-[10px] text-primary/70 font-medium">
+                            ✓ {draft.pick} selected — tap again to deselect
+                          </p>
+                        )}
+                      </div>
                     )}
                   </CardContent>
                 </Card>
@@ -441,13 +407,26 @@ export default function DailyPicks() {
         )}
       </div>
 
-      {pickGame && (
-        <PickDialog
-          game={pickGame}
-          onClose={() => setPickGame(null)}
-          onSubmit={(data) => submitPick.mutate(data)}
-          isSubmitting={submitPick.isPending}
-        />
+      {draftCount > 0 && (
+        <div className="fixed bottom-0 left-0 right-0 z-50 bg-background/95 backdrop-blur border-t border-white/10 px-4 py-4">
+          <div className="max-w-5xl mx-auto flex items-center justify-between gap-4">
+            <div>
+              <p className="font-display font-bold text-base">{draftCount} pick{draftCount !== 1 ? "s" : ""} selected</p>
+              <p className="text-xs text-muted-foreground">
+                {Object.values(drafts).map((d) => d.pick.split(" ").slice(-1)[0]).join(", ")}
+              </p>
+            </div>
+            <Button
+              className="bg-primary text-primary-foreground px-6 gap-2 shrink-0"
+              onClick={() => submitPicks.mutate(Object.values(drafts))}
+              disabled={submitPicks.isPending}
+              data-testid="button-submit-all-picks"
+            >
+              {submitPicks.isPending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+              Submit {draftCount} Pick{draftCount !== 1 ? "s" : ""}
+            </Button>
+          </div>
+        </div>
       )}
     </div>
   );
