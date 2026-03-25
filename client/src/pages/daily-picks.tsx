@@ -144,12 +144,16 @@ function PickDialog({ game, onClose, onSubmit, isSubmitting }: {
   );
 }
 
+const FOUNDER_CODE = "NIKCOX";
+
 export default function DailyPicks() {
   const { user } = useAuth() as { user: any };
   const qc = useQueryClient();
   const { toast } = useToast();
   const [league, setLeague] = useState("All");
   const [pickGame, setPickGame] = useState<any | null>(null);
+
+  const isFounder = user?.referralCode === FOUNDER_CODE;
 
   const { data: allGames = [], isLoading: gamesLoading } = useQuery<any[]>({ queryKey: ["/api/games"] });
   const { data: myPredictions = [] } = useQuery<any[]>({
@@ -165,6 +169,15 @@ export default function DailyPicks() {
       toast({ title: "Pick locked in!", description: "Good luck — results update automatically." });
     },
     onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const syncGames = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/games/sync"),
+    onSuccess: (data: any) => {
+      qc.invalidateQueries({ queryKey: ["/api/games"] });
+      toast({ title: "Games synced!", description: `${data?.synced ?? 0} new games added from ESPN. Leagues: ${(data?.leagues ?? []).join(", ") || "none"}` });
+    },
+    onError: (e: any) => toast({ title: "Sync failed", description: e.message, variant: "destructive" }),
   });
 
   const todayGames = useMemo(() =>
@@ -217,7 +230,22 @@ export default function DailyPicks() {
             <p className="text-muted-foreground text-sm max-w-xl">
               Pick any game across every sport. Results grade automatically the moment games end.
             </p>
-            <p className="text-xs text-muted-foreground/50 mt-2">{today}</p>
+            <div className="flex items-center gap-4 mt-3">
+              <p className="text-xs text-muted-foreground/50">{today}</p>
+              {isFounder && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs border-primary/30 text-primary hover:bg-primary/10 gap-1.5"
+                  onClick={() => syncGames.mutate()}
+                  disabled={syncGames.isPending}
+                  data-testid="button-sync-games"
+                >
+                  {syncGames.isPending ? <Loader2 size={11} className="animate-spin" /> : <TrendingUp size={11} />}
+                  Sync Today's Games
+                </Button>
+              )}
+            </div>
           </div>
         </div>
 
