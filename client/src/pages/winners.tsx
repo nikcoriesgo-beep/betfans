@@ -559,7 +559,7 @@ export default function Winners() {
             </div>
             <div className="mt-3 p-3 rounded-lg bg-primary/5 border border-primary/10">
               <p className="text-xs text-muted-foreground">
-                <strong className="text-primary">Payouts:</strong> Winnings are paid directly to the same debit card or payment method you signed up with via Stripe.
+                <strong className="text-primary">Payouts:</strong> Winnings are paid directly to the PayPal account you subscribed with.
                 Your payout is automatically credited to your account — no extra steps needed.
               </p>
             </div>
