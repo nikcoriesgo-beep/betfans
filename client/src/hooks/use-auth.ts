@@ -8,9 +8,11 @@ interface AuthUser {
   profileImageUrl: string | null;
   stripeCustomerId: string | null;
   stripeSubscriptionId: string | null;
+  paypalSubscriptionId: string | null;
   membershipTier: string | null;
   walletBalance: string | null;
   referralCode: string | null;
+  referredBy: string | null;
   createdAt: string | null;
 }
 
