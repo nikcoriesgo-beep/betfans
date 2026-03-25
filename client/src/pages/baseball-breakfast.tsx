@@ -1,15 +1,11 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Navbar } from "@/components/layout/Navbar";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Trophy, TrendingUp, Flame, Target, CircleDot, Clock, Loader2, Coffee,
-  Sun, Zap, CheckCircle2, XCircle, Plus, Edit2, RotateCcw, Lock, UserCircle2
+  Sun, Zap, CheckCircle2, XCircle, UserCircle2, Send, Lock
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -45,6 +41,14 @@ interface BBData {
   date: string;
 }
 
+interface DraftPick {
+  homeTeam: string;
+  awayTeam: string;
+  gameTime: string;
+  pick: string;
+  predictionType: string;
+}
+
 function StatCard({ icon: Icon, label, value, color }: { icon: any; label: string; value: string | number; color: string }) {
   return (
     <Card className="bg-card/30 border-white/5">
@@ -61,7 +65,7 @@ function StatCard({ icon: Icon, label, value, color }: { icon: any; label: strin
   );
 }
 
-function GameStatusBadge({ status, detailedState, inning, inningHalf }: { status: string; detailedState: string; inning: number | null; inningHalf: string | null }) {
+function GameStatusBadge({ status, inning, inningHalf }: { status: string; inning: number | null; inningHalf: string | null }) {
   if (status === "Live" || status === "In Progress") {
     return (
       <Badge className="bg-green-500/20 text-green-400 border-green-500/30 text-[10px] animate-pulse">
@@ -81,137 +85,61 @@ function PickResultBadge({ result }: { result: string }) {
   return <Badge className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30 text-[10px]">PENDING</Badge>;
 }
 
-function PickDialog({ game, onClose, onSubmit, isSubmitting }: {
-  game: MLBGame; onClose: () => void;
-  onSubmit: (data: any) => void; isSubmitting: boolean;
-}) {
-  const [predType, setPredType] = useState("Moneyline");
-  const [pick, setPick] = useState(game.homeTeam);
-  const [odds, setOdds] = useState("");
-
-  return (
-    <Dialog open onOpenChange={onClose}>
-      <DialogContent className="bg-card border-white/10 max-w-sm">
-        <DialogHeader>
-          <DialogTitle className="font-display text-base">
-            Post Pick — {game.awayTeam} @ {game.homeTeam}
-          </DialogTitle>
-        </DialogHeader>
-        <div className="space-y-4 mt-2">
-          <div>
-            <Label className="text-xs text-muted-foreground">Pick Type</Label>
-            <Select value={predType} onValueChange={setPredType}>
-              <SelectTrigger className="mt-1 bg-white/5 border-white/10 text-sm" data-testid="select-pred-type">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Moneyline">Moneyline</SelectItem>
-                <SelectItem value="Run Line">Run Line (-1.5)</SelectItem>
-                <SelectItem value="First 5 Innings">First 5 Innings</SelectItem>
-                <SelectItem value="Over/Under">Over/Under</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <Label className="text-xs text-muted-foreground">Your Pick</Label>
-            <Select value={pick} onValueChange={setPick}>
-              <SelectTrigger className="mt-1 bg-white/5 border-white/10 text-sm" data-testid="select-pick-team">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={game.awayTeam}>{game.awayTeam} (Away)</SelectItem>
-                <SelectItem value={game.homeTeam}>{game.homeTeam} (Home)</SelectItem>
-                {predType === "Over/Under" && <SelectItem value="Over">Over</SelectItem>}
-                {predType === "Over/Under" && <SelectItem value="Under">Under</SelectItem>}
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <Label className="text-xs text-muted-foreground">Odds (optional, e.g. -110, +150)</Label>
-            <Input
-              value={odds}
-              onChange={(e) => setOdds(e.target.value)}
-              placeholder="-110"
-              className="mt-1 bg-white/5 border-white/10 text-sm"
-              data-testid="input-odds"
-            />
-          </div>
-          <Button
-            className="w-full bg-primary text-primary-foreground"
-            onClick={() => onSubmit({ homeTeam: game.homeTeam, awayTeam: game.awayTeam, gameTime: game.gameTime, predictionType: predType, pick, odds })}
-            disabled={isSubmitting}
-            data-testid="button-submit-pick"
-          >
-            {isSubmitting ? <Loader2 size={14} className="animate-spin mr-2" /> : <Plus size={14} className="mr-2" />}
-            Post Pick
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function ResultDialog({ pick, onClose, onSubmit, isSubmitting }: {
-  pick: any; onClose: () => void; onSubmit: (result: string) => void; isSubmitting: boolean;
-}) {
-  return (
-    <Dialog open onOpenChange={onClose}>
-      <DialogContent className="bg-card border-white/10 max-w-xs">
-        <DialogHeader>
-          <DialogTitle className="font-display text-base">Update Result</DialogTitle>
-        </DialogHeader>
-        <p className="text-sm text-muted-foreground mb-4">Pick: <span className="text-white font-semibold">{pick.pick}</span></p>
-        <div className="grid grid-cols-2 gap-2">
-          <Button onClick={() => onSubmit("win")} disabled={isSubmitting} className="bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30" data-testid="button-result-win">✓ Win</Button>
-          <Button onClick={() => onSubmit("loss")} disabled={isSubmitting} className="bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30" data-testid="button-result-loss">✗ Loss</Button>
-          <Button onClick={() => onSubmit("push")} disabled={isSubmitting} className="bg-gray-500/20 text-gray-400 border border-gray-500/30 hover:bg-gray-500/30" data-testid="button-result-push">Push</Button>
-          <Button onClick={() => onSubmit("pending")} disabled={isSubmitting} variant="outline" className="border-white/10" data-testid="button-result-pending"><RotateCcw size={12} className="mr-1" />Reset</Button>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 export default function BaseballBreakfast() {
   const { user } = useAuth() as { user: any };
   const isFounder = user?.referralCode === "NIKCOX";
   const qc = useQueryClient();
   const { toast } = useToast();
-  const [pickGame, setPickGame] = useState<MLBGame | null>(null);
-  const [resultPick, setResultPick] = useState<any | null>(null);
+  const [drafts, setDrafts] = useState<Record<number, DraftPick>>({});
 
   const { data, isLoading } = useQuery<BBData>({ queryKey: ["/api/baseball-breakfast"] });
   const today = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
 
-  const postPick = useMutation({
-    mutationFn: (body: any) => apiRequest("POST", "/api/baseball-breakfast/pick", body),
+  const submitPicks = useMutation({
+    mutationFn: async (picks: DraftPick[]) => {
+      for (const p of picks) {
+        await apiRequest("POST", "/api/baseball-breakfast/pick", p);
+      }
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/api/baseball-breakfast"] });
-      setPickGame(null);
-      toast({ title: "Pick posted!", description: "Your pick is live." });
+      setDrafts({});
+      const count = Object.keys(drafts).length;
+      toast({ title: `${count} pick${count !== 1 ? "s" : ""} posted!`, description: "Your picks are live on Baseball Breakfast." });
     },
-    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
-  });
-
-  const updateResult = useMutation({
-    mutationFn: ({ id, result }: { id: number; result: string }) =>
-      apiRequest("PATCH", `/api/baseball-breakfast/pick/${id}`, { result }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["/api/baseball-breakfast"] });
-      setResultPick(null);
-      toast({ title: "Result updated!" });
-    },
-    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+    onError: (e: any) => toast({ title: "Error posting picks", description: e.message, variant: "destructive" }),
   });
 
   const stats = data?.stats || { wins: 0, losses: 0, profit: 0, roi: 0, streak: 0, totalPicks: 0 };
   const games = data?.games || [];
   const founder = data?.founder;
+  const draftCount = Object.keys(drafts).length;
+
+  function selectPick(game: MLBGame, pick: string, predictionType: string) {
+    setDrafts((prev) => {
+      const existing = prev[game.mlbGamePk];
+      if (existing?.pick === pick && existing?.predictionType === predictionType) {
+        const next = { ...prev };
+        delete next[game.mlbGamePk];
+        return next;
+      }
+      return {
+        ...prev,
+        [game.mlbGamePk]: {
+          homeTeam: game.homeTeam,
+          awayTeam: game.awayTeam,
+          gameTime: game.gameTime,
+          pick,
+          predictionType,
+        },
+      };
+    });
+  }
 
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
-      <div className="container mx-auto px-4 pt-24 pb-16 max-w-5xl">
+      <div className={cn("container mx-auto px-4 pt-24 max-w-5xl", draftCount > 0 ? "pb-32" : "pb-16")}>
 
         <div className="relative mb-8 overflow-hidden rounded-2xl bg-gradient-to-br from-blue-900/40 via-card/60 to-red-900/20 border border-white/5 p-6 md:p-10">
           <div className="absolute top-4 right-4 opacity-10"><Coffee size={110} /></div>
@@ -224,18 +152,34 @@ export default function BaseballBreakfast() {
               Baseball For Breakfast
             </h1>
             <p className="text-muted-foreground text-sm max-w-xl">
-              Live MLB game feed with Spider AI analysis and the Founder's daily picks. Open to everyone — join to make your own selections.
+              {isFounder
+                ? "Tap a team to select your picks, then hit Submit at the bottom."
+                : "Live MLB games with Spider AI analysis and the Founder's daily picks."}
             </p>
             <p className="text-xs text-muted-foreground/50 mt-2">{today}</p>
           </div>
         </div>
+
+        {!user && (
+          <div className="mb-6 rounded-xl border border-primary/20 bg-primary/5 p-4 flex items-center justify-between gap-4">
+            <div>
+              <p className="font-display font-bold text-sm">Already a member?</p>
+              <p className="text-xs text-muted-foreground">Log in to post your picks and appear on the leaderboard.</p>
+            </div>
+            <a href="/auth">
+              <Button size="sm" className="bg-primary text-primary-foreground shrink-0" data-testid="button-login-bb">
+                Log In
+              </Button>
+            </a>
+          </div>
+        )}
 
         {founder && (
           <div className="flex items-center gap-3 mb-6 p-3 rounded-xl bg-card/20 border border-white/5 w-fit">
             {founder.profileImageUrl ? (
               <img src={founder.profileImageUrl} alt="Founder" className="w-10 h-10 rounded-full border-2 border-primary/30" />
             ) : (
-              <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold">
+              <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-sm">
                 {(founder.firstName?.[0] || "N").toUpperCase()}
               </div>
             )}
@@ -283,162 +227,189 @@ export default function BaseballBreakfast() {
           </Card>
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
-            {games.map((game) => (
-              <Card
-                key={game.mlbGamePk}
-                className="bg-card/30 border-white/5 hover:border-white/10 transition-all"
-                data-testid={`card-game-${game.mlbGamePk}`}
-              >
-                <CardContent className="p-5">
-                  <div className="flex items-center justify-between mb-3">
-                    <GameStatusBadge
-                      status={game.status}
-                      detailedState={game.detailedState}
-                      inning={game.inning}
-                      inningHalf={game.inningHalf}
-                    />
-                    <div className="flex items-center gap-1 text-[10px] text-muted-foreground/60">
-                      <Clock size={9} />
-                      {new Date(game.gameTime).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZoneName: "short" })}
-                    </div>
-                  </div>
+            {games.map((game) => {
+              const draft = drafts[game.mlbGamePk];
+              const isFinished = game.status === "Final";
 
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="text-center flex-1">
-                      <p className="text-[10px] text-muted-foreground mb-0.5">AWAY</p>
-                      <p className="font-display font-bold text-sm leading-tight">{game.awayAbbr || game.awayTeam}</p>
-                      <p className="text-[10px] text-muted-foreground/60 truncate max-w-[80px] mx-auto">{game.awayTeam}</p>
-                    </div>
-                    <div className="text-center px-3">
-                      {game.homeScore !== null && game.awayScore !== null ? (
-                        <p className="font-display font-bold text-2xl text-white">{game.awayScore} - {game.homeScore}</p>
-                      ) : (
-                        <p className="text-muted-foreground/40 text-xs font-medium">VS</p>
-                      )}
-                    </div>
-                    <div className="text-center flex-1">
-                      <p className="text-[10px] text-muted-foreground mb-0.5">HOME</p>
-                      <p className="font-display font-bold text-sm leading-tight">{game.homeAbbr || game.homeTeam}</p>
-                      <p className="text-[10px] text-muted-foreground/60 truncate max-w-[80px] mx-auto">{game.homeTeam}</p>
-                    </div>
-                  </div>
-
-                  {(game.awayPitcher || game.homePitcher) && (
-                    <div className="flex items-center justify-between mb-3 px-1 py-2 rounded-lg bg-white/3 border border-white/5">
-                      <div className="flex items-center gap-1.5 flex-1 min-w-0">
-                        <UserCircle2 size={11} className="text-muted-foreground/50 shrink-0" />
-                        <span className="text-[10px] text-muted-foreground/70 truncate">{game.awayPitcher || "TBD"}</span>
-                      </div>
-                      <span className="text-[9px] text-muted-foreground/30 px-2 shrink-0">SP</span>
-                      <div className="flex items-center gap-1.5 flex-1 min-w-0 justify-end">
-                        <span className="text-[10px] text-muted-foreground/70 truncate text-right">{game.homePitcher || "TBD"}</span>
-                        <UserCircle2 size={11} className="text-muted-foreground/50 shrink-0" />
-                      </div>
-                    </div>
+              return (
+                <Card
+                  key={game.mlbGamePk}
+                  className={cn(
+                    "bg-card/30 border-white/5 hover:border-white/10 transition-all",
+                    draft && "border-primary/40 bg-primary/5"
                   )}
-
-                  <div className="bg-primary/5 border border-primary/10 rounded-lg p-3 mb-3">
-                    <div className="flex items-center gap-1.5 mb-1.5">
-                      <Zap size={10} className="text-primary" />
-                      <span className="text-[10px] text-primary uppercase tracking-wider font-medium">Spider AI</span>
-                      <span className="text-[10px] text-muted-foreground ml-auto">{game.spider.confidence}% confidence</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-[10px] text-muted-foreground">{game.spider.type}</p>
-                        <p className="font-display font-bold text-sm text-primary">{game.spider.pick}</p>
-                      </div>
-                      <div className="w-16 h-1.5 bg-white/5 rounded-full overflow-hidden">
-                        <div className="h-full bg-primary rounded-full" style={{ width: `${game.spider.confidence}%` }} />
+                  data-testid={`card-game-${game.mlbGamePk}`}
+                >
+                  <CardContent className="p-5">
+                    <div className="flex items-center justify-between mb-3">
+                      <GameStatusBadge status={game.status} inning={game.inning} inningHalf={game.inningHalf} />
+                      <div className="flex items-center gap-1 text-[10px] text-muted-foreground/60">
+                        <Clock size={9} />
+                        {new Date(game.gameTime).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZoneName: "short" })}
                       </div>
                     </div>
-                  </div>
 
-                  {game.founderPick ? (
-                    <div className="bg-yellow-500/5 border border-yellow-500/20 rounded-lg p-3">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="text-center flex-1">
+                        <p className="text-[10px] text-muted-foreground mb-0.5">AWAY</p>
+                        <p className="font-display font-bold text-base leading-tight">{game.awayAbbr || game.awayTeam}</p>
+                        <p className="text-[10px] text-muted-foreground/60 truncate max-w-[80px] mx-auto">{game.awayTeam}</p>
+                      </div>
+                      <div className="text-center px-3">
+                        {game.homeScore !== null && game.awayScore !== null ? (
+                          <p className="font-display font-bold text-2xl text-white">{game.awayScore} - {game.homeScore}</p>
+                        ) : (
+                          <p className="text-muted-foreground/40 text-xs font-medium">VS</p>
+                        )}
+                      </div>
+                      <div className="text-center flex-1">
+                        <p className="text-[10px] text-muted-foreground mb-0.5">HOME</p>
+                        <p className="font-display font-bold text-base leading-tight">{game.homeAbbr || game.homeTeam}</p>
+                        <p className="text-[10px] text-muted-foreground/60 truncate max-w-[80px] mx-auto">{game.homeTeam}</p>
+                      </div>
+                    </div>
+
+                    {(game.awayPitcher || game.homePitcher) && (
+                      <div className="flex items-center justify-between mb-3 px-2 py-2 rounded-lg bg-white/3 border border-white/5">
+                        <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                          <UserCircle2 size={11} className="text-muted-foreground/50 shrink-0" />
+                          <span className="text-[10px] text-muted-foreground/80 truncate">{game.awayPitcher || "TBD"}</span>
+                        </div>
+                        <span className="text-[9px] text-muted-foreground/30 px-2 shrink-0">SP</span>
+                        <div className="flex items-center gap-1.5 flex-1 min-w-0 justify-end">
+                          <span className="text-[10px] text-muted-foreground/80 truncate text-right">{game.homePitcher || "TBD"}</span>
+                          <UserCircle2 size={11} className="text-muted-foreground/50 shrink-0" />
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="bg-primary/5 border border-primary/10 rounded-lg p-3 mb-3">
+                      <div className="flex items-center gap-1.5 mb-1.5">
+                        <Zap size={10} className="text-primary" />
+                        <span className="text-[10px] text-primary uppercase tracking-wider font-medium">Spider AI</span>
+                        <span className="text-[10px] text-muted-foreground ml-auto">{game.spider.confidence}% confidence</span>
+                      </div>
                       <div className="flex items-center justify-between">
                         <div>
-                          <div className="flex items-center gap-1.5 mb-1">
-                            <Coffee size={10} className="text-yellow-400" />
-                            <span className="text-[10px] text-yellow-400 uppercase tracking-wider">Founder's Pick</span>
-                          </div>
-                          <p className="text-[10px] text-muted-foreground">{game.founderPick.predictionType}</p>
-                          <p className="font-display font-bold text-sm">{game.founderPick.pick}</p>
-                          {game.founderPick.odds && <p className="text-[10px] text-muted-foreground mt-0.5">{game.founderPick.odds}</p>}
+                          <p className="text-[10px] text-muted-foreground">{game.spider.type}</p>
+                          <p className="font-display font-bold text-sm text-primary">{game.spider.pick}</p>
                         </div>
-                        <div className="flex flex-col items-end gap-2">
-                          <PickResultBadge result={game.founderPick.result} />
-                          {isFounder && (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="h-6 text-[10px] text-muted-foreground hover:text-white px-2"
-                              onClick={() => setResultPick(game.founderPick)}
-                              data-testid={`button-update-result-${game.mlbGamePk}`}
-                            >
-                              <Edit2 size={9} className="mr-1" />Update
-                            </Button>
-                          )}
+                        <div className="w-16 h-1.5 bg-white/5 rounded-full overflow-hidden">
+                          <div className="h-full bg-primary rounded-full" style={{ width: `${game.spider.confidence}%` }} />
                         </div>
                       </div>
                     </div>
-                  ) : (
-                    <div className="flex items-center justify-between">
-                      {isFounder ? (
-                        <Button
-                          size="sm"
-                          className="w-full bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 text-xs h-8"
-                          onClick={() => setPickGame(game)}
-                          data-testid={`button-make-pick-${game.mlbGamePk}`}
-                        >
-                          <Plus size={12} className="mr-1.5" />Post Your Pick
-                        </Button>
-                      ) : (
-                        <div className="flex items-center gap-2 text-[10px] text-muted-foreground/50 w-full justify-center py-1">
-                          <Clock size={10} />
-                          No pick posted yet for this game
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        )}
 
-        {!user && (
-          <div className="mt-10 rounded-2xl bg-gradient-to-br from-primary/10 to-card/40 border border-primary/20 p-8 text-center">
-            <Lock size={32} className="text-primary/40 mx-auto mb-3" />
-            <h3 className="font-display font-bold text-lg mb-2">Make Your Own Picks</h3>
-            <p className="text-sm text-muted-foreground mb-5 max-w-md mx-auto">
-              You're watching the live feed — join BetFans to post your own MLB picks, track your record, and compete on the leaderboard.
-            </p>
-            <a href="/membership">
-              <Button className="bg-primary text-primary-foreground px-8" data-testid="button-join-betfans">
-                Join BetFans
-              </Button>
-            </a>
+                    {game.founderPick ? (
+                      <div className="bg-yellow-500/5 border border-yellow-500/20 rounded-lg p-3">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="flex items-center gap-1.5 mb-1">
+                              <Coffee size={10} className="text-yellow-400" />
+                              <span className="text-[10px] text-yellow-400 uppercase tracking-wider">Founder's Pick</span>
+                            </div>
+                            <p className="text-[10px] text-muted-foreground">{game.founderPick.predictionType}</p>
+                            <p className="font-display font-bold text-sm">{game.founderPick.pick}</p>
+                          </div>
+                          <PickResultBadge result={game.founderPick.result} />
+                        </div>
+                      </div>
+                    ) : isFounder && !isFinished ? (
+                      <div className="space-y-2">
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            onClick={() => selectPick(game, game.awayTeam, "Moneyline")}
+                            className={cn(
+                              "rounded-lg p-2.5 text-center transition-all border text-xs font-medium",
+                              draft?.pick === game.awayTeam
+                                ? "bg-primary text-primary-foreground border-primary"
+                                : "bg-white/5 border-white/10 text-muted-foreground hover:border-white/20 hover:text-white"
+                            )}
+                            data-testid={`button-pick-away-${game.mlbGamePk}`}
+                          >
+                            <p className="text-[9px] opacity-60 uppercase tracking-wider mb-0.5">Away</p>
+                            <p className="font-display font-bold text-xs">{game.awayAbbr || game.awayTeam.split(" ").slice(-1)[0]}</p>
+                          </button>
+                          <button
+                            onClick={() => selectPick(game, game.homeTeam, "Moneyline")}
+                            className={cn(
+                              "rounded-lg p-2.5 text-center transition-all border text-xs font-medium",
+                              draft?.pick === game.homeTeam
+                                ? "bg-primary text-primary-foreground border-primary"
+                                : "bg-white/5 border-white/10 text-muted-foreground hover:border-white/20 hover:text-white"
+                            )}
+                            data-testid={`button-pick-home-${game.mlbGamePk}`}
+                          >
+                            <p className="text-[9px] opacity-60 uppercase tracking-wider mb-0.5">Home</p>
+                            <p className="font-display font-bold text-xs">{game.homeAbbr || game.homeTeam.split(" ").slice(-1)[0]}</p>
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            onClick={() => selectPick(game, "Over", "Over/Under")}
+                            className={cn(
+                              "rounded-lg px-3 py-2 text-center transition-all border text-xs font-medium",
+                              draft?.pick === "Over"
+                                ? "bg-primary text-primary-foreground border-primary"
+                                : "bg-white/5 border-white/10 text-muted-foreground hover:border-white/20 hover:text-white"
+                            )}
+                            data-testid={`button-pick-over-${game.mlbGamePk}`}
+                          >
+                            Over (O/U)
+                          </button>
+                          <button
+                            onClick={() => selectPick(game, "Under", "Over/Under")}
+                            className={cn(
+                              "rounded-lg px-3 py-2 text-center transition-all border text-xs font-medium",
+                              draft?.pick === "Under"
+                                ? "bg-primary text-primary-foreground border-primary"
+                                : "bg-white/5 border-white/10 text-muted-foreground hover:border-white/20 hover:text-white"
+                            )}
+                            data-testid={`button-pick-under-${game.mlbGamePk}`}
+                          >
+                            Under (O/U)
+                          </button>
+                        </div>
+                        {draft && (
+                          <p className="text-center text-[10px] text-primary/70 font-medium">
+                            ✓ {draft.pick} selected — tap again to deselect
+                          </p>
+                        )}
+                      </div>
+                    ) : !isFounder && !isFinished ? (
+                      <div className="flex items-center gap-2 text-[10px] text-muted-foreground/50 w-full justify-center py-1">
+                        <Clock size={10} />
+                        Founder's pick coming soon
+                      </div>
+                    ) : null}
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
         )}
       </div>
 
-      {pickGame && (
-        <PickDialog
-          game={pickGame}
-          onClose={() => setPickGame(null)}
-          onSubmit={(data) => postPick.mutate(data)}
-          isSubmitting={postPick.isPending}
-        />
-      )}
-
-      {resultPick && (
-        <ResultDialog
-          pick={resultPick}
-          onClose={() => setResultPick(null)}
-          onSubmit={(result) => updateResult.mutate({ id: resultPick.id, result })}
-          isSubmitting={updateResult.isPending}
-        />
+      {isFounder && draftCount > 0 && (
+        <div className="fixed bottom-0 left-0 right-0 z-50 bg-background/95 backdrop-blur border-t border-white/10 px-4 py-4">
+          <div className="max-w-5xl mx-auto flex items-center justify-between gap-4">
+            <div>
+              <p className="font-display font-bold text-base">{draftCount} pick{draftCount !== 1 ? "s" : ""} selected</p>
+              <p className="text-xs text-muted-foreground">
+                {Object.values(drafts).map((d) => d.pick.split(" ").slice(-1)[0]).join(", ")}
+              </p>
+            </div>
+            <Button
+              className="bg-primary text-primary-foreground px-6 gap-2 shrink-0"
+              onClick={() => submitPicks.mutate(Object.values(drafts))}
+              disabled={submitPicks.isPending}
+              data-testid="button-submit-bb-picks"
+            >
+              {submitPicks.isPending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+              Post {draftCount} Pick{draftCount !== 1 ? "s" : ""}
+            </Button>
+          </div>
+        </div>
       )}
     </div>
   );
