@@ -201,17 +201,58 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getLeaderboard(period: string, limit = 50): Promise<(LeaderboardEntry & { user: User | null })[]> {
-    const entries = await db
-      .select()
-      .from(leaderboardEntries)
-      .leftJoin(users, eq(leaderboardEntries.userId, users.id))
-      .where(eq(leaderboardEntries.period, period))
-      .orderBy(desc(leaderboardEntries.roi))
-      .limit(limit);
+    const now = new Date();
+    let periodStart: Date;
+    if (period === "daily") {
+      periodStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    } else if (period === "weekly") {
+      const day = now.getDay();
+      periodStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - day);
+    } else if (period === "monthly") {
+      periodStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    } else {
+      periodStart = new Date(now.getFullYear(), 0, 1);
+    }
 
-    return entries.map((e) => ({
-      ...e.leaderboard_entries,
-      user: e.users,
+    const allPreds = await db.select().from(predictions).where(sql`${predictions.createdAt} >= ${periodStart}`);
+    const allUsers = await db.select().from(users);
+    const userMap = new Map(allUsers.map((u) => [u.id, u]));
+
+    const byUser: Record<string, typeof allPreds> = {};
+    for (const p of allPreds) {
+      if (!byUser[p.userId]) byUser[p.userId] = [];
+      byUser[p.userId].push(p);
+    }
+
+    const computed = Object.entries(byUser)
+      .map(([userId, preds]) => {
+        const wins = preds.filter((p) => p.result === "win").length;
+        const losses = preds.filter((p) => p.result === "loss").length;
+        const profit = preds.reduce((acc, p) => acc + (p.payout || 0), 0);
+        const total = wins + losses;
+        const roi = total > 0 ? (profit / total) * 100 : 0;
+        let streak = 0;
+        const sorted = [...preds].sort((a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime());
+        for (const p of sorted) { if (p.result === "win") streak++; else break; }
+        return { userId, wins, losses, profit: Math.round(profit * 100) / 100, roi: Math.round(roi * 100) / 100, streak, total };
+      })
+      .filter((e) => e.total > 0 || e.wins + e.losses === 0)
+      .sort((a, b) => b.roi - a.roi || b.wins - a.wins)
+      .slice(0, limit);
+
+    return computed.map((e, i) => ({
+      id: i + 1,
+      userId: e.userId,
+      period,
+      periodStart,
+      rank: i + 1,
+      wins: e.wins,
+      losses: e.losses,
+      roi: e.roi,
+      profit: e.profit,
+      streak: e.streak,
+      updatedAt: now,
+      user: userMap.get(e.userId) ?? null,
     }));
   }
 
