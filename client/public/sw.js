@@ -1,34 +1,16 @@
-const CACHE_NAME = 'betfans-v3';
-
-self.addEventListener('install', () => {
-  self.skipWaiting();
-});
+// Self-destructing service worker — clears all caches and unregisters itself
+// so the browser always fetches the latest version of the site.
+self.addEventListener('install', () => self.skipWaiting());
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
-    )
+    caches.keys()
+      .then((keys) => Promise.all(keys.map((k) => caches.delete(k))))
+      .then(() => self.registration.unregister())
   );
   self.clients.claim();
-});
-
-self.addEventListener('fetch', (event) => {
-  const url = new URL(event.request.url);
-
-  if (url.pathname.startsWith('/api/') || event.request.method !== 'GET') {
-    return;
-  }
-
-  event.respondWith(
-    fetch(event.request)
-      .then((response) => {
-        if (response && response.status === 200) {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
-        }
-        return response;
-      })
-      .catch(() => caches.match(event.request))
-  );
+  // Tell all open tabs to reload so they pick up fresh assets
+  self.clients.matchAll({ type: 'window' }).then((clients) => {
+    clients.forEach((client) => client.navigate(client.url));
+  });
 });
