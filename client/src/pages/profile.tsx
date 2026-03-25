@@ -10,7 +10,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Trophy, Calendar, Target, TrendingUp, Settings, CreditCard, Shield, Wallet,
   ArrowUpRight, ArrowDownLeft, LogOut, Camera, Loader2, MessageSquare,
-  Send, Plus, Clock, MessageCircle, ArrowLeft, Crown, Star, Pin, Lock, CalendarClock,
+  Send, Plus, Clock, MessageCircle, ArrowLeft, Crown, Star, Pin, Lock,
 } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
@@ -468,25 +468,6 @@ export default function Profile() {
     enabled: isAuthenticated && isOwnProfile,
   });
 
-  const portalMutation = useMutation({
-    mutationFn: async () => { const res = await apiRequest("POST", "/api/stripe/portal"); return res.json(); },
-    onSuccess: (data: any) => { if (data.url) window.location.href = data.url; },
-  });
-
-  const { data: subData } = useQuery({
-    queryKey: ["/api/stripe/subscription"],
-    queryFn: async () => {
-      const res = await fetch("/api/stripe/subscription", { credentials: "include" });
-      return res.json();
-    },
-    enabled: isAuthenticated && isOwnProfile,
-  });
-
-  const profileRenewalDate = subData?.subscription?.current_period_end
-    ? new Date(typeof subData.subscription.current_period_end === "number"
-        ? subData.subscription.current_period_end * 1000
-        : subData.subscription.current_period_end)
-    : null;
 
   if (!viewUserId && (isLoading || !user)) {
     return <div className="min-h-screen bg-background flex items-center justify-center"><div className="w-12 h-12 border-4 border-primary/30 border-t-primary rounded-full animate-spin" /></div>;
@@ -547,8 +528,10 @@ export default function Profile() {
                     await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
                     window.location.href = "/";
                   }}><LogOut size={16} /> Logout</Button>
-                  {user?.stripeCustomerId && (
-                    <Button variant="outline" className="gap-2" onClick={() => portalMutation.mutate()} data-testid="button-manage-subscription"><CreditCard size={16} /> Subscription</Button>
+                  {user?.paypalSubscriptionId && (
+                    <a href="https://www.paypal.com/myaccount/autopay/" target="_blank" rel="noopener noreferrer">
+                      <Button variant="outline" className="gap-2" data-testid="button-manage-subscription"><CreditCard size={16} /> Subscription</Button>
+                    </a>
                   )}
                 </div>
               )}
@@ -634,10 +617,12 @@ export default function Profile() {
                     </CardContent>
                   </Card>
                   <Card className="bg-card/30 border-white/5">
-                    <CardHeader><CardTitle>Payment Method</CardTitle><CardDescription>Managed through Stripe</CardDescription></CardHeader>
+                    <CardHeader><CardTitle>Payment Method</CardTitle><CardDescription>Managed through PayPal</CardDescription></CardHeader>
                     <CardContent>
-                      {user?.stripeCustomerId ? (
-                        <Button variant="outline" className="w-full" onClick={() => portalMutation.mutate()} data-testid="button-manage-payment">Manage Payment Methods</Button>
+                      {user?.paypalSubscriptionId ? (
+                        <a href="https://www.paypal.com/myaccount/autopay/" target="_blank" rel="noopener noreferrer" className="w-full block">
+                          <Button variant="outline" className="w-full" data-testid="button-manage-payment">Manage PayPal Subscription</Button>
+                        </a>
                       ) : (
                         <p className="text-sm text-muted-foreground">Subscribe to a membership to add a payment method</p>
                       )}
@@ -704,29 +689,15 @@ export default function Profile() {
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                  {profileRenewalDate && (
-                    <div className="flex items-center gap-3 bg-blue-500/10 border border-blue-500/20 rounded-xl px-4 py-3" data-testid="profile-renewal-reminder">
-                      <CalendarClock size={20} className="text-blue-400 shrink-0" />
-                      <div>
-                        <p className="text-sm font-medium text-blue-400">
-                          Next payment: {profileRenewalDate.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}
-                        </p>
-                        <p className="text-[11px] text-blue-400/60">
-                          {(() => {
-                            const days = Math.ceil((profileRenewalDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-                            if (days <= 0) return "Renewing today";
-                            if (days === 1) return "Renews tomorrow";
-                            return `Renews in ${days} days`;
-                          })()}
-                        </p>
-                      </div>
-                    </div>
-                  )}
                   {user?.membershipTier === "pro" || user?.membershipTier === "legend" ? (
-                    <Button variant="outline" className="border-white/10 hover:bg-white/5" onClick={() => portalMutation.mutate()} data-testid="button-manage-membership">Manage Payment Method</Button>
+                    <a href="https://www.paypal.com/myaccount/autopay/" target="_blank" rel="noopener noreferrer">
+                      <Button variant="outline" className="border-white/10 hover:bg-white/5" data-testid="button-manage-membership">Manage PayPal Subscription</Button>
+                    </a>
                   ) : user?.membershipTier === "rookie" ? (
                     <div className="flex gap-3">
-                      <Button variant="outline" className="border-white/10 hover:bg-white/5" onClick={() => portalMutation.mutate()} data-testid="button-manage-membership">Manage Payment</Button>
+                      <a href="https://www.paypal.com/myaccount/autopay/" target="_blank" rel="noopener noreferrer">
+                        <Button variant="outline" className="border-white/10 hover:bg-white/5" data-testid="button-manage-membership">Manage PayPal</Button>
+                      </a>
                       <Button className="bg-primary text-primary-foreground" onClick={() => navigate("/membership")} data-testid="button-upgrade">Upgrade to Pro</Button>
                     </div>
                   ) : (
