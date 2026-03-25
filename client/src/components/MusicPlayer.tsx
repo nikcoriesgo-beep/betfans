@@ -506,8 +506,8 @@ export function MusicPlayer() {
               {isPlaying && tracks.length > 0 ? tracks[currentTrack]?.title : "BetFans Radio"}
             </h3>
             <p className="text-[10px] text-muted-foreground">
-              {isPlaying ? (isMuted ? "Playing (muted)" : "Now Playing") : "Powered by Suno AI"}
-              {isLooping && isPlaying && !isMuted && " · Looping"}
+              {isPlaying ? "Now Playing" : "Powered by Suno AI"}
+              {isLooping && isPlaying && " · Looping"}
             </p>
           </div>
         </div>
@@ -538,18 +538,6 @@ export function MusicPlayer() {
         </div>
       </div>
 
-      {/* Tap-to-unmute banner — shown when autoplaying muted */}
-      {isPlaying && isMuted && (
-        <button
-          onClick={handleUnmute}
-          className="w-full px-3 py-2 flex items-center justify-center gap-2 bg-primary/10 border-b border-primary/20 hover:bg-primary/20 transition-colors group"
-          data-testid="button-tap-unmute"
-        >
-          <VolumeX size={13} className="text-primary animate-pulse" />
-          <span className="text-[11px] font-semibold text-primary tracking-wide uppercase">Tap to Unmute</span>
-          <Volume2 size={13} className="text-primary/50 group-hover:text-primary transition-colors" />
-        </button>
-      )}
 
       {isMinimized && tracks.length > 0 && (
         <div className="px-3 py-2 flex items-center gap-2">
