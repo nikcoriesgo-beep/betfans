@@ -695,7 +695,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getReferralStats(userId: string): Promise<{ totalReferred: number; signupBonuses: number; predictionBonuses: number; totalEarned: number; pendingCount: number; completedCount: number; monthlyIncome: number; instantBonus: number }> {
-    const FOUNDER_CODES = ["NIKCOX", "DAMON822"];
+    const FOUNDER_CODES = ["NIKCOX"];
     const LAPSE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
     const now = new Date();
 
