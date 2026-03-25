@@ -1097,7 +1097,10 @@ export async function registerRoutes(
         if (subscriptionId) {
           const user = await storage.getUserByPaypalSubscriptionId(subscriptionId);
           if (user) {
-            await storage.updateUser(user.id, { membershipTier: "free" });
+            await storage.updateUser(user.id, {
+              membershipTier: "free",
+              subscriptionCancelledAt: new Date(),
+            });
             console.log(`[PayPal webhook] User ${user.id} subscription cancelled`);
           }
         }
