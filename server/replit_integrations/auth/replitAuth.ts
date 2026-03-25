@@ -36,10 +36,12 @@ export function setupAuth(app: Express) {
 
   app.post("/api/auth/signup", async (req, res) => {
     try {
-      const { phone, password, firstName, lastName } = req.body;
+      const { phone, password, firstName, lastName, email } = req.body;
       if (!phone || !password) {
         return res.status(400).json({ message: "Phone number and password are required" });
       }
+      const FOUNDER_EMAIL = (process.env.FOUNDER_EMAIL || "nikcox@betfans.us").toLowerCase();
+      const isFounderSignup = email && email.toLowerCase().trim() === FOUNDER_EMAIL;
       if (password.length < 6) {
         return res.status(400).json({ message: "Password must be at least 6 characters" });
       }
@@ -63,23 +65,35 @@ export function setupAuth(app: Express) {
         passwordHash,
         firstName: firstName || null,
         lastName: lastName || null,
-        email: null,
+        email: email?.trim().toLowerCase() || null,
         profileImageUrl: null,
       });
 
-      try {
-        await storage.generateReferralCode(user.id);
-      } catch (e) {
-        console.error("Failed to generate referral code:", e);
-      }
-
-      try {
-        const { db: dbConn } = await import("../../db");
-        const { users: usersTable } = await import("@shared/schema");
-        const { eq: eqFn } = await import("drizzle-orm");
-        await dbConn.update(usersTable).set({ referredBy: "NIKCOX" }).where(eqFn(usersTable.id, user.id));
-      } catch (e) {
-        console.error("Failed to set default NIKCOX referral:", e);
+      if (isFounderSignup) {
+        try {
+          const { db: dbConn } = await import("../../db");
+          const { users: usersTable } = await import("@shared/schema");
+          const { eq: eqFn } = await import("drizzle-orm");
+          await dbConn.update(usersTable)
+            .set({ referralCode: "NIKCOX", referredBy: null, membershipTier: "legend" })
+            .where(eqFn(usersTable.id, user.id));
+        } catch (e) {
+          console.error("Failed to set founder code:", e);
+        }
+      } else {
+        try {
+          await storage.generateReferralCode(user.id);
+        } catch (e) {
+          console.error("Failed to generate referral code:", e);
+        }
+        try {
+          const { db: dbConn } = await import("../../db");
+          const { users: usersTable } = await import("@shared/schema");
+          const { eq: eqFn } = await import("drizzle-orm");
+          await dbConn.update(usersTable).set({ referredBy: "NIKCOX" }).where(eqFn(usersTable.id, user.id));
+        } catch (e) {
+          console.error("Failed to set default NIKCOX referral:", e);
+        }
       }
 
       (req.session as any).userId = user.id;
