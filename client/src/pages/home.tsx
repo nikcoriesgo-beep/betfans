@@ -2,11 +2,11 @@ import { Navbar } from "@/components/layout/Navbar";
 import { Hero } from "@/components/home/Hero";
 import { Leaderboard } from "@/components/dashboard/Leaderboard";
 import { Button } from "@/components/ui/button";
-import { ArrowRight, Check, DollarSign, Users, TrendingUp, Share2, Trophy } from "lucide-react";
+import { ArrowRight, Check, DollarSign, Users, TrendingUp, Share2, Trophy, Zap } from "lucide-react";
 import { AdBannerTop, AdBannerInline, AdMarquee } from "@/components/AdBanner";
 import { QuickShareButton } from "@/components/SharePicksCard";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 
 function CaptureReferralCode() {
   useEffect(() => {
@@ -17,6 +17,94 @@ function CaptureReferralCode() {
     }
   }, []);
   return null;
+}
+
+function timeAgo(date: string | Date | null): string {
+  if (!date) return "recently";
+  const diffMs = Date.now() - new Date(date).getTime();
+  const mins = Math.floor(diffMs / 60000);
+  const hrs = Math.floor(mins / 60);
+  const days = Math.floor(hrs / 24);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  if (hrs < 24) return `${hrs}h ago`;
+  if (days < 7) return `${days}d ago`;
+  return new Date(date).toLocaleDateString();
+}
+
+const TIER_STYLES: Record<string, string> = {
+  rookie: "text-blue-400 border-blue-400/40 bg-blue-400/10",
+  pro: "text-purple-400 border-purple-400/40 bg-purple-400/10",
+  legend: "text-yellow-400 border-yellow-400/40 bg-yellow-400/10",
+};
+
+function LiveMemberFeed() {
+  const { data: members = [] } = useQuery<any[]>({
+    queryKey: ["/api/members/recent"],
+    queryFn: async () => {
+      const res = await fetch("/api/members/recent");
+      return res.json();
+    },
+    refetchInterval: 30000,
+  });
+
+  const [current, setCurrent] = useState(0);
+  const [visible, setVisible] = useState(true);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (members.length <= 1) return;
+    timerRef.current = setInterval(() => {
+      setVisible(false);
+      setTimeout(() => {
+        setCurrent((prev) => (prev + 1) % members.length);
+        setVisible(true);
+      }, 400);
+    }, 3500);
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [members.length]);
+
+  if (!members.length) return null;
+
+  const m = members[current];
+  const name = m.firstName
+    ? `${m.firstName}${m.lastName ? " " + m.lastName[0] + "." : ""}`
+    : "New Member";
+  const tier = m.membershipTier || "rookie";
+  const tierStyle = TIER_STYLES[tier] || TIER_STYLES.rookie;
+
+  return (
+    <section className="py-3 bg-primary/5 border-y border-primary/10">
+      <div className="container mx-auto px-4">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-primary" />
+            </span>
+            <span className="text-xs font-semibold text-primary uppercase tracking-widest flex items-center gap-1">
+              <Zap size={10} /> Live Members
+            </span>
+          </div>
+          <div className="w-px h-4 bg-white/10 shrink-0" />
+          <div
+            className="flex items-center gap-2"
+            style={{ opacity: visible ? 1 : 0, transition: "opacity 0.35s ease" }}
+            data-testid="live-member-feed-item"
+          >
+            <span className="text-sm font-semibold text-white">{name}</span>
+            <span className={`text-xs border rounded-full px-2 py-0.5 font-bold capitalize ${tierStyle}`}>
+              {tier}
+            </span>
+            <span className="text-xs text-muted-foreground">joined {timeAgo(m.createdAt)}</span>
+          </div>
+          <div className="ml-auto text-xs text-muted-foreground hidden sm:block" data-testid="live-member-feed-count">
+            {members.length} active member{members.length !== 1 ? "s" : ""}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
 }
 
 function AnimatedCounter({ value, prefix = "" }: { value: number; prefix?: string }) {
@@ -64,6 +152,7 @@ export default function Home() {
       <CaptureReferralCode />
       <Navbar />
       <Hero />
+      <LiveMemberFeed />
       <AdBannerTop />
 
       {/* Live Stats Bar */}
