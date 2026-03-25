@@ -14,6 +14,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
 interface MLBGame {
+  gameId: number;
   mlbGamePk: number;
   homeTeam: string;
   awayTeam: string;
@@ -29,6 +30,8 @@ interface MLBGame {
   venue: string;
   homePitcher: string | null;
   awayPitcher: string | null;
+  spread: string | null;
+  total: string | null;
   spider: { pick: string; confidence: number; type: string };
   founderPick: any | null;
 }
@@ -36,15 +39,12 @@ interface MLBGame {
 interface BBData {
   founder: { id: string; firstName: string | null; lastName: string | null; profileImageUrl: string | null } | null;
   games: MLBGame[];
-  picks: any[];
   stats: { wins: number; losses: number; profit: number; roi: number; streak: number; totalPicks: number };
   date: string;
 }
 
 interface DraftPick {
-  homeTeam: string;
-  awayTeam: string;
-  gameTime: string;
+  gameId: number;
   pick: string;
   predictionType: string;
 }
@@ -129,21 +129,15 @@ export default function BaseballBreakfast() {
 
   function selectPick(game: MLBGame, pick: string, predictionType: string) {
     setDrafts((prev) => {
-      const existing = prev[game.mlbGamePk];
+      const existing = prev[game.gameId];
       if (existing?.pick === pick && existing?.predictionType === predictionType) {
         const next = { ...prev };
-        delete next[game.mlbGamePk];
+        delete next[game.gameId];
         return next;
       }
       return {
         ...prev,
-        [game.mlbGamePk]: {
-          homeTeam: game.homeTeam,
-          awayTeam: game.awayTeam,
-          gameTime: game.gameTime,
-          pick,
-          predictionType,
-        },
+        [game.gameId]: { gameId: game.gameId, pick, predictionType },
       };
     });
   }
@@ -240,17 +234,17 @@ export default function BaseballBreakfast() {
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
             {games.map((game) => {
-              const draft = drafts[game.mlbGamePk];
+              const draft = drafts[game.gameId];
               const isFinished = game.status === "Final";
 
               return (
                 <Card
-                  key={game.mlbGamePk}
+                  key={game.gameId}
                   className={cn(
                     "bg-card/30 border-white/5 hover:border-white/10 transition-all",
                     draft && "border-primary/40 bg-primary/5"
                   )}
-                  data-testid={`card-game-${game.mlbGamePk}`}
+                  data-testid={`card-game-${game.gameId}`}
                 >
                   <CardContent className="p-5">
                     <div className="flex items-center justify-between mb-3">
@@ -334,7 +328,7 @@ export default function BaseballBreakfast() {
                                 game.founderPick.result === "win"
                                   ? "bg-green-500/30 text-green-300 border-green-500/40"
                                   : "bg-green-500/10 text-green-400 border-green-500/20 hover:bg-green-500/20")}
-                              data-testid={`button-grade-win-${game.mlbGamePk}`}
+                              data-testid={`button-grade-win-${game.gameId}`}
                             >✓ WIN</button>
                             <button
                               onClick={() => gradePick.mutate({ id: game.founderPick.id, result: "loss" })}
@@ -343,7 +337,7 @@ export default function BaseballBreakfast() {
                                 game.founderPick.result === "loss"
                                   ? "bg-red-500/30 text-red-300 border-red-500/40"
                                   : "bg-red-500/10 text-red-400 border-red-500/20 hover:bg-red-500/20")}
-                              data-testid={`button-grade-loss-${game.mlbGamePk}`}
+                              data-testid={`button-grade-loss-${game.gameId}`}
                             >✗ LOSS</button>
                             <button
                               onClick={() => gradePick.mutate({ id: game.founderPick.id, result: "push" })}
@@ -352,7 +346,7 @@ export default function BaseballBreakfast() {
                                 game.founderPick.result === "push"
                                   ? "bg-gray-500/30 text-gray-300 border-gray-500/40"
                                   : "bg-gray-500/10 text-gray-400 border-gray-500/20 hover:bg-gray-500/20")}
-                              data-testid={`button-grade-push-${game.mlbGamePk}`}
+                              data-testid={`button-grade-push-${game.gameId}`}
                             >PUSH</button>
                           </div>
                         )}
@@ -368,7 +362,7 @@ export default function BaseballBreakfast() {
                                 ? "bg-primary text-primary-foreground border-primary"
                                 : "bg-white/5 border-white/10 text-muted-foreground hover:border-white/20 hover:text-white"
                             )}
-                            data-testid={`button-pick-away-${game.mlbGamePk}`}
+                            data-testid={`button-pick-away-${game.gameId}`}
                           >
                             <p className="text-[9px] opacity-60 uppercase tracking-wider mb-0.5">Away</p>
                             <p className="font-display font-bold text-xs">{game.awayAbbr || game.awayTeam.split(" ").slice(-1)[0]}</p>
@@ -381,7 +375,7 @@ export default function BaseballBreakfast() {
                                 ? "bg-primary text-primary-foreground border-primary"
                                 : "bg-white/5 border-white/10 text-muted-foreground hover:border-white/20 hover:text-white"
                             )}
-                            data-testid={`button-pick-home-${game.mlbGamePk}`}
+                            data-testid={`button-pick-home-${game.gameId}`}
                           >
                             <p className="text-[9px] opacity-60 uppercase tracking-wider mb-0.5">Home</p>
                             <p className="font-display font-bold text-xs">{game.homeAbbr || game.homeTeam.split(" ").slice(-1)[0]}</p>
@@ -396,7 +390,7 @@ export default function BaseballBreakfast() {
                                 ? "bg-primary text-primary-foreground border-primary"
                                 : "bg-white/5 border-white/10 text-muted-foreground hover:border-white/20 hover:text-white"
                             )}
-                            data-testid={`button-pick-over-${game.mlbGamePk}`}
+                            data-testid={`button-pick-over-${game.gameId}`}
                           >
                             Over (O/U)
                           </button>
@@ -408,7 +402,7 @@ export default function BaseballBreakfast() {
                                 ? "bg-primary text-primary-foreground border-primary"
                                 : "bg-white/5 border-white/10 text-muted-foreground hover:border-white/20 hover:text-white"
                             )}
-                            data-testid={`button-pick-under-${game.mlbGamePk}`}
+                            data-testid={`button-pick-under-${game.gameId}`}
                           >
                             Under (O/U)
                           </button>
