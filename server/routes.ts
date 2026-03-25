@@ -8,6 +8,7 @@ import { eq, sql } from "drizzle-orm";
 import { insertPredictionSchema, insertChatMessageSchema, insertBraggingPostSchema, insertBraggingCommentSchema, insertMusicTrackSchema, insertThreadSchema, insertThreadReplySchema, insertAdvertiserSchema } from "@shared/schema";
 import { stripeService } from "./stripeService";
 import { WebhookHandlers } from "./webhookHandlers";
+import { getPayPalConfig, getSubscriptionDetails, tierFromPlanId } from "./paypalService";
 import { WebSocketServer } from "ws";
 import multer from "multer";
 import { syncSportsData } from "./sportsDataService";
@@ -1022,6 +1023,94 @@ export async function registerRoutes(
       res.json({ data: [] });
     }
   });
+
+  // ── PayPal Subscription Routes ──────────────────────────────────────────────
+
+  app.get("/api/paypal/config", (_req, res) => {
+    const config = getPayPalConfig();
+    if (!config.clientId) {
+      return res.status(503).json({ error: "PayPal not configured" });
+    }
+    res.json(config);
+  });
+
+  app.post("/api/paypal/subscription", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = (req.session as any)?.userId;
+      if (!userId) return res.status(401).json({ message: "Not authenticated" });
+
+      const { subscriptionId, tier } = req.body;
+      if (!subscriptionId || !tier) {
+        return res.status(400).json({ message: "subscriptionId and tier required" });
+      }
+
+      // Verify subscription with PayPal
+      const sub = await getSubscriptionDetails(subscriptionId);
+      if (!sub || sub.status !== "ACTIVE") {
+        return res.status(400).json({ message: "Subscription is not active" });
+      }
+
+      // Determine tier from plan ID if not provided, or validate it
+      const confirmedTier = tierFromPlanId(sub.plan_id) || tier;
+      const validTiers = ["rookie", "pro", "legend"];
+      if (!validTiers.includes(confirmedTier)) {
+        return res.status(400).json({ message: "Invalid tier" });
+      }
+
+      await storage.updateUser(userId, {
+        membershipTier: confirmedTier,
+        paypalSubscriptionId: subscriptionId,
+      });
+
+      console.log(`[PayPal] User ${userId} subscribed to ${confirmedTier} (${subscriptionId})`);
+      res.json({ success: true, tier: confirmedTier });
+    } catch (error: any) {
+      console.error("[PayPal] Subscription verification error:", error.message);
+      res.status(500).json({ message: "Failed to verify subscription" });
+    }
+  });
+
+  app.post("/api/paypal/webhook", async (req, res) => {
+    try {
+      const event = req.body;
+      const resourceType = event?.event_type || "";
+
+      if (resourceType === "BILLING.SUBSCRIPTION.ACTIVATED" || resourceType === "BILLING.SUBSCRIPTION.RENEWED") {
+        const sub = event.resource;
+        const subscriptionId = sub?.id;
+        const planId = sub?.plan_id;
+        if (subscriptionId && planId) {
+          const tier = tierFromPlanId(planId);
+          if (tier) {
+            const users = await storage.getUserByPaypalSubscriptionId(subscriptionId);
+            if (users) {
+              await storage.updateUser(users.id, { membershipTier: tier });
+              console.log(`[PayPal webhook] User ${users.id} activated ${tier}`);
+            }
+          }
+        }
+      }
+
+      if (resourceType === "BILLING.SUBSCRIPTION.CANCELLED" || resourceType === "BILLING.SUBSCRIPTION.EXPIRED") {
+        const sub = event.resource;
+        const subscriptionId = sub?.id;
+        if (subscriptionId) {
+          const user = await storage.getUserByPaypalSubscriptionId(subscriptionId);
+          if (user) {
+            await storage.updateUser(user.id, { membershipTier: "free" });
+            console.log(`[PayPal webhook] User ${user.id} subscription cancelled`);
+          }
+        }
+      }
+
+      res.json({ received: true });
+    } catch (error: any) {
+      console.error("[PayPal webhook] Error:", error.message);
+      res.status(500).json({ error: "Webhook processing failed" });
+    }
+  });
+
+  // ────────────────────────────────────────────────────────────────────────────
 
   app.use("/uploads", (await import("express")).default.static(uploadsDir));
 
