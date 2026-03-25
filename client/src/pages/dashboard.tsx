@@ -5,7 +5,7 @@ import { DailyPredictions } from "@/components/dashboard/DailyPredictions";
 import { PlaceBetModal } from "@/components/dashboard/PlaceBetModal";
 import { CommunityChat } from "@/components/dashboard/CommunityChat";
 import { Button } from "@/components/ui/button";
-import { Plus, Users, Trophy, TrendingUp, CalendarClock } from "lucide-react";
+import { Plus, Users, Trophy, TrendingUp } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
 import { AdSidebar } from "@/components/AdBanner";
@@ -100,23 +100,8 @@ export default function Dashboard() {
     refetchInterval: 10000,
   });
 
-  const { data: subData } = useQuery({
-    queryKey: ["/api/stripe/subscription"],
-    queryFn: async () => {
-      const res = await fetch("/api/stripe/subscription", { credentials: "include" });
-      return res.json();
-    },
-    enabled: isAuthenticated,
-  });
-
   const memberCount = memberData?.count || 0;
   const prizePool = prizePoolData?.amount || 0;
-
-  const renewalDate = subData?.subscription?.current_period_end
-    ? new Date(typeof subData.subscription.current_period_end === "number"
-        ? subData.subscription.current_period_end * 1000
-        : subData.subscription.current_period_end)
-    : null;
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -157,27 +142,6 @@ export default function Dashboard() {
               <div className="text-xs text-muted-foreground uppercase tracking-wider">Prize Pool</div>
             </div>
           </div>
-          {isAuthenticated && renewalDate && (
-            <div className="bg-card/50 backdrop-blur-sm border border-blue-500/20 rounded-xl p-4 flex items-center gap-4 col-span-2 lg:col-span-1" data-testid="renewal-reminder">
-              <div className="w-12 h-12 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center shrink-0">
-                <CalendarClock size={22} className="text-blue-400" />
-              </div>
-              <div>
-                <div className="text-lg md:text-xl font-display font-bold text-blue-400" data-testid="text-renewal-date">
-                  {renewalDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-                </div>
-                <div className="text-xs text-muted-foreground uppercase tracking-wider">Next Payment</div>
-                <div className="text-[10px] text-blue-400/60 mt-0.5">
-                  {(() => {
-                    const days = Math.ceil((renewalDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-                    if (days <= 0) return "Renewing today";
-                    if (days === 1) return "Renews tomorrow";
-                    return `Renews in ${days} days`;
-                  })()}
-                </div>
-              </div>
-            </div>
-          )}
         </div>
 
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
