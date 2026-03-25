@@ -69,11 +69,12 @@ export function setupAuth(app: Express) {
         profileImageUrl: null,
       });
 
+      const { db: dbConn } = await import("../../db");
+      const { users: usersTable } = await import("@shared/schema");
+      const { eq: eqFn } = await import("drizzle-orm");
+
       if (isFounderSignup) {
         try {
-          const { db: dbConn } = await import("../../db");
-          const { users: usersTable } = await import("@shared/schema");
-          const { eq: eqFn } = await import("drizzle-orm");
           await dbConn.update(usersTable)
             .set({ referralCode: "NIKCOX", referredBy: null, membershipTier: "legend" })
             .where(eqFn(usersTable.id, user.id));
@@ -82,17 +83,17 @@ export function setupAuth(app: Express) {
         }
       } else {
         try {
+          // Override DB default — new users must pay before accessing the platform
+          await dbConn.update(usersTable)
+            .set({ membershipTier: "free", referredBy: "NIKCOX" })
+            .where(eqFn(usersTable.id, user.id));
+        } catch (e) {
+          console.error("Failed to set free tier:", e);
+        }
+        try {
           await storage.generateReferralCode(user.id);
         } catch (e) {
           console.error("Failed to generate referral code:", e);
-        }
-        try {
-          const { db: dbConn } = await import("../../db");
-          const { users: usersTable } = await import("@shared/schema");
-          const { eq: eqFn } = await import("drizzle-orm");
-          await dbConn.update(usersTable).set({ referredBy: "NIKCOX" }).where(eqFn(usersTable.id, user.id));
-        } catch (e) {
-          console.error("Failed to set default NIKCOX referral:", e);
         }
       }
 
