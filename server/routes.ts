@@ -140,29 +140,34 @@ export async function registerRoutes(
 
       const today = new Date();
       const dateStr = today.toISOString().slice(0, 10);
-      const mlbGames = await fetchMLBSchedule(dateStr);
 
-      let picks: any[] = [];
+      // Primary source: ESPN-synced DB games — these are the game IDs the auto-grader fires on
+      const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const todayEnd = new Date(todayStart.getTime() + 86400000);
+      const dbMlbGames = await db
+        .select()
+        .from(games)
+        .where(
+          sql`${games.league} = 'MLB' AND ${games.gameTime} >= ${todayStart} AND ${games.gameTime} < ${todayEnd}`
+        );
+
+      // Secondary source: MLB Stats API — only used for pitcher names
+      const mlbApiGames = await fetchMLBSchedule(dateStr);
+      function normalize(s: string) { return s.toLowerCase().replace(/[^a-z]/g, ""); }
+      function teamMatch(dbName: string, apiName: string) {
+        const d = normalize(dbName); const a = normalize(apiName);
+        return d === a || d.includes(a.slice(-6)) || a.includes(d.slice(-6));
+      }
+
       let stats = { wins: 0, losses: 0, profit: 0, roi: 0, streak: 0, totalPicks: 0 };
 
+      // Load founder's all-time MLB predictions for stats
       if (founder) {
         const allPredictions = await storage.getUserPredictions(founder.id);
-        const allGames = await storage.getGames("MLB");
-        const mlbGameIds = new Set(allGames.map((g) => g.id));
-        const mlbPredictions = allPredictions.filter((p) => mlbGameIds.has(p.gameId));
-
-        today.setHours(0, 0, 0, 0);
-        const todayPicks = mlbPredictions.filter((p) => {
-          const d = new Date(p.createdAt!);
-          d.setHours(0, 0, 0, 0);
-          return d.getTime() === today.getTime();
-        });
-
-        picks = todayPicks.map((p) => {
-          const game = allGames.find((g) => g.id === p.gameId);
-          return { ...p, game: game || null };
-        });
-
+        const mlbGameIds = new Set(dbMlbGames.map((g) => g.id));
+        const allDbMlb = await storage.getGames("MLB");
+        const allMlbIds = new Set(allDbMlb.map((g) => g.id));
+        const mlbPredictions = allPredictions.filter((p) => allMlbIds.has(p.gameId));
         const wins = mlbPredictions.filter((p) => p.result === "win").length;
         const losses = mlbPredictions.filter((p) => p.result === "loss").length;
         const profit = mlbPredictions.reduce((acc, p) => acc + (p.payout || 0), 0);
@@ -174,16 +179,57 @@ export async function registerRoutes(
         stats = { wins, losses, profit: Math.round(profit * 100) / 100, roi: Math.round(roi * 100) / 100, streak, totalPicks: total };
       }
 
-      const gamesWithAnalysis = mlbGames.map((g, i) => {
-        const spider = spiderAnalysis(g.awayTeam, g.homeTeam, i + g.mlbGamePk);
-        const founderPick = picks.find((p) => p.game?.homeTeam === g.homeTeam && p.game?.awayTeam === g.awayTeam);
-        return { ...g, spider, founderPick: founderPick || null };
+      // Load today's founder picks from DB (linked by gameId)
+      const todayPredictions = founder
+        ? await db
+            .select()
+            .from(predictions)
+            .where(
+              sql`${predictions.userId} = ${founder.id} AND ${predictions.createdAt} >= ${todayStart} AND ${predictions.createdAt} < ${todayEnd}`
+            )
+        : [];
+
+      const gamesWithAnalysis = dbMlbGames.map((g) => {
+        // Find pitcher data from MLB Stats API by fuzzy team name match
+        const apiGame = mlbApiGames.find(
+          (a: any) => teamMatch(g.homeTeam, a.homeTeam) && teamMatch(g.awayTeam, a.awayTeam)
+        );
+
+        const spider = {
+          pick: g.spiderPick || spiderAnalysis(g.awayTeam, g.homeTeam, g.id).pick,
+          confidence: g.spiderConfidence || spiderAnalysis(g.awayTeam, g.homeTeam, g.id).confidence,
+          type: "Moneyline",
+        };
+
+        const founderPick = todayPredictions.find((p) => p.gameId === g.id) || null;
+
+        return {
+          gameId: g.id,
+          mlbGamePk: apiGame?.mlbGamePk || g.id,
+          homeTeam: g.homeTeam,
+          awayTeam: g.awayTeam,
+          homeAbbr: apiGame?.homeAbbr || g.homeTeam.split(" ").pop() || "",
+          awayAbbr: apiGame?.awayAbbr || g.awayTeam.split(" ").pop() || "",
+          gameTime: g.gameTime,
+          status: g.status === "finished" ? "Final" : g.status === "live" ? "Live" : "Upcoming",
+          detailedState: g.status,
+          homeScore: g.homeScore,
+          awayScore: g.awayScore,
+          inning: apiGame?.inning || null,
+          inningHalf: apiGame?.inningHalf || null,
+          venue: apiGame?.venue || "",
+          homePitcher: apiGame?.homePitcher || null,
+          awayPitcher: apiGame?.awayPitcher || null,
+          spread: g.spread,
+          total: g.total,
+          spider,
+          founderPick,
+        };
       });
 
       res.json({
         founder: founder ? { id: founder.id, firstName: founder.firstName, lastName: founder.lastName, profileImageUrl: founder.profileImageUrl } : null,
         games: gamesWithAnalysis,
-        picks,
         stats,
         date: dateStr,
       });
@@ -201,24 +247,27 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Only the Founder can post picks here" });
       }
 
-      const { homeTeam, awayTeam, gameTime, predictionType, pick, odds } = req.body;
-      if (!homeTeam || !awayTeam || !predictionType || !pick) {
+      const { gameId, predictionType, pick } = req.body;
+      if (!gameId || !predictionType || !pick) {
         return res.status(400).json({ message: "Missing required fields" });
       }
 
-      let game = (await storage.getGames("MLB")).find(
-        (g) => g.homeTeam === homeTeam && g.awayTeam === awayTeam
-      );
+      // Verify this is a real MLB game in the DB (ESPN-synced so auto-grader can fire on it)
+      const [game] = await db.select().from(games).where(eq(games.id, gameId)).limit(1);
+      if (!game || game.league !== "MLB") {
+        return res.status(404).json({ message: "MLB game not found" });
+      }
 
-      if (!game) {
-        game = await storage.createGame({
-          league: "MLB",
-          homeTeam,
-          awayTeam,
-          gameTime: gameTime ? new Date(gameTime) : new Date(),
-          status: "upcoming",
-          isProLocked: false,
-        });
+      // Prevent duplicate picks for the same game today
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+      const existing = await db
+        .select()
+        .from(predictions)
+        .where(sql`${predictions.userId} = ${userId} AND ${predictions.gameId} = ${gameId} AND ${predictions.createdAt} >= ${todayStart}`)
+        .limit(1);
+      if (existing.length > 0) {
+        return res.status(409).json({ message: "Pick already posted for this game today" });
       }
 
       const prediction = await storage.createPrediction({
@@ -227,7 +276,7 @@ export async function registerRoutes(
         predictionType,
         pick,
         units: 1,
-        odds: odds?.toString() || null,
+        odds: null,
         result: "pending",
         payout: 0,
       });
