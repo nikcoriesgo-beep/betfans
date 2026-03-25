@@ -695,6 +695,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getReferralStats(userId: string): Promise<{ totalReferred: number; signupBonuses: number; predictionBonuses: number; totalEarned: number; pendingCount: number; completedCount: number; monthlyIncome: number; instantBonus: number }> {
+    const FOUNDER_CODES = ["NIKCOX", "DAMON822"];
+    const LAPSE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+    const now = new Date();
+
     const refs = await db.select().from(referrals).where(eq(referrals.referrerId, userId));
     const totalReferred = refs.length;
     const activeRefs = refs.filter((r) => r.status === "active");
@@ -702,18 +706,47 @@ export class DatabaseStorage implements IStorage {
     const pendingCount = refs.filter((r) => r.status === "pending").length;
 
     const referrer = await this.getUser(userId);
+    const isFounder = FOUNDER_CODES.includes(referrer?.referralCode ?? "");
     const referrerIsLegend = referrer?.membershipTier === "legend";
-    const adminIds = (process.env.ADMIN_USER_IDS || "").split(",").map(id => id.trim()).filter(Boolean);
-    const isFounder = adminIds[0] === userId;
+
+    // Non-founders who cancelled 30+ days ago lose all residual income
+    const cancelledAt = referrer?.subscriptionCancelledAt ? new Date(referrer.subscriptionCancelledAt) : null;
+    const isLapsed = !isFounder &&
+      referrer?.membershipTier === "free" &&
+      cancelledAt !== null &&
+      (now.getTime() - cancelledAt.getTime()) > LAPSE_MS;
 
     let monthlyIncome = 0;
-    for (const ref of activeRefs) {
-      const referred = await this.getUser(ref.referredId);
-      const referredIsLegend = referred?.membershipTier === "legend";
-      if (referrerIsLegend || isFounder || referredIsLegend) {
-        monthlyIncome += 50;
-      } else {
-        monthlyIncome += 1;
+
+    if (!isLapsed) {
+      for (const ref of activeRefs) {
+        const referred = await this.getUser(ref.referredId);
+        const referredIsLegend = referred?.membershipTier === "legend";
+        if (referrerIsLegend || isFounder || referredIsLegend) {
+          monthlyIncome += 50;
+        } else {
+          monthlyIncome += 1;
+        }
+      }
+    }
+
+    // Founder also earns income redirected from lapsed affiliates
+    if (isFounder) {
+      const allActiveReferrals = await db.select().from(referrals).where(eq(referrals.status, "active"));
+      for (const ref of allActiveReferrals) {
+        if (ref.referrerId === userId) continue; // already counted above
+        const affiliateReferrer = await this.getUser(ref.referrerId);
+        if (!affiliateReferrer) continue;
+        if (FOUNDER_CODES.includes(affiliateReferrer.referralCode ?? "")) continue;
+        const affCancelledAt = affiliateReferrer.subscriptionCancelledAt
+          ? new Date(affiliateReferrer.subscriptionCancelledAt)
+          : null;
+        const affiliateLapsed = affiliateReferrer.membershipTier === "free" &&
+          affCancelledAt !== null &&
+          (now.getTime() - affCancelledAt.getTime()) > LAPSE_MS;
+        if (affiliateLapsed) {
+          monthlyIncome += 50; // lapsed affiliate's earnings redirect to founder
+        }
       }
     }
 
