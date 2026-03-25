@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Trophy, TrendingUp, Flame, Target, CircleDot, Clock, Loader2, Coffee,
-  Sun, Zap, CheckCircle2, XCircle, UserCircle2, Send, RotateCcw, ChevronRight
+  Sun, Zap, CheckCircle2, XCircle, UserCircle2, Send, ChevronRight, Swords
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -147,12 +147,13 @@ export default function BaseballBreakfast() {
       <Navbar />
       <div className={cn("container mx-auto px-4 pt-24 max-w-5xl", draftCount > 0 ? "pb-32" : "pb-16")}>
 
-        <div className="relative mb-8 overflow-hidden rounded-2xl bg-gradient-to-br from-blue-900/40 via-card/60 to-red-900/20 border border-white/5 p-6 md:p-10">
+        {/* Hero banner */}
+        <div className="relative mb-6 overflow-hidden rounded-2xl bg-gradient-to-br from-blue-900/40 via-card/60 to-red-900/20 border border-white/5 p-6 md:p-10">
           <div className="absolute top-4 right-4 opacity-10"><Coffee size={110} /></div>
           <div className="relative z-10">
             <div className="flex items-center gap-2 mb-2">
               <Sun size={14} className="text-yellow-400" />
-              <span className="text-xs text-yellow-400/80 font-medium tracking-widest uppercase">Good Morning</span>
+              <span className="text-xs text-yellow-400/80 font-medium tracking-widest uppercase">Daily MLB Picks · Live Leaderboard</span>
             </div>
             <h1 className="text-3xl md:text-4xl font-display font-bold mb-2" data-testid="text-bb-title">
               Baseball For Breakfast
@@ -160,13 +161,95 @@ export default function BaseballBreakfast() {
             <p className="text-muted-foreground text-sm max-w-xl">
               {isFounder
                 ? "Tap a team to select your picks, then hit Submit at the bottom."
-                : "Live MLB games with Spider AI analysis and the Founder's daily picks."}
+                : "The Founder picks every MLB game, live. Beat his record — join BetFans and get on the leaderboard."}
             </p>
             <p className="text-xs text-muted-foreground/50 mt-2">{today}</p>
           </div>
         </div>
 
-        {!user && (
+        {/* Founder record — bold public challenge card */}
+        {founder && (
+          <div className="relative mb-6 overflow-hidden rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/10 via-card/60 to-card/30 p-6">
+            <div className="absolute inset-0 bg-gradient-to-r from-primary/5 to-transparent pointer-events-none" />
+            <div className="relative z-10 flex flex-col md:flex-row md:items-center gap-6">
+
+              {/* Avatar + name */}
+              <div className="flex items-center gap-4 shrink-0">
+                {founder.profileImageUrl ? (
+                  <img src={founder.profileImageUrl} alt="Founder" className="w-16 h-16 rounded-full border-2 border-primary/50 shadow-lg shadow-primary/20" />
+                ) : (
+                  <div className="w-16 h-16 rounded-full bg-primary/20 border-2 border-primary/40 flex items-center justify-center text-primary font-display font-bold text-2xl shadow-lg shadow-primary/20">
+                    {(founder.firstName?.[0] || "N").toUpperCase()}
+                  </div>
+                )}
+                <div>
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <Badge className="bg-primary/20 text-primary border-primary/30 text-[9px] font-bold tracking-widest">FOUNDER</Badge>
+                  </div>
+                  <p className="font-display font-bold text-lg leading-tight">{founder.firstName} {founder.lastName}</p>
+                  <p className="text-xs text-muted-foreground">MLB Specialist · BetFans</p>
+                </div>
+              </div>
+
+              {/* Big stats */}
+              <div className="flex-1 grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="text-center bg-white/5 rounded-xl py-3 px-2 border border-white/5">
+                  <p className="text-3xl font-display font-black text-white leading-none" data-testid="stat-record">
+                    {stats.wins}<span className="text-muted-foreground/50 text-xl">-</span>{stats.losses}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-widest mt-1">Record</p>
+                </div>
+                <div className="text-center bg-white/5 rounded-xl py-3 px-2 border border-white/5">
+                  <p className={cn("text-3xl font-display font-black leading-none", stats.roi >= 0 ? "text-green-400" : "text-red-400")} data-testid="stat-roi">
+                    {stats.roi >= 0 ? "+" : ""}{stats.roi}%
+                  </p>
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-widest mt-1">ROI</p>
+                </div>
+                <div className="text-center bg-white/5 rounded-xl py-3 px-2 border border-white/5">
+                  <p className="text-3xl font-display font-black text-white leading-none" data-testid="stat-winrate">
+                    {stats.totalPicks > 0 ? `${Math.round((stats.wins / stats.totalPicks) * 100)}%` : "—"}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-widest mt-1">Win Rate</p>
+                </div>
+                <div className="text-center bg-white/5 rounded-xl py-3 px-2 border border-white/5">
+                  <p className="text-3xl font-display font-black text-orange-400 leading-none" data-testid="stat-streak">
+                    {stats.streak > 0 ? `${stats.streak}W` : "—"}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-widest mt-1">Streak</p>
+                </div>
+              </div>
+
+              {/* CTA for non-members */}
+              {!user && (
+                <div className="shrink-0 flex flex-col gap-2 items-center md:items-end text-center md:text-right">
+                  <p className="text-xs text-muted-foreground max-w-[140px]">Think you can beat this record?</p>
+                  <a href="/membership">
+                    <Button className="bg-primary text-primary-foreground gap-2 w-full" data-testid="button-challenge-founder">
+                      <Swords size={14} />
+                      Challenge Me
+                    </Button>
+                  </a>
+                  <a href="/auth" className="text-[10px] text-muted-foreground/60 hover:text-primary transition-colors" data-testid="link-login-bb">
+                    Already a member? Log in
+                  </a>
+                </div>
+              )}
+              {user && !isFounder && (
+                <div className="shrink-0">
+                  <a href="/leaderboard">
+                    <Button variant="outline" className="border-primary/20 text-primary hover:bg-primary/10 gap-2" data-testid="button-view-leaderboard">
+                      <Trophy size={14} />
+                      Leaderboard
+                    </Button>
+                  </a>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Login prompt for non-users when no founder data */}
+        {!user && !founder && (
           <div className="mb-6 rounded-xl border border-primary/20 bg-primary/5 p-4 flex items-center justify-between gap-4">
             <div>
               <p className="font-display font-bold text-sm">Already a member?</p>
@@ -179,32 +262,6 @@ export default function BaseballBreakfast() {
             </a>
           </div>
         )}
-
-        {founder && (
-          <div className="flex items-center gap-3 mb-6 p-3 rounded-xl bg-card/20 border border-white/5 w-fit">
-            {founder.profileImageUrl ? (
-              <img src={founder.profileImageUrl} alt="Founder" className="w-10 h-10 rounded-full border-2 border-primary/30" />
-            ) : (
-              <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-sm">
-                {(founder.firstName?.[0] || "N").toUpperCase()}
-              </div>
-            )}
-            <div>
-              <p className="font-display font-bold text-sm">{founder.firstName} {founder.lastName}</p>
-              <p className="text-xs text-muted-foreground">Founder · MLB Specialist</p>
-            </div>
-            <Badge className="bg-primary/20 text-primary border-primary/30 text-[10px]">FOUNDER</Badge>
-          </div>
-        )}
-
-        <div className="grid grid-cols-3 md:grid-cols-6 gap-2 mb-8">
-          <StatCard icon={Trophy} label="Record" value={`${stats.wins}-${stats.losses}`} color="bg-primary/20 text-primary" />
-          <StatCard icon={TrendingUp} label="ROI" value={`${stats.roi >= 0 ? "+" : ""}${stats.roi}%`} color={stats.roi >= 0 ? "bg-green-500/20 text-green-400" : "bg-red-500/20 text-red-400"} />
-          <StatCard icon={Target} label="Win Rate" value={stats.totalPicks > 0 ? `${Math.round((stats.wins / stats.totalPicks) * 100)}%` : "—"} color="bg-blue-500/20 text-blue-400" />
-          <StatCard icon={CircleDot} label="Total Picks" value={stats.totalPicks} color="bg-violet-500/20 text-violet-400" />
-          <StatCard icon={Flame} label="Streak" value={stats.streak > 0 ? `${stats.streak}W` : "—"} color="bg-orange-500/20 text-orange-400" />
-          <StatCard icon={TrendingUp} label="Profit" value={`${stats.profit >= 0 ? "+" : ""}${stats.profit.toFixed(1)}u`} color={stats.profit >= 0 ? "bg-green-500/20 text-green-400" : "bg-red-500/20 text-red-400"} />
-        </div>
 
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-base font-display font-bold flex items-center gap-2">
