@@ -13,6 +13,7 @@ export default function Auth() {
   const [password, setPassword] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
+  const [email, setEmail] = useState("");
   const [referralCode, setReferralCode] = useState("");
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
@@ -44,6 +45,7 @@ export default function Auth() {
     if (mode === "signup") {
       body.firstName = firstName;
       body.lastName = lastName;
+      if (email.trim()) body.email = email.trim().toLowerCase();
     }
 
     try {
@@ -101,28 +103,41 @@ export default function Auth() {
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
               {mode === "signup" && (
-                <div className="grid grid-cols-2 gap-3">
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-sm text-muted-foreground mb-1 block">First Name</label>
+                      <Input
+                        data-testid="input-first-name"
+                        placeholder="First name"
+                        value={firstName}
+                        onChange={(e) => setFirstName(e.target.value)}
+                        className="bg-background/50 border-white/10"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm text-muted-foreground mb-1 block">Last Name</label>
+                      <Input
+                        data-testid="input-last-name"
+                        placeholder="Last name"
+                        value={lastName}
+                        onChange={(e) => setLastName(e.target.value)}
+                        className="bg-background/50 border-white/10"
+                      />
+                    </div>
+                  </div>
                   <div>
-                    <label className="text-sm text-muted-foreground mb-1 block">First Name</label>
+                    <label className="text-sm text-muted-foreground mb-1 block">Email <span className="text-xs opacity-60">(optional)</span></label>
                     <Input
-                      data-testid="input-first-name"
-                      placeholder="First name"
-                      value={firstName}
-                      onChange={(e) => setFirstName(e.target.value)}
+                      data-testid="input-email"
+                      type="email"
+                      placeholder="you@email.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
                       className="bg-background/50 border-white/10"
                     />
                   </div>
-                  <div>
-                    <label className="text-sm text-muted-foreground mb-1 block">Last Name</label>
-                    <Input
-                      data-testid="input-last-name"
-                      placeholder="Last name"
-                      value={lastName}
-                      onChange={(e) => setLastName(e.target.value)}
-                      className="bg-background/50 border-white/10"
-                    />
-                  </div>
-                </div>
+                </>
               )}
               <div>
                 <label className="text-sm text-muted-foreground mb-1 block">Phone Number</label>
