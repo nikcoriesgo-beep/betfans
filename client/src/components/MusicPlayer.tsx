@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import {
-  Music, X, Volume2, VolumeX, ChevronUp, ChevronDown, ExternalLink,
+  Music, X, Volume2, VolumeX, ChevronUp, ChevronDown,
   Repeat, Play, Pause, SkipForward, SkipBack, Settings, Plus, Trash2, Calendar, RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -104,12 +104,10 @@ function AdminPanel({ onClose }: { onClose: () => void }) {
       setTestMsg("Checking stream...");
     }
     try {
-      // Test our own stream endpoint — the exact path the player uses
       const ctrl = new AbortController();
       const timeout = setTimeout(() => ctrl.abort(), 8000);
       const res = await fetch(`/api/music/stream/${sunoId}`, { signal: ctrl.signal });
       clearTimeout(timeout);
-      // Cancel the body immediately — we only care about headers
       res.body?.cancel();
       const ct = res.headers.get("content-type") || "";
       const ok = res.ok && (ct.includes("audio") || ct.includes("octet"));
@@ -117,7 +115,7 @@ function AdminPanel({ onClose }: { onClose: () => void }) {
         setTrackStatuses(s => ({ ...s, [trackId]: ok ? "ok" : "fail" }));
       } else {
         setTestStatus(ok ? "ok" : "fail");
-        setTestMsg(ok ? "Stream works! Click Save Track." : "Stream failed — this Suno ID can't be played. Try a different song.");
+        setTestMsg(ok ? "Stream works! Click Save Track." : "Stream failed — try a different song.");
       }
       return ok;
     } catch {
@@ -275,7 +273,7 @@ export function MusicPlayer() {
   const [isMinimized, setIsMinimized] = useState(true);
   const [currentTrack, setCurrentTrack] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
+  const [isMuted, setIsMuted] = useState(true);
   const [isLooping] = useState(true);
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -295,40 +293,64 @@ export function MusicPlayer() {
     },
   });
 
+  // Muted autoplay — allowed by all browsers without a user gesture.
+  // Auto-unmutes on the first user interaction (click, scroll, or touch).
   useEffect(() => {
     if (tracks.length === 0 || hasAutoPlayed) return;
 
+    const audio = new Audio(getSunoAudioUrl(tracks[0].sunoId));
+    audio.loop = true;
+    audio.volume = 0.8;
+    audio.muted = true;
+    audioRef.current = audio;
+
     const onFirstInteraction = () => {
-      if (audioRef.current) return;
-
-      // Create and play IMMEDIATELY — must be synchronous inside gesture handler for mobile Safari
-      const audio = new Audio(getSunoAudioUrl(tracks[0].sunoId));
-      audio.loop = true;
-      audio.volume = 0.5;
-      audio.muted = false;
-      audioRef.current = audio;
-
-      audio.play().then(() => {
-        setIsPlaying(true);
+      if (audioRef.current) {
+        audioRef.current.muted = false;
         setIsMuted(false);
+      }
+      document.removeEventListener("click", onFirstInteraction);
+      document.removeEventListener("touchstart", onFirstInteraction);
+      document.removeEventListener("scroll", onFirstInteraction);
+      document.removeEventListener("keydown", onFirstInteraction);
+    };
+
+    audio.play()
+      .then(() => {
+        setCurrentTrack(0);
+        setIsPlaying(true);
+        setIsMuted(true);
+        setHasAutoPlayed(true);
         startProgressTracking();
-      }).catch(() => {});
-
-      // State updates AFTER play() call
-      setHasAutoPlayed(true);
-      setCurrentTrack(0);
-
-      document.removeEventListener("click", onFirstInteraction);
-      document.removeEventListener("touchstart", onFirstInteraction);
-    };
-
-    document.addEventListener("click", onFirstInteraction);
-    document.addEventListener("touchstart", onFirstInteraction);
-
-    return () => {
-      document.removeEventListener("click", onFirstInteraction);
-      document.removeEventListener("touchstart", onFirstInteraction);
-    };
+        // Auto-unmute on any user interaction
+        document.addEventListener("click", onFirstInteraction);
+        document.addEventListener("touchstart", onFirstInteraction);
+        document.addEventListener("scroll", onFirstInteraction);
+        document.addEventListener("keydown", onFirstInteraction);
+      })
+      .catch(() => {
+        // Fallback: wait for first interaction if muted autoplay fails
+        audioRef.current = null;
+        const onFirstInteractionFallback = () => {
+          if (audioRef.current) return;
+          const a = new Audio(getSunoAudioUrl(tracks[0].sunoId));
+          a.loop = true;
+          a.volume = 0.8;
+          a.muted = false;
+          audioRef.current = a;
+          a.play().then(() => {
+            setCurrentTrack(0);
+            setIsPlaying(true);
+            setIsMuted(false);
+            setHasAutoPlayed(true);
+            startProgressTracking();
+          }).catch(() => {});
+          document.removeEventListener("click", onFirstInteractionFallback);
+          document.removeEventListener("touchstart", onFirstInteractionFallback);
+        };
+        document.addEventListener("click", onFirstInteractionFallback);
+        document.addEventListener("touchstart", onFirstInteractionFallback);
+      });
   }, [tracks, hasAutoPlayed]);
 
   const startProgressTracking = useCallback(() => {
@@ -377,7 +399,6 @@ export function MusicPlayer() {
 
     setCurrentTrack(trackIndex);
 
-    // Play immediately — synchronously in the click gesture context (required for mobile Safari)
     audio.play().then(() => {
       setIsPlaying(true);
       setHasAutoPlayed(true);
@@ -390,6 +411,17 @@ export function MusicPlayer() {
       audioRef.current.muted = isMuted;
     }
   }, [isMuted]);
+
+  const handleUnmute = () => {
+    setIsMuted(false);
+    if (audioRef.current) {
+      audioRef.current.muted = false;
+    }
+  };
+
+  const toggleMute = () => {
+    setIsMuted(prev => !prev);
+  };
 
   const togglePlayPause = () => {
     if (!audioRef.current || tracks.length === 0) {
@@ -473,8 +505,8 @@ export function MusicPlayer() {
               {isPlaying && tracks.length > 0 ? tracks[currentTrack]?.title : "BetFans Radio"}
             </h3>
             <p className="text-[10px] text-muted-foreground">
-              {isPlaying ? "Now Playing" : "Powered by Suno AI"}
-              {isLooping && isPlaying && " · Looping"}
+              {isPlaying ? (isMuted ? "Playing (muted)" : "Now Playing") : "Powered by Suno AI"}
+              {isLooping && isPlaying && !isMuted && " · Looping"}
             </p>
           </div>
         </div>
@@ -505,6 +537,19 @@ export function MusicPlayer() {
         </div>
       </div>
 
+      {/* Tap-to-unmute banner — shown when autoplaying muted */}
+      {isPlaying && isMuted && (
+        <button
+          onClick={handleUnmute}
+          className="w-full px-3 py-2 flex items-center justify-center gap-2 bg-primary/10 border-b border-primary/20 hover:bg-primary/20 transition-colors group"
+          data-testid="button-tap-unmute"
+        >
+          <VolumeX size={13} className="text-primary animate-pulse" />
+          <span className="text-[11px] font-semibold text-primary tracking-wide uppercase">Tap to Unmute</span>
+          <Volume2 size={13} className="text-primary/50 group-hover:text-primary transition-colors" />
+        </button>
+      )}
+
       {isMinimized && tracks.length > 0 && (
         <div className="px-3 py-2 flex items-center gap-2">
           <button
@@ -521,8 +566,8 @@ export function MusicPlayer() {
             />
           </div>
           <button
-            onClick={() => setIsMuted(!isMuted)}
-            className={`${isMuted ? "text-red-400" : "text-muted-foreground hover:text-foreground"} transition-colors`}
+            onClick={toggleMute}
+            className={`${isMuted ? "text-primary animate-pulse" : "text-muted-foreground hover:text-foreground"} transition-colors`}
             data-testid="button-mute-mini"
           >
             {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
@@ -538,8 +583,8 @@ export function MusicPlayer() {
             <>
               <div className="bg-background/30 rounded-xl p-4 text-center">
                 <div
-                  className={`w-16 h-16 mx-auto rounded-full bg-primary/10 border-2 border-primary/20 flex items-center justify-center mb-3 ${isPlaying ? "animate-spin" : ""}`}
-                  style={isPlaying ? { animationDuration: "3s" } : {}}
+                  className={`w-16 h-16 mx-auto rounded-full bg-primary/10 border-2 border-primary/20 flex items-center justify-center mb-3 ${isPlaying && !isMuted ? "animate-spin" : ""}`}
+                  style={isPlaying && !isMuted ? { animationDuration: "3s" } : {}}
                 >
                   <Music size={28} className="text-primary" />
                 </div>
@@ -591,70 +636,13 @@ export function MusicPlayer() {
                   <SkipForward size={20} />
                 </button>
                 <button
-                  onClick={() => setIsMuted(!isMuted)}
-                  className={`p-2 rounded-lg transition-colors ${isMuted ? "text-red-400" : "text-muted-foreground hover:text-foreground"}`}
-                  title={isMuted ? "Unmute" : "Mute"}
+                  onClick={toggleMute}
+                  className={`p-2 rounded-lg transition-colors ${isMuted ? "text-primary bg-primary/10 animate-pulse" : "text-muted-foreground hover:text-foreground hover:bg-white/5"}`}
                   data-testid="button-mute"
                 >
                   {isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
                 </button>
               </div>
-
-              {tracks.length > 0 && (
-                <div className="space-y-1.5 max-h-32 overflow-y-auto">
-                  {tracks.map((track, i) => (
-                    <button
-                      key={track.id}
-                      onClick={() => playTrack(i)}
-                      className={`w-full flex items-center gap-2 p-2 rounded-lg text-left transition-colors ${
-                        currentTrack === i
-                          ? "bg-primary/10 border border-primary/20"
-                          : "hover:bg-white/5"
-                      }`}
-                      data-testid={`button-track-${i}`}
-                    >
-                      <div className={`w-6 h-6 rounded-md flex items-center justify-center text-xs font-bold ${
-                        currentTrack === i
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-white/5 text-muted-foreground"
-                      }`}>
-                        {currentTrack === i && isPlaying ? "▶" : i + 1}
-                      </div>
-                      <span className="text-sm truncate flex-1">{track.title}</span>
-                      {track.scheduleDate && (
-                        <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
-                          <Calendar size={10} /> {track.scheduleDate}
-                        </span>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {tracks.length === 0 && (
-                <div className="text-center py-4">
-                  <p className="text-sm text-muted-foreground">No tracks scheduled for today</p>
-                  {isAdminUser && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="mt-2 gap-1"
-                      onClick={() => setShowAdmin(true)}
-                    >
-                      <Plus size={14} /> Add Tracks
-                    </Button>
-                  )}
-                </div>
-              )}
-
-              <a
-                href="https://suno.com"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center justify-center gap-1 text-[10px] text-muted-foreground hover:text-primary transition-colors"
-              >
-                <ExternalLink size={10} /> Browse Suno AI for tracks
-              </a>
             </>
           )}
         </div>
