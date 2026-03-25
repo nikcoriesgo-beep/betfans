@@ -91,8 +91,8 @@ export default function DailyPicks() {
   });
 
   useEffect(() => {
-    if (isFounder) syncGames.mutate();
-  }, [isFounder]);
+    if (user) syncGames.mutate();
+  }, [!!user]);
 
   const submitPicks = useMutation({
     mutationFn: async (picks: DraftPick[]) => {
@@ -164,7 +164,7 @@ export default function DailyPicks() {
             </p>
             <div className="flex items-center gap-3 mt-3">
               <p className="text-xs text-muted-foreground/50">{today}</p>
-              {isFounder && syncGames.isPending && (
+              {syncGames.isPending && (
                 <span className="flex items-center gap-1 text-[10px] text-primary/60">
                   <Loader2 size={10} className="animate-spin" />syncing games…
                 </span>
