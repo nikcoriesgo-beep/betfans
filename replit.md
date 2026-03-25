@@ -1,15 +1,20 @@
 # BetFans - Sports Prediction Platform
 
 ## Overview
-BetFans is a membership-based sports prediction app featuring Spider AI predictions for NFL/NBA/MLB/MLS, community chat, statistical leaderboards, real payment processing via Stripe, and a branded merchandise dropship store.
+BetFans is a membership-based sports prediction platform (Rookie $19/mo, Pro $29/mo, Legend $99/mo) featuring Spider AI picks, community chat, leaderboards, a 50% revenue prize pool, residual affiliate income, and a merch store. Live at betfans.us.
 
 ## Tech Stack
 - **Frontend**: React + TypeScript, Vite, TanStack Query, Wouter, shadcn/ui, Tailwind CSS, Recharts
 - **Backend**: Express.js + TypeScript
-- **Database**: PostgreSQL with Drizzle ORM
+- **Database**: PostgreSQL with Drizzle ORM (Neon)
 - **Auth**: Phone number + password (bcryptjs, express-session with PostgreSQL store)
-- **Payments**: Stripe (via stripe + stripe-replit-sync)
+- **Payments**: PayPal Subscriptions (replaces Stripe) — Client ID + Secret + 3 plan IDs all configured
 - **Real-time**: WebSocket for community chat
+
+## PayPal Plan IDs (Live)
+- **Rookie** ($19/mo): `P-2JC35064SX962914CNHBT3JA`
+- **Pro** ($29/mo): `P-7AJ93147MR053834ANHBT2KY`
+- **Legend** ($99/mo): `P-9BK78886HT3554003NHBTV2Q`
 
 ## Design
 - "Dark Future" aesthetic: deep navy background + electric green primary (`142 70% 50%`)
