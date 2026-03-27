@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integrations/auth";
 import { storage } from "./storage";
 import { db } from "./db";
-import { users, referrals } from "@shared/schema";
+import { users, referrals, games, predictions } from "@shared/schema";
 import { eq, sql } from "drizzle-orm";
 import { insertPredictionSchema, insertChatMessageSchema, insertBraggingPostSchema, insertBraggingCommentSchema, insertMusicTrackSchema, insertThreadSchema, insertThreadReplySchema, insertAdvertiserSchema } from "@shared/schema";
 import { stripeService } from "./stripeService";
@@ -12,6 +12,7 @@ import { getPayPalConfig, getSubscriptionDetails, tierFromPlanId } from "./paypa
 import { WebSocketServer } from "ws";
 import multer from "multer";
 import { syncSportsData } from "./sportsDataService";
+import { getLastCheckResult } from "./morningCheck";
 import { fetchAllSportsNews } from "./sportsNewsService";
 import path from "path";
 import fs from "fs";
@@ -60,8 +61,8 @@ export async function registerRoutes(
   );
 
   const express = (await import('express')).default;
-  app.use(express.json());
-  app.use(express.urlencoded({ extended: false }));
+  app.use(express.json({ limit: "2mb" }));
+  app.use(express.urlencoded({ extended: false, limit: "2mb" }));
 
   await setupAuth(app);
   registerAuthRoutes(app);
@@ -138,35 +139,60 @@ export async function registerRoutes(
       const [founderRow] = await db.select().from(users).where(eq(users.referralCode, "NIKCOX")).limit(1);
       const founder = founderRow || null;
 
-      const today = new Date();
-      const dateStr = today.toISOString().slice(0, 10);
+      // ET date — Intl is immune to Replit's dev-server frozen clock
+      const etParts = new Intl.DateTimeFormat("en-US", {
+        timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit",
+      }).format(new Date()).split("/"); // ["MM","DD","YYYY"]
+      const dateStr = `${etParts[2]}-${etParts[0]}-${etParts[1]}`; // YYYY-MM-DD
+      const etDateESPN = `${etParts[2]}${etParts[0]}${etParts[1]}`; // YYYYMMDD for ESPN
+      // EDT = UTC-4: ET midnight → UTC 04:00
+      const [ey, em, ed] = dateStr.split("-").map(Number);
+      const todayStart = new Date(Date.UTC(ey, em - 1, ed, 4, 0, 0));
+      const todayEnd   = new Date(Date.UTC(ey, em - 1, ed + 1, 4, 0, 0));
 
-      // Primary source: ESPN-synced DB games — these are the game IDs the auto-grader fires on
-      const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-      const todayEnd = new Date(todayStart.getTime() + 86400000);
-      const dbMlbGames = await db
-        .select()
-        .from(games)
-        .where(
-          sql`${games.league} = 'MLB' AND ${games.gameTime} >= ${todayStart} AND ${games.gameTime} < ${todayEnd}`
-        );
-
-      // Secondary source: MLB Stats API — only used for pitcher names
-      const mlbApiGames = await fetchMLBSchedule(dateStr);
       function normalize(s: string) { return s.toLowerCase().replace(/[^a-z]/g, ""); }
-      function teamMatch(dbName: string, apiName: string) {
-        const d = normalize(dbName); const a = normalize(apiName);
-        return d === a || d.includes(a.slice(-6)) || a.includes(d.slice(-6));
+      function teamMatch(a: string, b: string) {
+        const na = normalize(a), nb = normalize(b);
+        return na === nb || na.includes(nb.slice(-6)) || nb.includes(na.slice(-6));
       }
 
-      let stats = { wins: 0, losses: 0, profit: 0, roi: 0, streak: 0, totalPicks: 0 };
+      // --- Read today's MLB games from DB (populated by the 5-min sync) ---
+      const dbMlbGames = await db.select().from(games).where(
+        sql`${games.league} = 'MLB' AND ${games.gameTime} >= ${todayStart} AND ${games.gameTime} < ${todayEnd}`
+      );
 
-      // Load founder's all-time MLB predictions for stats
+      // --- Fresh ESPN fetch for live scores/status only (no DB writes here) ---
+      const espnStatusMap = new Map<string, { status: string; homeScore: number|null; awayScore: number|null }>();
+      try {
+        const espnResp = await fetch(`https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard?dates=${etDateESPN}`);
+        if (espnResp.ok) {
+          const espnData = await espnResp.json();
+          for (const event of (espnData.events || [])) {
+            const comp = event.competitions?.[0];
+            const homeComp = comp?.competitors?.find((c: any) => c.homeAway === "home");
+            const awayComp = comp?.competitors?.find((c: any) => c.homeAway === "away");
+            if (!homeComp || !awayComp) continue;
+            const state = event.status?.type?.state;
+            const status = state === "post" ? "finished" : state === "in" ? "live" : "upcoming";
+            const key = `${awayComp.team.displayName}|${homeComp.team.displayName}`;
+            espnStatusMap.set(key, {
+              status,
+              homeScore: homeComp.score ? parseInt(homeComp.score) : null,
+              awayScore: awayComp.score ? parseInt(awayComp.score) : null,
+            });
+          }
+        }
+      } catch (e) { console.error("ESPN MLB live fetch error:", e); }
+
+      // --- MLB Stats API for pitcher names ---
+      const mlbApiGames = await fetchMLBSchedule(dateStr);
+
+      // --- Founder stats ---
+      let stats = { wins: 0, losses: 0, profit: 0, roi: 0, streak: 0, totalPicks: 0 };
       if (founder) {
-        const allPredictions = await storage.getUserPredictions(founder.id);
-        const mlbGameIds = new Set(dbMlbGames.map((g) => g.id));
         const allDbMlb = await storage.getGames("MLB");
         const allMlbIds = new Set(allDbMlb.map((g) => g.id));
+        const allPredictions = await storage.getUserPredictions(founder.id);
         const mlbPredictions = allPredictions.filter((p) => allMlbIds.has(p.gameId));
         const wins = mlbPredictions.filter((p) => p.result === "win").length;
         const losses = mlbPredictions.filter((p) => p.result === "loss").length;
@@ -174,56 +200,43 @@ export async function registerRoutes(
         const total = wins + losses;
         const roi = total > 0 ? (profit / total) * 100 : 0;
         let streak = 0;
-        const sorted = [...mlbPredictions].sort((a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime());
-        for (const p of sorted) { if (p.result === "win") streak++; else break; }
-        stats = { wins, losses, profit: Math.round(profit * 100) / 100, roi: Math.round(roi * 100) / 100, streak, totalPicks: total };
+        for (const p of [...mlbPredictions].sort((a,b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime())) {
+          if (p.result === "win") streak++; else break;
+        }
+        stats = { wins, losses, profit: Math.round(profit*100)/100, roi: Math.round(roi*100)/100, streak, totalPicks: total };
       }
 
-      // Load today's founder picks from DB (linked by gameId)
+      // --- Today's founder picks ---
       const todayPredictions = founder
-        ? await db
-            .select()
-            .from(predictions)
-            .where(
-              sql`${predictions.userId} = ${founder.id} AND ${predictions.createdAt} >= ${todayStart} AND ${predictions.createdAt} < ${todayEnd}`
-            )
+        ? await db.select().from(predictions).where(
+            sql`${predictions.userId} = ${founder.id} AND ${predictions.createdAt} >= ${todayStart} AND ${predictions.createdAt} <= ${todayEnd}`
+          )
         : [];
 
       const gamesWithAnalysis = dbMlbGames.map((g) => {
-        // Find pitcher data from MLB Stats API by fuzzy team name match
-        const apiGame = mlbApiGames.find(
-          (a: any) => teamMatch(g.homeTeam, a.homeTeam) && teamMatch(g.awayTeam, a.awayTeam)
-        );
-
-        const spider = {
-          pick: g.spiderPick || spiderAnalysis(g.awayTeam, g.homeTeam, g.id).pick,
-          confidence: g.spiderConfidence || spiderAnalysis(g.awayTeam, g.homeTeam, g.id).confidence,
-          type: "Moneyline",
-        };
-
+        const apiGame = mlbApiGames.find((a: any) => teamMatch(g.homeTeam, a.homeTeam) && teamMatch(g.awayTeam, a.awayTeam));
+        // Prefer live ESPN status over potentially-stale DB status
+        const liveESPN = espnStatusMap.get(`${g.awayTeam}|${g.homeTeam}`);
+        const liveStatus = liveESPN?.status || g.status;
+        const liveHomeScore = liveESPN?.homeScore ?? g.homeScore;
+        const liveAwayScore = liveESPN?.awayScore ?? g.awayScore;
+        const spider = { pick: g.spiderPick || "", confidence: g.spiderConfidence || 60, type: "Moneyline" };
         const founderPick = todayPredictions.find((p) => p.gameId === g.id) || null;
-
         return {
           gameId: g.id,
           mlbGamePk: apiGame?.mlbGamePk || g.id,
-          homeTeam: g.homeTeam,
-          awayTeam: g.awayTeam,
+          homeTeam: g.homeTeam, awayTeam: g.awayTeam,
           homeAbbr: apiGame?.homeAbbr || g.homeTeam.split(" ").pop() || "",
           awayAbbr: apiGame?.awayAbbr || g.awayTeam.split(" ").pop() || "",
           gameTime: g.gameTime,
-          status: g.status === "finished" ? "Final" : g.status === "live" ? "Live" : "Upcoming",
-          detailedState: g.status,
-          homeScore: g.homeScore,
-          awayScore: g.awayScore,
-          inning: apiGame?.inning || null,
-          inningHalf: apiGame?.inningHalf || null,
+          status: liveStatus === "finished" ? "Final" : liveStatus === "live" ? "Live" : "Upcoming",
+          detailedState: liveStatus,
+          homeScore: liveHomeScore, awayScore: liveAwayScore,
+          inning: apiGame?.inning || null, inningHalf: apiGame?.inningHalf || null,
           venue: apiGame?.venue || "",
-          homePitcher: apiGame?.homePitcher || null,
-          awayPitcher: apiGame?.awayPitcher || null,
-          spread: g.spread,
-          total: g.total,
-          spider,
-          founderPick,
+          homePitcher: apiGame?.homePitcher || null, awayPitcher: apiGame?.awayPitcher || null,
+          spread: g.spread, total: g.total,
+          spider, founderPick,
         };
       });
 
@@ -288,27 +301,6 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/baseball-breakfast/pick/:id", isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = (req.session as any)?.userId;
-      const [me] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
-      if (!me || me.referralCode !== "NIKCOX") {
-        return res.status(403).json({ message: "Only the Founder can update picks" });
-      }
-
-      const { result } = req.body;
-      if (!["win", "loss", "push", "pending"].includes(result)) {
-        return res.status(400).json({ message: "Invalid result" });
-      }
-
-      const payout = result === "win" ? 1 : result === "push" ? 0 : -1;
-      const updated = await storage.updatePrediction(parseInt(req.params.id), { result, payout });
-      res.json(updated);
-    } catch (error) {
-      console.error("Pick update error:", error);
-      res.status(500).json({ message: "Failed to update pick" });
-    }
-  });
 
   app.get("/api/news", async (req, res) => {
     try {
@@ -953,6 +945,14 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/health/morning", (_req, res) => {
+    const result = getLastCheckResult();
+    if (!result) {
+      return res.json({ status: "pending", message: "No sweep run yet — first sweep will run at 5:00 AM PST" });
+    }
+    res.json(result);
+  });
+
   app.get("/api/members/recent", async (_req, res) => {
     try {
       const members = await storage.getRecentMembers(20);
@@ -1412,6 +1412,26 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/users/:userId/sport-stats", async (req, res) => {
+    try {
+      const period = req.query.period as string | undefined;
+      const stats = await storage.getUserSportStats(req.params.userId, period);
+      res.json(stats);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch sport stats" });
+    }
+  });
+
+  app.get("/api/sport-stats", async (req, res) => {
+    try {
+      const period = req.query.period as string | undefined;
+      const stats = await storage.getPlatformSportStats(period);
+      res.json(stats);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch platform sport stats" });
+    }
+  });
+
   app.get("/api/threads", async (req, res) => {
     try {
       const category = req.query.category as string | undefined;
@@ -1482,14 +1502,16 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/user/avatar", isAuthenticated, upload.single("avatar"), async (req: any, res) => {
+  app.post("/api/user/avatar", isAuthenticated, async (req: any, res) => {
     try {
       const userId = (req.session as any)?.userId;
-      if (!req.file) return res.status(400).json({ message: "No file uploaded" });
-      const url = `/uploads/${req.file.filename}`;
-      const updated = await storage.updateUser(userId, { profileImageUrl: url });
+      const { imageData } = req.body;
+      if (!imageData || !imageData.startsWith("data:image/")) {
+        return res.status(400).json({ message: "Invalid image data" });
+      }
+      const updated = await storage.updateUser(userId, { profileImageUrl: imageData });
       if (!updated) return res.status(404).json({ message: "User not found" });
-      res.json({ url, user: updated });
+      res.json({ url: imageData, user: updated });
     } catch (error) {
       res.status(500).json({ message: "Failed to upload avatar" });
     }
