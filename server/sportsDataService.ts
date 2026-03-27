@@ -164,11 +164,26 @@ async function autoGradePredictions(
   return graded;
 }
 
+function getTodayET(): string {
+  // Returns YYYYMMDD in Eastern Time (handles EDT/EST automatically)
+  // en-US gives "MM/DD/YYYY" → rearrange to YYYYMMDD
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date()).split("/"); // ["MM", "DD", "YYYY"]
+  return `${parts[2]}${parts[0]}${parts[1]}`; // YYYYMMDD
+}
+
 async function fetchLeagueGames(league: string): Promise<any[]> {
   try {
     const url = ESPN_ENDPOINTS[league];
     if (!url) return [];
-    const response = await fetch(url);
+    // Always pass today's ET date so ESPN returns ALL scheduled games,
+    // not just live/finished ones. Without this, upcoming games are invisible.
+    const todayET = getTodayET();
+    const response = await fetch(`${url}?dates=${todayET}`);
     if (!response.ok) {
       console.log(`[spider] ESPN ${league} returned ${response.status}`);
       return [];
@@ -225,8 +240,86 @@ async function fetchLeagueGames(league: string): Promise<any[]> {
   }
 }
 
+export async function gradeStuckGames(): Promise<number> {
+  // Find games still marked live/upcoming whose game time was > 4 hours ago
+  const cutoff = new Date(Date.now() - 4 * 60 * 60 * 1000);
+  const stuckGames = await db
+    .select()
+    .from(games)
+    .where(sql`${games.status} != 'finished' AND ${games.gameTime} < ${cutoff}`);
+
+  if (stuckGames.length === 0) {
+    console.log("[spider] gradeStuckGames: no stuck games found");
+    return 0;
+  }
+
+  console.log(`[spider] gradeStuckGames: found ${stuckGames.length} stuck game(s) — fetching final scores`);
+
+  // Group by league + date so we batch ESPN calls
+  const byLeagueDate: Record<string, { league: string; dateStr: string }> = {};
+  for (const g of stuckGames) {
+    const d = new Date(g.gameTime!);
+    const dateStr = `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, "0")}${String(d.getUTCDate()).padStart(2, "0")}`;
+    const key = `${g.league}-${dateStr}`;
+    byLeagueDate[key] = { league: g.league, dateStr };
+  }
+
+  let totalGraded = 0;
+
+  for (const { league, dateStr } of Object.values(byLeagueDate)) {
+    const url = ESPN_ENDPOINTS[league];
+    if (!url) continue;
+    try {
+      const resp = await fetch(`${url}?dates=${dateStr}`);
+      if (!resp.ok) continue;
+      const data = await resp.json();
+      for (const event of (data.events || []) as ESPNEvent[]) {
+        if (event.status.type.state !== "post") continue; // only finished games
+        const comp = event.competitions?.[0];
+        const homeComp = comp?.competitors?.find((c) => c.homeAway === "home");
+        const awayComp = comp?.competitors?.find((c) => c.homeAway === "away");
+        if (!homeComp || !awayComp) continue;
+        const homeTeam = homeComp.team.displayName;
+        const awayTeam = awayComp.team.displayName;
+        const homeScore = homeComp.score ? parseInt(homeComp.score) : null;
+        const awayScore = awayComp.score ? parseInt(awayComp.score) : null;
+        if (homeScore === null || awayScore === null) continue;
+
+        const gameDate = new Date(event.date);
+        const matching = await db
+          .select()
+          .from(games)
+          .where(
+            sql`${games.league} = ${league}
+              AND ${games.homeTeam} = ${homeTeam}
+              AND ${games.awayTeam} = ${awayTeam}
+              AND DATE(${games.gameTime}) = DATE(${gameDate})
+              AND ${games.status} != 'finished'`
+          );
+
+        for (const g of matching) {
+          await db.update(games).set({ status: "finished", homeScore, awayScore }).where(eq(games.id, g.id));
+          const graded = await autoGradePredictions(g.id, homeTeam, awayTeam, homeScore, awayScore, g.spread, g.total);
+          if (graded > 0) {
+            console.log(`[spider] gradeStuckGames: graded ${graded} pick(s) — ${awayTeam} @ ${homeTeam} (${dateStr})`);
+            totalGraded += graded;
+          }
+        }
+      }
+    } catch (e) {
+      console.log(`[spider] gradeStuckGames: error fetching ${league} for ${dateStr}:`, e);
+    }
+  }
+
+  console.log(`[spider] gradeStuckGames: total ${totalGraded} pick(s) graded`);
+  return totalGraded;
+}
+
 export async function syncSportsData(): Promise<{ synced: number; leagues: string[] }> {
   console.log("[spider] Syncing live sports data from ESPN...");
+
+  // Always grade any stuck games first (picks from yesterday or earlier that didn't get graded)
+  await gradeStuckGames().catch((e) => console.log("[spider] gradeStuckGames error:", e));
 
   const now = new Date();
   const month = now.getMonth() + 1;
