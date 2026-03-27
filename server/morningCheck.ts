@@ -1,7 +1,7 @@
 import { db } from "./db";
 import { games, users } from "@shared/schema";
 import { eq, sql } from "drizzle-orm";
-import { syncSportsData } from "./sportsDataService";
+import { syncSportsData, gradeStuckGames } from "./sportsDataService";
 
 const SELF_URL = process.env.NODE_ENV === "production" ? "https://betfans.us" : "http://localhost:5000";
 
@@ -56,6 +56,17 @@ async function runSweep() {
   } catch (e: any) {
     checks.sportsSync = { ok: false, detail: e.message };
     log(`✗ Sports sync: ${e.message}`);
+  }
+
+  // ── 2b. Grade any stuck picks from yesterday's finished games ────────────
+  try {
+    log("→ Grading stuck picks from previous day's games...");
+    const graded = await timeout(gradeStuckGames(), 30_000, 0);
+    checks.gradeStuck = { ok: true, detail: graded > 0 ? `${graded} stuck pick(s) graded` : "No stuck picks — all up to date" };
+    log(`✓ Grade stuck: ${checks.gradeStuck.detail}`);
+  } catch (e: any) {
+    checks.gradeStuck = { ok: false, detail: e.message };
+    log(`✗ Grade stuck: ${e.message}`);
   }
 
   // ── 3. Today's MLB games loaded ──────────────────────────────────────────
