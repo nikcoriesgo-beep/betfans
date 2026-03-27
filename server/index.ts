@@ -5,6 +5,7 @@ import { createServer } from "http";
 import { runMigrations } from "stripe-replit-sync";
 import { getStripeSync } from "./stripeClient";
 import { startSportsDataSync } from "./sportsDataService";
+import { startMorningSweep } from "./morningCheck";
 import { storage } from "./storage";
 
 const app = express();
@@ -115,21 +116,28 @@ async function initStripe() {
   startSportsDataSync(5);
 
   if (process.env.NODE_ENV === "production") {
-    const selfUrl = process.env.RENDER_EXTERNAL_URL || `http://localhost:${port}`;
+    startMorningSweep();
+  }
+
+  if (process.env.NODE_ENV === "production") {
+    const selfUrl = "https://betfans.us";
     setInterval(async () => {
       try {
         await fetch(`${selfUrl}/api/member-count`);
-      } catch (_) {}
-    }, 4 * 60 * 1000);
-    log("Keep-alive self-ping started (every 4 min)", "keepalive");
+        log("Keep-alive ping sent", "keepalive");
+      } catch (e: any) {
+        log(`Keep-alive ping failed: ${e.message}`, "keepalive");
+      }
+    }, 3 * 60 * 1000);
+    log("Keep-alive self-ping started (every 3 min)", "keepalive");
   }
 
   try {
     const existingTracks = await storage.getMusicTracks();
     if (existingTracks.length === 0) {
       await storage.createMusicTrack({
-        sunoId: "52075738-9521-44e5-806f-55bae98f72bd",
-        title: "BetFans Opening Day Anthem",
+        sunoId: "local:audio/baseball-for-breakfast.mp3",
+        title: "Baseball For Breakfast",
         active: true,
         sortOrder: 0,
       });
