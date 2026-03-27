@@ -1,11 +1,12 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Navbar } from "@/components/layout/Navbar";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Trophy, TrendingUp, Flame, Target, CircleDot, Clock, Loader2, Coffee,
-  Sun, Zap, CheckCircle2, XCircle, UserCircle2, Send, ChevronRight, Swords
+  Sun, Zap, CheckCircle2, XCircle, UserCircle2, Send, ChevronRight, Swords,
+  Volume2, VolumeX
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -91,6 +92,44 @@ export default function BaseballBreakfast() {
   const qc = useQueryClient();
   const { toast } = useToast();
   const [drafts, setDrafts] = useState<Record<number, DraftPick>>({});
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [audioReady, setAudioReady] = useState(false);
+
+  useEffect(() => {
+    const audio = new Audio("/audio/baseball-for-breakfast.mp3");
+    audio.loop = true;
+    audio.volume = 0.4;
+    audioRef.current = audio;
+    audio.addEventListener("canplaythrough", () => setAudioReady(true));
+    audio.addEventListener("play", () => setIsPlaying(true));
+    audio.addEventListener("pause", () => setIsPlaying(false));
+    audio.load();
+    const tryAutoplay = () => {
+      audio.play().then(() => {
+        document.removeEventListener("click", tryAutoplay);
+        document.removeEventListener("touchstart", tryAutoplay);
+      }).catch(() => {});
+    };
+    audio.play().catch(() => {
+      document.addEventListener("click", tryAutoplay, { once: true });
+      document.addEventListener("touchstart", tryAutoplay, { once: true });
+    });
+    return () => {
+      audio.pause();
+      audio.src = "";
+    };
+  }, []);
+
+  function toggleMusic() {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (isPlaying) {
+      audio.pause();
+    } else {
+      audio.play().catch(() => {});
+    }
+  }
 
   const { data, isLoading } = useQuery<BBData>({ queryKey: ["/api/baseball-breakfast"] });
   const today = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
@@ -110,17 +149,6 @@ export default function BaseballBreakfast() {
     onError: (e: any) => toast({ title: "Error posting picks", description: e.message, variant: "destructive" }),
   });
 
-  const gradePick = useMutation({
-    mutationFn: ({ id, result }: { id: number; result: string }) =>
-      apiRequest("PATCH", `/api/baseball-breakfast/pick/${id}`, { result }),
-    onSuccess: (_data, vars) => {
-      qc.invalidateQueries({ queryKey: ["/api/baseball-breakfast"] });
-      qc.invalidateQueries({ queryKey: ["/api/leaderboard"] });
-      const label = vars.result === "win" ? "Win recorded!" : vars.result === "loss" ? "Loss recorded." : "Result updated.";
-      toast({ title: label, description: "Leaderboard updated automatically." });
-    },
-    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
-  });
 
   const stats = data?.stats || { wins: 0, losses: 0, profit: 0, roi: 0, streak: 0, totalPicks: 0 };
   const games = data?.games || [];
@@ -145,15 +173,34 @@ export default function BaseballBreakfast() {
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
-      <div className={cn("container mx-auto px-4 pt-24 max-w-5xl", draftCount > 0 ? "pb-32" : "pb-16")}>
+
+      <div
+        className={cn("container mx-auto px-4 pt-24 max-w-5xl", draftCount > 0 ? "pb-32" : "pb-16")}
+        onClick={() => { if (!isPlaying && audioRef.current) audioRef.current.play().catch(() => {}); }}
+      >
 
         {/* Hero banner */}
         <div className="relative mb-6 overflow-hidden rounded-2xl bg-gradient-to-br from-blue-900/40 via-card/60 to-red-900/20 border border-white/5 p-6 md:p-10">
           <div className="absolute top-4 right-4 opacity-10"><Coffee size={110} /></div>
           <div className="relative z-10">
-            <div className="flex items-center gap-2 mb-2">
-              <Sun size={14} className="text-yellow-400" />
-              <span className="text-xs text-yellow-400/80 font-medium tracking-widest uppercase">Daily MLB Picks · Live Leaderboard</span>
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <div className="flex items-center gap-2">
+                <Sun size={14} className="text-yellow-400" />
+                <span className="text-xs text-yellow-400/80 font-medium tracking-widest uppercase">Daily MLB Picks · Live Leaderboard</span>
+              </div>
+              <button
+                onClick={(e) => { e.stopPropagation(); toggleMusic(); }}
+                data-testid="button-music-toggle"
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-bold font-display transition-all duration-200 shrink-0",
+                  isPlaying
+                    ? "bg-primary/20 text-primary border-primary/40 shadow-[0_0_10px_rgba(34,197,94,0.3)]"
+                    : "bg-white/5 text-muted-foreground border-white/10 hover:border-primary/30 hover:text-primary"
+                )}
+              >
+                {isPlaying ? <Volume2 size={12} /> : <VolumeX size={12} />}
+                {isPlaying ? "♪ On" : "Music"}
+              </button>
             </div>
             <h1 className="text-3xl md:text-4xl font-display font-bold mb-2" data-testid="text-bb-title">
               Baseball For Breakfast
@@ -200,10 +247,10 @@ export default function BaseballBreakfast() {
                   <p className="text-[10px] text-muted-foreground uppercase tracking-widest mt-1">Record</p>
                 </div>
                 <div className="text-center bg-white/5 rounded-xl py-3 px-2 border border-white/5">
-                  <p className={cn("text-3xl font-display font-black leading-none", stats.roi >= 0 ? "text-green-400" : "text-red-400")} data-testid="stat-roi">
-                    {stats.roi >= 0 ? "+" : ""}{stats.roi}%
+                  <p className="text-3xl font-display font-black leading-none text-primary" data-testid="stat-winpct">
+                    {stats.totalPicks > 0 ? ((stats.wins / stats.totalPicks) * 100).toFixed(1) : "0.0"}%
                   </p>
-                  <p className="text-[10px] text-muted-foreground uppercase tracking-widest mt-1">ROI</p>
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-widest mt-1">Win %</p>
                 </div>
                 <div className="text-center bg-white/5 rounded-xl py-3 px-2 border border-white/5">
                   <p className="text-3xl font-display font-black text-white leading-none" data-testid="stat-winrate">
@@ -376,37 +423,6 @@ export default function BaseballBreakfast() {
                           </div>
                           <PickResultBadge result={game.founderPick.result} />
                         </div>
-                        {isFounder && (
-                          <div className="flex gap-1.5 pt-1 border-t border-white/5">
-                            <button
-                              onClick={() => gradePick.mutate({ id: game.founderPick.id, result: "win" })}
-                              disabled={gradePick.isPending}
-                              className={cn("flex-1 rounded-md py-1.5 text-[10px] font-bold border transition-all",
-                                game.founderPick.result === "win"
-                                  ? "bg-green-500/30 text-green-300 border-green-500/40"
-                                  : "bg-green-500/10 text-green-400 border-green-500/20 hover:bg-green-500/20")}
-                              data-testid={`button-grade-win-${game.gameId}`}
-                            >✓ WIN</button>
-                            <button
-                              onClick={() => gradePick.mutate({ id: game.founderPick.id, result: "loss" })}
-                              disabled={gradePick.isPending}
-                              className={cn("flex-1 rounded-md py-1.5 text-[10px] font-bold border transition-all",
-                                game.founderPick.result === "loss"
-                                  ? "bg-red-500/30 text-red-300 border-red-500/40"
-                                  : "bg-red-500/10 text-red-400 border-red-500/20 hover:bg-red-500/20")}
-                              data-testid={`button-grade-loss-${game.gameId}`}
-                            >✗ LOSS</button>
-                            <button
-                              onClick={() => gradePick.mutate({ id: game.founderPick.id, result: "push" })}
-                              disabled={gradePick.isPending}
-                              className={cn("flex-1 rounded-md py-1.5 text-[10px] font-bold border transition-all",
-                                game.founderPick.result === "push"
-                                  ? "bg-gray-500/30 text-gray-300 border-gray-500/40"
-                                  : "bg-gray-500/10 text-gray-400 border-gray-500/20 hover:bg-gray-500/20")}
-                              data-testid={`button-grade-push-${game.gameId}`}
-                            >PUSH</button>
-                          </div>
-                        )}
                       </div>
                     ) : isFounder && !isFinished ? (
                       <div className="space-y-2">
