@@ -56,6 +56,17 @@ export default function Membership() {
     }
   }, [isAuthenticated, affiliateCode]);
 
+  // Auto-open checkout when returning from signup with a saved tier
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const savedTier = localStorage.getItem("betfans_checkout_tier") as Tier | null;
+    if (savedTier && ["rookie", "pro", "legend"].includes(savedTier)) {
+      localStorage.removeItem("betfans_checkout_tier");
+      // Small delay so the page and auth state fully settle
+      setTimeout(() => handleUpgrade(savedTier), 600);
+    }
+  }, [isAuthenticated]);
+
   useEffect(() => {
     if (!affiliateCode.trim()) { setReferrerTier(null); return; }
     fetch("/api/referral/check-tier", {
@@ -87,7 +98,8 @@ export default function Membership() {
   const handleUpgrade = async (tier: Tier) => {
     if (!isAuthenticated) {
       if (affiliateCode) localStorage.setItem("betfans_affiliate_code", affiliateCode);
-      window.location.href = "/auth";
+      localStorage.setItem("betfans_checkout_tier", tier);
+      window.location.href = "/auth?mode=signup";
       return;
     }
 
@@ -322,7 +334,7 @@ export default function Membership() {
                         onClick={() => {
                           if (!isAuthenticated) {
                             localStorage.setItem("betfans_affiliate_code", affiliateCode);
-                            window.location.href = "/auth";
+                            window.location.href = "/auth?mode=signup";
                             return;
                           }
                           applyAffiliateCode(affiliateCode);
