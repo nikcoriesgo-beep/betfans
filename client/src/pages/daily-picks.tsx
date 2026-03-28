@@ -13,7 +13,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
-const LEAGUES = ["All", "MLB", "NBA", "NHL", "NFL", "MLS", "NWSL", "NCAAB", "NCAABB"];
+const LEAGUES = ["All", "MLB", "NBA", "NHL", "NFL", "MLS", "NWSL", "NCAAB"];
 
 const LEAGUE_COLORS: Record<string, string> = {
   MLB: "bg-red-500/20 text-red-400 border-red-500/30",
@@ -23,7 +23,6 @@ const LEAGUE_COLORS: Record<string, string> = {
   MLS: "bg-sky-500/20 text-sky-400 border-sky-500/30",
   NWSL: "bg-pink-500/20 text-pink-400 border-pink-500/30",
   NCAAB: "bg-purple-500/20 text-purple-400 border-purple-500/30",
-  NCAABB: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
 };
 
 const BET_TYPES: Record<string, string[]> = {
@@ -34,7 +33,6 @@ const BET_TYPES: Record<string, string[]> = {
   MLS: ["Moneyline", "Draw", "Over/Under"],
   NWSL: ["Moneyline", "Draw", "Over/Under"],
   NCAAB: ["Moneyline", "Spread", "Over/Under"],
-  NCAABB: ["Moneyline", "Run Line", "Over/Under"],
 };
 
 function isToday(dateStr: string) {
@@ -209,7 +207,7 @@ export default function DailyPicks() {
                         {game?.league || "—"}
                       </Badge>
                       <div className="min-w-0">
-                        <p className="text-xs text-muted-foreground truncate">{game ? `${game.awayTeam} @ ${game.homeTeam}` : "—"}</p>
+                        <p className="text-xs text-muted-foreground leading-tight">{game ? `${game.awayTeam} @ ${game.homeTeam}` : "—"}</p>
                         <p className="font-display font-bold text-sm">{pred.pick}</p>
                         <p className="text-[10px] text-muted-foreground/60">{pred.predictionType}{pred.odds ? ` · ${pred.odds}` : ""}</p>
                       </div>
@@ -285,6 +283,11 @@ export default function DailyPicks() {
                         <Clock size={9} />
                         {new Date(game.gameTime).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZoneName: "short" })}
                       </div>
+                    </div>
+
+                    <div className="mb-3">
+                      <p className="font-display font-bold text-sm leading-tight">{game.awayTeam}</p>
+                      <p className="text-xs text-muted-foreground leading-tight">@ {game.homeTeam}</p>
                     </div>
 
                     {game.spiderPick && (
