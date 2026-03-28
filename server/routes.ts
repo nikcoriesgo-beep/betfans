@@ -5,7 +5,7 @@ import { storage } from "./storage";
 import { db } from "./db";
 import { users, referrals, games, predictions } from "@shared/schema";
 import { eq, sql } from "drizzle-orm";
-import { insertPredictionSchema, insertChatMessageSchema, insertBraggingPostSchema, insertBraggingCommentSchema, insertMusicTrackSchema, insertThreadSchema, insertThreadReplySchema, insertAdvertiserSchema } from "@shared/schema";
+import { insertPredictionSchema, insertChatMessageSchema, insertBraggingPostSchema, insertBraggingCommentSchema, insertThreadSchema, insertThreadReplySchema, insertAdvertiserSchema } from "@shared/schema";
 import { stripeService } from "./stripeService";
 import { WebhookHandlers } from "./webhookHandlers";
 import { getPayPalConfig, getSubscriptionDetails, tierFromPlanId } from "./paypalService";
@@ -994,101 +994,6 @@ export async function registerRoutes(
       next();
     }).catch(() => res.status(500).json({ message: "Admin check failed" }));
   }
-
-  app.get("/api/music/tracks", async (req, res) => {
-    try {
-      const date = req.query.date as string || new Date().toISOString().split("T")[0];
-      let tracks = await storage.getMusicTracks(date);
-      if (tracks.length === 0) {
-        tracks = await storage.getMusicTracks();
-      }
-      res.json(tracks);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch tracks" });
-    }
-  });
-
-  app.get("/api/music/tracks/all", isAuthenticated, isAdmin, async (_req, res) => {
-    try {
-      const tracks = await storage.getMusicTracks();
-      res.json(tracks);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch tracks" });
-    }
-  });
-
-  app.post("/api/music/tracks", isAuthenticated, isAdmin, async (req: any, res) => {
-    try {
-      const data = { ...req.body };
-      if (data.sunoId && !/^[a-f0-9-]{36}$/i.test(data.sunoId)) {
-        try {
-          const resp = await fetch(`https://suno.com/s/${data.sunoId}`);
-          const html = await resp.text();
-          const match = html.match(/cdn[0-9]*\.suno\.ai\/([a-f0-9-]{36})\.mp3/);
-          if (match) data.sunoId = match[1];
-        } catch {}
-      }
-      const parsed = insertMusicTrackSchema.parse(data);
-      const track = await storage.createMusicTrack(parsed);
-      res.status(201).json(track);
-    } catch (error: any) {
-      res.status(400).json({ message: error.message || "Invalid track data" });
-    }
-  });
-
-  app.patch("/api/music/tracks/:id", isAuthenticated, isAdmin, async (req: any, res) => {
-    try {
-      const track = await storage.updateMusicTrack(parseInt(req.params.id), req.body);
-      if (!track) return res.status(404).json({ message: "Track not found" });
-      res.json(track);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to update track" });
-    }
-  });
-
-  app.delete("/api/music/tracks/:id", isAuthenticated, isAdmin, async (req: any, res) => {
-    try {
-      const deleted = await storage.deleteMusicTrack(parseInt(req.params.id));
-      if (!deleted) return res.status(404).json({ message: "Track not found" });
-      res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to delete track" });
-    }
-  });
-
-  app.get("/api/music/stream/:sunoId", (req, res) => {
-    const { sunoId } = req.params;
-    const reqHeaders: Record<string, string> = {
-      "User-Agent": "Mozilla/5.0",
-      "Accept": "audio/*,*/*",
-    };
-    if (req.headers.range) reqHeaders["Range"] = req.headers.range;
-
-    import("https").then(({ get }) => {
-      const upstream = get(
-        { hostname: "cdn1.suno.ai", path: `/${sunoId}.mp3`, headers: reqHeaders },
-        (uRes) => {
-          if (!uRes.statusCode || uRes.statusCode >= 400) {
-            uRes.resume();
-            if (!res.headersSent) res.status(502).json({ message: "Audio unavailable" });
-            return;
-          }
-          res.status(uRes.statusCode);
-          res.setHeader("Content-Type", uRes.headers["content-type"] || "audio/mpeg");
-          res.setHeader("Accept-Ranges", "bytes");
-          res.setHeader("Cache-Control", "public, max-age=3600");
-          res.setHeader("Access-Control-Allow-Origin", "*");
-          if (uRes.headers["content-length"]) res.setHeader("Content-Length", uRes.headers["content-length"]);
-          if (uRes.headers["content-range"]) res.setHeader("Content-Range", uRes.headers["content-range"]);
-          uRes.pipe(res);
-          req.on("close", () => uRes.destroy());
-        }
-      );
-      upstream.on("error", () => { if (!res.headersSent) res.status(502).json({ message: "Stream error" }); });
-      upstream.setTimeout(10000, () => { upstream.destroy(); if (!res.headersSent) res.status(504).json({ message: "Stream timeout" }); });
-    });
-  });
-
 
   app.get("/api/members/locations", async (_req, res) => {
     try {
