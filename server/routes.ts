@@ -1702,7 +1702,10 @@ export async function registerRoutes(
 
       const splits = PAYOUT_SPLITS[period];
       const topCount = splits.length;
-      const leaderboard = await storage.getLeaderboard(period, topCount);
+      // Prize pool eligibility: MLB winners only — keeps members focused on daily MLB
+      const leaderboard = (await storage.getLeaderboardByLeague(period, "MLB", topCount * 5))
+        .filter((e: any) => e.wins > 0)
+        .slice(0, topCount);
 
       if (leaderboard.length === 0) {
         return res.status(400).json({ message: "No leaderboard entries for this period" });
@@ -1754,7 +1757,7 @@ export async function registerRoutes(
         // Skip members whose payment has lapsed (Legend grace or otherwise)
         const entryUser = await storage.getUser(entry.userId);
         if (entryUser?.subscriptionCancelledAt) {
-          results.push({ userId: entry.userId, rank: i + 1, skipped: true, reason: "Payment lapsed — not eligible for prize pool until updated" });
+          results.push({ userId: entry.userId, rank: i + 1, skipped: true, reason: "Payment lapsed — not eligible for prize pool (MLB winners only)" });
           continue;
         }
 
