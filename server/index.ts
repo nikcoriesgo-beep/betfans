@@ -120,16 +120,17 @@ async function initStripe() {
   }
 
   if (process.env.NODE_ENV === "production") {
-    const selfUrl = "https://betfans.us";
-    setInterval(async () => {
-      try {
-        await fetch(`${selfUrl}/api/member-count`);
-        log("Keep-alive ping sent", "keepalive");
-      } catch (e: any) {
+    const { default: httpsModule } = await import("https");
+    const PING_URL = "https://betfans.us/api/health";
+    setInterval(() => {
+      httpsModule.get(PING_URL, (res) => {
+        res.resume();
+        log(`Keep-alive ping → ${res.statusCode}`, "keepalive");
+      }).on("error", (e: Error) => {
         log(`Keep-alive ping failed: ${e.message}`, "keepalive");
-      }
-    }, 3 * 60 * 1000);
-    log("Keep-alive self-ping started (every 3 min)", "keepalive");
+      });
+    }, 60 * 1000); // every 60 seconds — well inside the 15-min idle timeout
+    log("Keep-alive self-ping started (every 60s → /api/health)", "keepalive");
   }
 
   try {
