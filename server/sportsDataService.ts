@@ -3,14 +3,11 @@ import { games, predictions } from "@shared/schema";
 import { eq, and, sql } from "drizzle-orm";
 
 const ESPN_ENDPOINTS: Record<string, string> = {
-  NFL: "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard",
-  NBA: "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard",
-  WNBA: "https://site.api.espn.com/apis/site/v2/sports/basketball/wnba/scoreboard",
-  NHL: "https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/scoreboard",
-  NCAAB: "https://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard?groups=50",
   MLB: "https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard",
+  NBA: "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard",
   MLS: "https://site.api.espn.com/apis/site/v2/sports/soccer/usa.1/scoreboard",
-  NWSL: "https://site.api.espn.com/apis/site/v2/sports/soccer/usa.nwsl/scoreboard",
+  NCAAB: "https://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard?groups=50",
+  NCAABB: "https://site.api.espn.com/apis/site/v2/sports/baseball/college-baseball/scoreboard",
 };
 
 interface ESPNEvent {
@@ -323,14 +320,11 @@ export async function syncSportsData(): Promise<{ synced: number; leagues: strin
   const now = new Date();
   const month = now.getMonth() + 1;
   const seasonActive: Record<string, boolean> = {
-    NFL: month >= 9 || month <= 2,
-    NBA: month >= 10 || month <= 6,
-    WNBA: month >= 5 && month <= 10,
-    NHL: month >= 10 || month <= 6,
-    NCAAB: month >= 11 || month <= 4,
     MLB: month >= 3 && month <= 10,
+    NBA: month >= 10 || month <= 6,
     MLS: month >= 2 && month <= 11,
-    NWSL: month >= 3 && month <= 11,
+    NCAAB: month >= 11 || month <= 4,
+    NCAABB: month >= 2 && month <= 6,
   };
 
   let totalSynced = 0;
