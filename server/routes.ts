@@ -1097,14 +1097,16 @@ export async function registerRoutes(
       const userId = (req.session as any)?.userId;
       if (!userId) return res.status(401).json({ message: "Not authenticated" });
 
-      const { subscriptionId, tier } = req.body;
+      const { subscriptionId, tier, affiliateCode } = req.body;
       if (!subscriptionId || !tier) {
         return res.status(400).json({ message: "subscriptionId and tier required" });
       }
 
       // Verify subscription with PayPal
+      // Accept APPROVED and ACTIVE — onApprove fires before PayPal processes the first payment
+      // so the status may still be APPROVED at this point (it moves to ACTIVE seconds later)
       const sub = await getSubscriptionDetails(subscriptionId);
-      if (!sub || sub.status !== "ACTIVE") {
+      if (!sub || !["ACTIVE", "APPROVED"].includes(sub.status)) {
         return res.status(400).json({ message: "Subscription is not active" });
       }
 
@@ -1119,6 +1121,43 @@ export async function registerRoutes(
         membershipTier: confirmedTier,
         paypalSubscriptionId: subscriptionId,
       });
+
+      // Add 50% of subscription price to prize pool
+      const tierPrices: Record<string, number> = { rookie: 19, pro: 29, legend: 99 };
+      const prizeContribution = (tierPrices[confirmedTier] || 0) * 0.5;
+      if (prizeContribution > 0) {
+        await storage.addPrizePoolContribution(prizeContribution, "paypal", subscriptionId, userId);
+        console.log(`[PayPal] Prize pool +$${prizeContribution} for ${confirmedTier} (${subscriptionId})`);
+      }
+
+      // Apply affiliate code if provided and not already referred
+      if (affiliateCode) {
+        const currentUser = await storage.getUser(userId);
+        if (!currentUser?.referredBy) {
+          const upperCode = affiliateCode.trim().toUpperCase();
+          if (upperCode === "NIKCOX") {
+            await db.update(users).set({ referredBy: "NIKCOX" }).where(eq(users.id, userId));
+            const adminIds = (process.env.ADMIN_USER_IDS || "").split(",").map((id: string) => id.trim()).filter(Boolean);
+            const founderId = adminIds[0];
+            if (founderId && founderId !== userId) {
+              try { await storage.createReferral(founderId, userId); } catch {}
+            }
+            console.log(`[PayPal] Referral applied: NIKCOX -> ${userId}`);
+          } else {
+            const referrer = await storage.getUserByReferralCode(upperCode);
+            if (referrer && referrer.id !== userId) {
+              await storage.createReferral(referrer.id, userId);
+              await db.update(users).set({ referredBy: referrer.id }).where(eq(users.id, userId));
+              // Instant signup bonus to referrer's wallet ($50 for Legend referrals, $1 otherwise)
+              const signupBonus = (confirmedTier === "legend" || referrer.membershipTier === "legend") ? 50 : 1;
+              const referrerBalance = parseFloat(referrer.walletBalance || "0");
+              await storage.updateUser(referrer.id, { walletBalance: String(referrerBalance + signupBonus) });
+              await storage.createTransaction({ userId: referrer.id, type: "referral_bonus", amount: signupBonus, description: `Signup bonus — ${upperCode} referred a ${confirmedTier} member`, status: "completed" });
+              console.log(`[PayPal] Referral applied: ${referrer.id} -> ${userId}, +$${signupBonus} wallet bonus`);
+            }
+          }
+        }
+      }
 
       console.log(`[PayPal] User ${userId} subscribed to ${confirmedTier} (${subscriptionId})`);
       res.json({ success: true, tier: confirmedTier });
@@ -1140,10 +1179,19 @@ export async function registerRoutes(
         if (subscriptionId && planId) {
           const tier = tierFromPlanId(planId);
           if (tier) {
-            const users = await storage.getUserByPaypalSubscriptionId(subscriptionId);
-            if (users) {
-              await storage.updateUser(users.id, { membershipTier: tier });
-              console.log(`[PayPal webhook] User ${users.id} activated ${tier}`);
+            const foundUser = await storage.getUserByPaypalSubscriptionId(subscriptionId);
+            if (foundUser) {
+              await storage.updateUser(foundUser.id, { membershipTier: tier });
+              console.log(`[PayPal webhook] User ${foundUser.id} activated ${tier}`);
+              // Add prize pool contribution on monthly renewal (not initial — that's handled by /api/paypal/subscription)
+              if (resourceType === "BILLING.SUBSCRIPTION.RENEWED") {
+                const tierPrices: Record<string, number> = { rookie: 19, pro: 29, legend: 99 };
+                const prizeContribution = (tierPrices[tier] || 0) * 0.5;
+                if (prizeContribution > 0) {
+                  await storage.addPrizePoolContribution(prizeContribution, "paypal_renewal", subscriptionId, foundUser.id);
+                  console.log(`[PayPal webhook] Prize pool +$${prizeContribution} renewal for ${tier}`);
+                }
+              }
             }
           }
         }
@@ -1702,6 +1750,13 @@ export async function registerRoutes(
         const payoutAmount = Math.floor(poolAmount * share * 100) / 100;
 
         if (payoutAmount < 1) continue;
+
+        // Skip members whose payment has lapsed (Legend grace or otherwise)
+        const entryUser = await storage.getUser(entry.userId);
+        if (entryUser?.subscriptionCancelledAt) {
+          results.push({ userId: entry.userId, rank: i + 1, skipped: true, reason: "Payment lapsed — not eligible for prize pool until updated" });
+          continue;
+        }
 
         const payout = await storage.createPayout({
           userId: entry.userId,
