@@ -945,6 +945,10 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/health", (_req, res) => {
+    res.json({ status: "ok", ts: Date.now() });
+  });
+
   app.get("/api/health/morning", (_req, res) => {
     const result = getLastCheckResult();
     if (!result) {
