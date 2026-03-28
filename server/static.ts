@@ -32,17 +32,15 @@ export function serveStatic(app: Express) {
     res.sendFile(path.resolve(distPath, "sw.js"));
   });
 
-  // All other static files (icons, manifest, etc.)
-  app.use(express.static(distPath, { maxAge: "1h" }));
+  // All other static files (icons, manifest, etc.) — never serve index.html here
+  app.use(express.static(distPath, { maxAge: "1h", index: false }));
 
   // HTML — never cache so deploys are always visible immediately
-  // Clear-Site-Data nukes any stale service workers and HTTP cache on every browser that visits
   app.use("*", (_req, res) => {
     res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
     res.setHeader("Pragma", "no-cache");
     res.setHeader("Expires", "0");
     res.setHeader("Surrogate-Control", "no-store");
-    res.setHeader("Clear-Site-Data", '"cache", "storage"');
     res.sendFile(path.resolve(distPath, "index.html"));
   });
 }
