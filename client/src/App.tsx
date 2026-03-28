@@ -12,8 +12,6 @@ import Membership from "@/pages/membership";
 
 import GameDetail from "@/pages/game-detail";
 import Profile from "@/pages/profile";
-import Merch from "@/pages/merch";
-import MerchOrderSuccess from "@/pages/merch-order-success";
 import Bragging from "@/pages/bragging";
 import MembersMap from "@/pages/members-map";
 import LeaderboardPage from "@/pages/leaderboard";
@@ -69,8 +67,6 @@ function Router() {
       <Route path="/" component={Home} />
       <Route path="/dashboard" component={Dashboard} />
       <Route path="/membership" component={Membership} />
-      <Route path="/merch" component={Merch} />
-      <Route path="/merch/order-success" component={MerchOrderSuccess} />
       <Route path="/bragging" component={Bragging} />
       <Route path="/community" component={Community} />
       <Route path="/members-map" component={MembersMap} />
