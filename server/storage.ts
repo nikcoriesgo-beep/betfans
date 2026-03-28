@@ -24,6 +24,7 @@ export interface IStorage {
   getUser(id: string): Promise<User | null>;
   getUserByStripeCustomerId(customerId: string): Promise<User | null>;
   getUserByPaypalSubscriptionId(subscriptionId: string): Promise<User | null>;
+  getActivePaypalSubscribers(): Promise<User[]>;
   updateUser(id: string, data: Partial<User>): Promise<User | null>;
 
   getGames(league?: string): Promise<Game[]>;
@@ -44,6 +45,14 @@ export interface IStorage {
   getLeaderboard(period: string, limit?: number): Promise<(LeaderboardEntry & { user: User | null })[]>;
   getLeaderboardByLeague(period: string, league: string, limit?: number): Promise<any[]>;
   getUserStats(userId: string): Promise<{ wins: number; losses: number; profit: number; roi: number; streak: number }>;
+  getUserSportStats(userId: string, period?: string): Promise<{
+    overall: { wins: number; losses: number; total: number; winRate: number; streak: number; profit: number };
+    bySport: Array<{ league: string; wins: number; losses: number; total: number; winRate: number }>;
+  }>;
+  getPlatformSportStats(period?: string): Promise<{
+    overall: { wins: number; losses: number; total: number; winRate: number };
+    bySport: Array<{ league: string; wins: number; losses: number; total: number; winRate: number }>;
+  }>;
 
   getBraggingPosts(limit?: number, offset?: number): Promise<(BraggingPost & { user: User | null; commentCount: number })[]>;
   createBraggingPost(post: InsertBraggingPost): Promise<BraggingPost>;
@@ -130,6 +139,12 @@ export class DatabaseStorage implements IStorage {
     return user || null;
   }
 
+  async getActivePaypalSubscribers(): Promise<User[]> {
+    return db.select().from(users).where(
+      sql`paypal_subscription_id IS NOT NULL AND paypal_subscription_id != '' AND membership_tier IN ('rookie','pro','legend')`
+    );
+  }
+
   async updateUser(id: string, data: Partial<User>): Promise<User | null> {
     const [user] = await db.update(users).set({ ...data, updatedAt: new Date() }).where(eq(users.id, id)).returning();
     return user || null;
@@ -200,19 +215,35 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(transactions).where(eq(transactions.userId, userId)).orderBy(desc(transactions.createdAt));
   }
 
+  private getPeriodStart(period: string): Date {
+    const now = new Date();
+    // Use Eastern Time (ET) for all period boundaries — handles EST/EDT automatically
+    const etDateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(now);
+    const [year, month, day] = etDateStr.split('-').map(Number);
+    // DST: clocks spring forward 2nd Sunday March, fall back 1st Sunday November
+    const dstStart = new Date(Date.UTC(year, 2, 8 + ((7 - new Date(Date.UTC(year, 2, 8)).getUTCDay()) % 7), 7));
+    const dstEnd = new Date(Date.UTC(year, 10, 1 + ((7 - new Date(Date.UTC(year, 10, 1)).getUTCDay()) % 7), 6));
+    const isDST = now >= dstStart && now < dstEnd;
+    const offsetHours = isDST ? 4 : 5; // hours to add to ET midnight to get UTC midnight
+
+    if (period === "last24h") {
+      return new Date(Date.now() - 24 * 60 * 60 * 1000);
+    } else if (period === "daily") {
+      return new Date(Date.UTC(year, month - 1, day, offsetHours, 0, 0, 0));
+    } else if (period === "weekly") {
+      const etDow = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' })).getDay();
+      const daysSinceSunday = etDow;
+      return new Date(Date.UTC(year, month - 1, day - daysSinceSunday, offsetHours, 0, 0, 0));
+    } else if (period === "monthly") {
+      return new Date(Date.UTC(year, month - 1, 1, offsetHours, 0, 0, 0));
+    } else {
+      return new Date(Date.UTC(year, 0, 1, offsetHours, 0, 0, 0));
+    }
+  }
+
   async getLeaderboard(period: string, limit = 50): Promise<(LeaderboardEntry & { user: User | null })[]> {
     const now = new Date();
-    let periodStart: Date;
-    if (period === "daily") {
-      periodStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    } else if (period === "weekly") {
-      const day = now.getDay();
-      periodStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - day);
-    } else if (period === "monthly") {
-      periodStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    } else {
-      periodStart = new Date(now.getFullYear(), 0, 1);
-    }
+    const periodStart = this.getPeriodStart(period);
 
     const allPreds = await db.select().from(predictions).where(sql`${predictions.createdAt} >= ${periodStart}`);
     const allUsers = await db.select().from(users);
@@ -236,8 +267,12 @@ export class DatabaseStorage implements IStorage {
         for (const p of sorted) { if (p.result === "win") streak++; else break; }
         return { userId, wins, losses, profit: Math.round(profit * 100) / 100, roi: Math.round(roi * 100) / 100, streak, total };
       })
-      .filter((e) => e.total > 0 || e.wins + e.losses === 0)
-      .sort((a, b) => b.roi - a.roi || b.wins - a.wins)
+      .filter((e) => e.total > 0)
+      .sort((a, b) => {
+        const aWinRate = a.total > 0 ? a.wins / a.total : 0;
+        const bWinRate = b.total > 0 ? b.wins / b.total : 0;
+        return bWinRate - aWinRate || b.wins - a.wins;
+      })
       .slice(0, limit);
 
     return computed.map((e, i) => ({
@@ -248,6 +283,7 @@ export class DatabaseStorage implements IStorage {
       rank: i + 1,
       wins: e.wins,
       losses: e.losses,
+      totalPicks: e.total,
       roi: e.roi,
       profit: e.profit,
       streak: e.streak,
@@ -261,18 +297,7 @@ export class DatabaseStorage implements IStorage {
     const leagueGameIds = new Set(leagueGames.map((g) => g.id));
     if (leagueGameIds.size === 0) return [];
 
-    const now = new Date();
-    let periodStart: Date;
-    if (period === "daily") {
-      periodStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    } else if (period === "weekly") {
-      const day = now.getDay();
-      periodStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - day);
-    } else if (period === "monthly") {
-      periodStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    } else {
-      periodStart = new Date(now.getFullYear(), 0, 1);
-    }
+    const periodStart = this.getPeriodStart(period);
 
     const allPreds = await db.select().from(predictions);
     const filtered = allPreds.filter((p) =>
@@ -340,6 +365,116 @@ export class DatabaseStorage implements IStorage {
     }
 
     return { wins, losses, profit, roi, streak };
+  }
+
+  async getUserSportStats(userId: string, period?: string): Promise<{
+    overall: { wins: number; losses: number; total: number; winRate: number; streak: number; profit: number };
+    bySport: Array<{ league: string; wins: number; losses: number; total: number; winRate: number }>;
+  }> {
+    // Join predictions with games to get league for each pick
+    const allRows = await db
+      .select({ result: predictions.result, payout: predictions.payout, createdAt: predictions.createdAt, league: games.league })
+      .from(predictions)
+      .leftJoin(games, eq(predictions.gameId, games.id))
+      .where(eq(predictions.userId, userId));
+
+    // Filter by period if specified
+    const rows = period
+      ? (() => {
+          const start = this.getPeriodStart(period);
+          return allRows.filter(r => r.createdAt && new Date(r.createdAt) >= start);
+        })()
+      : allRows;
+
+    // Overall stats
+    const gradedAll = rows.filter(r => r.result === "win" || r.result === "loss");
+    const overallWins = gradedAll.filter(r => r.result === "win").length;
+    const overallLosses = gradedAll.filter(r => r.result === "loss").length;
+    const overallTotal = overallWins + overallLosses;
+    const overallWinRate = overallTotal > 0 ? Math.round((overallWins / overallTotal) * 1000) / 10 : 0;
+    const overallProfit = Math.round(rows.reduce((acc, r) => acc + (r.payout || 0), 0) * 100) / 100;
+    let streak = 0;
+    const sortedAll = [...rows].sort((a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime());
+    for (const r of sortedAll) { if (r.result === "win") streak++; else if (r.result === "loss") break; }
+
+    // Per-sport stats — group by league, ordered by total picks desc
+    const leagueMap: Record<string, { wins: number; losses: number }> = {};
+    for (const r of rows) {
+      const lg = r.league || "Other";
+      if (!leagueMap[lg]) leagueMap[lg] = { wins: 0, losses: 0 };
+      if (r.result === "win") leagueMap[lg].wins++;
+      else if (r.result === "loss") leagueMap[lg].losses++;
+    }
+
+    const SPORT_ORDER = ["NFL", "NBA", "MLB", "NHL", "NCAAB", "NCAABB", "MLS", "NWSL", "WNBA", "Other"];
+    const bySport = Object.entries(leagueMap)
+      .filter(([, v]) => v.wins + v.losses > 0)
+      .map(([league, v]) => ({
+        league,
+        wins: v.wins,
+        losses: v.losses,
+        total: v.wins + v.losses,
+        winRate: Math.round((v.wins / (v.wins + v.losses)) * 1000) / 10,
+      }))
+      .sort((a, b) => {
+        const ai = SPORT_ORDER.indexOf(a.league);
+        const bi = SPORT_ORDER.indexOf(b.league);
+        return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+      });
+
+    return {
+      overall: { wins: overallWins, losses: overallLosses, total: overallTotal, winRate: overallWinRate, streak, profit: overallProfit },
+      bySport,
+    };
+  }
+
+  async getPlatformSportStats(period?: string): Promise<{
+    overall: { wins: number; losses: number; total: number; winRate: number };
+    bySport: Array<{ league: string; wins: number; losses: number; total: number; winRate: number }>;
+  }> {
+    const allRows = await db
+      .select({ result: predictions.result, createdAt: predictions.createdAt, league: games.league })
+      .from(predictions)
+      .leftJoin(games, eq(predictions.gameId, games.id));
+
+    const rows = period
+      ? (() => {
+          const start = this.getPeriodStart(period);
+          return allRows.filter(r => r.createdAt && new Date(r.createdAt) >= start);
+        })()
+      : allRows;
+
+    const graded = rows.filter(r => r.result === "win" || r.result === "loss");
+    const overallWins = graded.filter(r => r.result === "win").length;
+    const overallLosses = graded.filter(r => r.result === "loss").length;
+    const overallTotal = overallWins + overallLosses;
+    const overallWinRate = overallTotal > 0 ? Math.round((overallWins / overallTotal) * 1000) / 10 : 0;
+
+    const leagueMap: Record<string, { wins: number; losses: number }> = {};
+    for (const r of graded) {
+      const lg = r.league || "Other";
+      if (!leagueMap[lg]) leagueMap[lg] = { wins: 0, losses: 0 };
+      if (r.result === "win") leagueMap[lg].wins++;
+      else leagueMap[lg].losses++;
+    }
+
+    const SPORT_ORDER = ["NFL", "NBA", "MLB", "NHL", "NCAAB", "NCAABB", "MLS", "NWSL", "WNBA", "Other"];
+    const bySport = Object.entries(leagueMap)
+      .filter(([, v]) => v.wins + v.losses > 0)
+      .map(([league, v]) => ({
+        league,
+        wins: v.wins,
+        losses: v.losses,
+        total: v.wins + v.losses,
+        winRate: Math.round((v.wins / (v.wins + v.losses)) * 1000) / 10,
+      }))
+      .sort((a, b) => {
+        const ai = SPORT_ORDER.indexOf(a.league);
+        const bi = SPORT_ORDER.indexOf(b.league);
+        return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+      });
+
+    return { overall: { wins: overallWins, losses: overallLosses, total: overallTotal, winRate: overallWinRate }, bySport };
   }
 
   async getBraggingPosts(limit = 50, offset = 0): Promise<(BraggingPost & { user: User | null; commentCount: number })[]> {
@@ -758,7 +893,6 @@ export class DatabaseStorage implements IStorage {
 
   async getReferralStats(userId: string): Promise<{ totalReferred: number; signupBonuses: number; predictionBonuses: number; totalEarned: number; pendingCount: number; completedCount: number; monthlyIncome: number; instantBonus: number }> {
     const FOUNDER_CODES = ["NIKCOX"];
-    const LAPSE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
     const now = new Date();
 
     const refs = await db.select().from(referrals).where(eq(referrals.referrerId, userId));
@@ -771,12 +905,10 @@ export class DatabaseStorage implements IStorage {
     const isFounder = FOUNDER_CODES.includes(referrer?.referralCode ?? "");
     const referrerIsLegend = referrer?.membershipTier === "legend";
 
-    // Non-founders who cancelled 30+ days ago lose all residual income
+    // Any member (including Legend) with a lapsed payment loses residual income.
+    // Legend members keep their status for 12 months but lose residuals immediately upon lapse.
     const cancelledAt = referrer?.subscriptionCancelledAt ? new Date(referrer.subscriptionCancelledAt) : null;
-    const isLapsed = !isFounder &&
-      referrer?.membershipTier === "free" &&
-      cancelledAt !== null &&
-      (now.getTime() - cancelledAt.getTime()) > LAPSE_MS;
+    const isLapsed = !isFounder && cancelledAt !== null;
 
     let monthlyIncome = 0;
 
@@ -803,9 +935,7 @@ export class DatabaseStorage implements IStorage {
         const affCancelledAt = affiliateReferrer.subscriptionCancelledAt
           ? new Date(affiliateReferrer.subscriptionCancelledAt)
           : null;
-        const affiliateLapsed = affiliateReferrer.membershipTier === "free" &&
-          affCancelledAt !== null &&
-          (now.getTime() - affCancelledAt.getTime()) > LAPSE_MS;
+        const affiliateLapsed = affCancelledAt !== null;
         if (affiliateLapsed) {
           monthlyIncome += 50; // lapsed affiliate's earnings redirect to founder
         }
