@@ -21,6 +21,7 @@ import Community from "@/pages/community";
 import Advertising from "@/pages/advertising";
 import Winners from "@/pages/winners";
 import WinnersProbability from "@/pages/winners-probability";
+import MemberScorecard from "@/pages/member-scorecard";
 import SportsNews from "@/pages/sports-news";
 import BaseballBreakfast from "@/pages/baseball-breakfast";
 import DailyPicks from "@/pages/daily-picks";
@@ -30,6 +31,7 @@ import ResidualIncome from "@/pages/residual-income";
 import Auth from "@/pages/auth";
 import { MusicPlayer } from "@/components/MusicPlayer";
 import { PhoneConsentModal } from "@/components/PhoneConsentModal";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 const PUBLIC_PATHS = ["/", "/auth", "/membership"];
 const FOUNDER_CODES = ["NIKCOX"];
@@ -79,6 +81,7 @@ function Router() {
       <Route path="/leaderboard" component={LeaderboardPage} />
       <Route path="/profile" component={Profile} />
       <Route path="/winners" component={Winners} />
+      <Route path="/winners/:userId" component={MemberScorecard} />
       <Route path="/winners-probability" component={WinnersProbability} />
       <Route path="/news" component={SportsNews} />
       <Route path="/article" component={ArticleReader} />
@@ -132,9 +135,11 @@ function App() {
         <Toaster />
         <AffiliateCodeCapture />
         <ReplitFounderAutoLogin />
-        <Router />
-        <PhoneConsentModal />
-        <MusicPlayer />
+        <ErrorBoundary>
+          <Router />
+          <PhoneConsentModal />
+          <MusicPlayer />
+        </ErrorBoundary>
       </TooltipProvider>
     </QueryClientProvider>
   );
