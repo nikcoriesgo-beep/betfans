@@ -119,7 +119,9 @@ async function initStripe() {
     startMorningSweep();
   }
 
-  if (process.env.NODE_ENV === "production") {
+  // External keep-alive: dev server (on Replit) pings the production site (on Render)
+  // This is genuine external traffic from a different server — prevents Render spin-down
+  {
     const { default: httpsModule } = await import("https");
     const PING_URL = "https://betfans.us/api/health";
     setInterval(() => {
@@ -129,22 +131,8 @@ async function initStripe() {
       }).on("error", (e: Error) => {
         log(`Keep-alive ping failed: ${e.message}`, "keepalive");
       });
-    }, 60 * 1000); // every 60 seconds — well inside the 15-min idle timeout
-    log("Keep-alive self-ping started (every 60s → /api/health)", "keepalive");
+    }, 60 * 1000);
+    log("Keep-alive ping started (every 60s → betfans.us/api/health)", "keepalive");
   }
 
-  try {
-    const existingTracks = await storage.getMusicTracks();
-    if (existingTracks.length === 0) {
-      await storage.createMusicTrack({
-        sunoId: "local:audio/baseball-for-breakfast.mp3",
-        title: "Baseball For Breakfast",
-        active: true,
-        sortOrder: 0,
-      });
-      log("Seeded BetFans Daily Anthem track", "music");
-    }
-  } catch (e: any) {
-    log(`Music seed error (non-fatal): ${e.message}`, "music");
-  }
 })();
