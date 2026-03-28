@@ -7,9 +7,8 @@ const ESPN_ENDPOINTS: Record<string, string> = {
   NBA: "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard",
   WNBA: "https://site.api.espn.com/apis/site/v2/sports/basketball/wnba/scoreboard",
   NHL: "https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/scoreboard",
-  NCAAB: "https://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard",
+  NCAAB: "https://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard?groups=50",
   MLB: "https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard",
-  NCAABB: "https://site.api.espn.com/apis/site/v2/sports/baseball/college-baseball/scoreboard",
   MLS: "https://site.api.espn.com/apis/site/v2/sports/soccer/usa.1/scoreboard",
   NWSL: "https://site.api.espn.com/apis/site/v2/sports/soccer/usa.nwsl/scoreboard",
 };
@@ -330,7 +329,6 @@ export async function syncSportsData(): Promise<{ synced: number; leagues: strin
     NHL: month >= 10 || month <= 6,
     NCAAB: month >= 11 || month <= 4,
     MLB: month >= 3 && month <= 10,
-    NCAABB: month >= 2 && month <= 6,
     MLS: month >= 2 && month <= 11,
     NWSL: month >= 3 && month <= 11,
   };
