@@ -13,26 +13,22 @@ import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
-const LEAGUES = ["All", "MLB", "NBA", "NHL", "NFL", "MLS", "NWSL", "NCAAB"];
+const LEAGUES = ["All", "MLB", "NBA", "MLS", "NCAAB", "NCAABB"];
 
 const LEAGUE_COLORS: Record<string, string> = {
   MLB: "bg-red-500/20 text-red-400 border-red-500/30",
   NBA: "bg-orange-500/20 text-orange-400 border-orange-500/30",
-  NHL: "bg-blue-500/20 text-blue-400 border-blue-500/30",
-  NFL: "bg-green-700/20 text-green-400 border-green-700/30",
   MLS: "bg-sky-500/20 text-sky-400 border-sky-500/30",
-  NWSL: "bg-pink-500/20 text-pink-400 border-pink-500/30",
   NCAAB: "bg-purple-500/20 text-purple-400 border-purple-500/30",
+  NCAABB: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
 };
 
 const BET_TYPES: Record<string, string[]> = {
   MLB: ["Moneyline", "Run Line", "Over/Under", "First 5 Innings"],
   NBA: ["Moneyline", "Spread", "Over/Under"],
-  NHL: ["Moneyline", "Puck Line", "Over/Under"],
-  NFL: ["Moneyline", "Spread", "Over/Under"],
   MLS: ["Moneyline", "Draw", "Over/Under"],
-  NWSL: ["Moneyline", "Draw", "Over/Under"],
   NCAAB: ["Moneyline", "Spread", "Over/Under"],
+  NCAABB: ["Moneyline", "Run Line", "Over/Under"],
 };
 
 function isToday(dateStr: string) {
