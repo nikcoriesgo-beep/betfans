@@ -635,29 +635,35 @@ function SportScorecardTable() {
                 </tr>
               )}
 
-              {/* BETFANS TOTAL row — single all-time combined W-L across all sports */}
-              {allLeagues.length > 0 && (
-                <tr className="border-t-2 border-yellow-400/40 bg-yellow-400/5" data-testid="row-scorecard-betfans-total">
-                  <td colSpan={5} className="py-5 px-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5">
-                        <Zap size={12} className="text-yellow-400" />
-                        <span className="font-black text-[10px] uppercase tracking-widest text-yellow-400">BetFans Total</span>
+              {/* BETFANS TOTAL row — MLB prize pool qualifying picks only */}
+              {allLeagues.length > 0 && (() => {
+                const mlb = getSport(annual, "MLB");
+                return (
+                  <tr className="border-t-2 border-yellow-400/40 bg-yellow-400/5" data-testid="row-scorecard-betfans-total">
+                    <td colSpan={5} className="py-5 px-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
+                          <Zap size={12} className="text-yellow-400" />
+                          <div>
+                            <span className="font-black text-[10px] uppercase tracking-widest text-yellow-400">BetFans Total</span>
+                            <span className="block text-[9px] text-yellow-400/60 uppercase tracking-widest">MLB Prize Pool Picks</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="text-xl font-black text-primary tabular-nums">
+                            {mlb.wins ?? 0}W
+                          </span>
+                          <span className="text-muted-foreground text-sm font-bold">—</span>
+                          <span className="text-xl font-black text-red-400 tabular-nums">
+                            {mlb.losses ?? 0}L
+                          </span>
+                          <span className="text-[10px] text-muted-foreground uppercase tracking-widest ml-1">All Time</span>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-3">
-                        <span className="text-xl font-black text-primary tabular-nums">
-                          {annual?.overall?.wins ?? 0}W
-                        </span>
-                        <span className="text-muted-foreground text-sm font-bold">—</span>
-                        <span className="text-xl font-black text-red-400 tabular-nums">
-                          {annual?.overall?.losses ?? 0}L
-                        </span>
-                        <span className="text-[10px] text-muted-foreground uppercase tracking-widest ml-1">All Picks Combined</span>
-                      </div>
-                    </div>
-                  </td>
-                </tr>
-              )}
+                    </td>
+                  </tr>
+                );
+              })()}
             </tbody>
           </table>
         </div>
