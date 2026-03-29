@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Zap, Clock, Loader2, CheckCircle2, XCircle, Lock,
-  CircleDot, Calendar, Send
+  CircleDot, Calendar, Send, Trophy
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -215,6 +215,13 @@ export default function DailyPicks() {
             </div>
           </div>
         )}
+
+        <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-yellow-500/10 border border-yellow-500/25 mb-4" data-testid="banner-mlb-prize-pool">
+          <Trophy size={14} className="text-yellow-400 shrink-0" />
+          <p className="text-xs text-yellow-300 leading-snug">
+            <span className="font-bold">Prize Pool:</span> Only MLB picks qualify. You must pick <span className="font-bold">every MLB game daily</span> to be eligible for payouts.
+          </p>
+        </div>
 
         <div className="flex items-center gap-2 mb-4 flex-wrap">
           {activeLeagues.filter((l) => LEAGUES.includes(l) || l === "All").map((l) => (
