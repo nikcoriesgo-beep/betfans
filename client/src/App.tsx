@@ -12,7 +12,6 @@ import Membership from "@/pages/membership";
 
 import GameDetail from "@/pages/game-detail";
 import Profile from "@/pages/profile";
-import Bragging from "@/pages/bragging";
 import MembersMap from "@/pages/members-map";
 import LeaderboardPage from "@/pages/leaderboard";
 import Community from "@/pages/community";
@@ -66,7 +65,6 @@ function Router() {
       <Route path="/" component={Home} />
       <Route path="/dashboard" component={Dashboard} />
       <Route path="/membership" component={Membership} />
-      <Route path="/bragging" component={Bragging} />
       <Route path="/community" component={Community} />
       <Route path="/members-map" component={MembersMap} />
       <Route path="/leaderboard/daily" component={LeaderboardPage} />
