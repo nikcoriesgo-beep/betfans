@@ -237,30 +237,73 @@ async function fetchLeagueGames(league: string): Promise<any[]> {
 }
 
 export async function gradeStuckGames(): Promise<number> {
-  // Find games still marked live/upcoming whose game time was > 4 hours ago
+  let totalGraded = 0;
+
+  // ── Safety net: grade any pending picks on already-finished games ──────────
+  // This catches the case where the server restarted between a game being marked
+  // "finished" and autoGradePredictions being called (race condition).
+  const finishedWithPending = await db
+    .select({ g: games, p: predictions })
+    .from(predictions)
+    .innerJoin(games, eq(predictions.gameId, games.id))
+    .where(
+      sql`${predictions.result} = 'pending'
+        AND ${games.status} = 'finished'
+        AND ${games.homeScore} IS NOT NULL
+        AND ${games.awayScore} IS NOT NULL`
+    );
+
+  if (finishedWithPending.length > 0) {
+    console.log(`[spider] gradeStuckGames: found ${finishedWithPending.length} pending pick(s) on finished games — grading now`);
+    const gamesSeen = new Set<number>();
+    for (const row of finishedWithPending) {
+      const g = row.g;
+      if (gamesSeen.has(g.id)) continue;
+      gamesSeen.add(g.id);
+      const graded = await autoGradePredictions(
+        g.id, g.homeTeam, g.awayTeam,
+        g.homeScore!, g.awayScore!,
+        g.spread, g.total,
+      );
+      if (graded > 0) {
+        console.log(`[spider] gradeStuckGames: safety-net graded ${graded} pick(s) — ${g.awayTeam} @ ${g.homeTeam}`);
+        totalGraded += graded;
+      }
+    }
+  }
+
+  // ── Find games still marked live/upcoming whose game time was > 4 hours ago ─
   const cutoff = new Date(Date.now() - 4 * 60 * 60 * 1000);
   const stuckGames = await db
     .select()
     .from(games)
     .where(sql`${games.status} != 'finished' AND ${games.gameTime} < ${cutoff}`);
 
-  if (stuckGames.length === 0) {
-    console.log("[spider] gradeStuckGames: no stuck games found");
-    return 0;
+  // Filter to only leagues we have ESPN endpoints for
+  const actionableStuck = stuckGames.filter((g) => ESPN_ENDPOINTS[g.league]);
+
+  if (actionableStuck.length === 0) {
+    if (stuckGames.length > 0) {
+      console.log(`[spider] gradeStuckGames: ${stuckGames.length} stuck game(s) skipped (removed leagues — NHL/NWSL/NFL/WNBA)`);
+    } else {
+      console.log("[spider] gradeStuckGames: no stuck games found");
+    }
+    console.log(`[spider] gradeStuckGames: total ${totalGraded} pick(s) graded`);
+    return totalGraded;
   }
 
-  console.log(`[spider] gradeStuckGames: found ${stuckGames.length} stuck game(s) — fetching final scores`);
+  console.log(`[spider] gradeStuckGames: found ${actionableStuck.length} stuck game(s) — fetching final scores`);
 
   // Group by league + date so we batch ESPN calls
   const byLeagueDate: Record<string, { league: string; dateStr: string }> = {};
-  for (const g of stuckGames) {
-    const d = new Date(g.gameTime!);
-    const dateStr = `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, "0")}${String(d.getUTCDate()).padStart(2, "0")}`;
+  for (const g of actionableStuck) {
+    // Use ET date (ET = UTC-4 for EDT) so late-night ET games get the right ESPN date
+    const etOffset = -4 * 60; // EDT offset in minutes
+    const etTime = new Date(new Date(g.gameTime!).getTime() + etOffset * 60 * 1000);
+    const dateStr = `${etTime.getUTCFullYear()}${String(etTime.getUTCMonth() + 1).padStart(2, "0")}${String(etTime.getUTCDate()).padStart(2, "0")}`;
     const key = `${g.league}-${dateStr}`;
     byLeagueDate[key] = { league: g.league, dateStr };
   }
-
-  let totalGraded = 0;
 
   for (const { league, dateStr } of Object.values(byLeagueDate)) {
     const url = ESPN_ENDPOINTS[league];
@@ -280,6 +323,8 @@ export async function gradeStuckGames(): Promise<number> {
         const homeScore = homeComp.score ? parseInt(homeComp.score) : null;
         const awayScore = awayComp.score ? parseInt(awayComp.score) : null;
         if (homeScore === null || awayScore === null) continue;
+        // Skip games that finished 0-0 — likely a data error or game not fully played
+        if (homeScore === 0 && awayScore === 0) continue;
 
         const gameDate = new Date(event.date);
         const matching = await db
