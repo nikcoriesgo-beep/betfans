@@ -179,7 +179,8 @@ async function fetchLeagueGames(league: string): Promise<any[]> {
     // Always pass today's ET date so ESPN returns ALL scheduled games,
     // not just live/finished ones. Without this, upcoming games are invisible.
     const todayET = getTodayET();
-    const response = await fetch(`${url}?dates=${todayET}`);
+    const separator = url.includes("?") ? "&" : "?";
+    const response = await fetch(`${url}${separator}dates=${todayET}`);
     if (!response.ok) {
       console.log(`[spider] ESPN ${league} returned ${response.status}`);
       return [];
@@ -188,12 +189,19 @@ async function fetchLeagueGames(league: string): Promise<any[]> {
     const events: ESPNEvent[] = data.events || [];
     const results: any[] = [];
 
+    // For college baseball, ESPN includes some D2 transition schools — exclude them
+    const NON_D1_BASEBALL = new Set(["West Georgia Wolves", "Queens University Royals"]);
+
     for (const event of events) {
       const comp = event.competitions?.[0];
       if (!comp) continue;
       const homeComp = comp.competitors.find((c) => c.homeAway === "home");
       const awayComp = comp.competitors.find((c) => c.homeAway === "away");
       if (!homeComp || !awayComp) continue;
+
+      if (league === "NCAABB") {
+        if (NON_D1_BASEBALL.has(homeComp.team.displayName) || NON_D1_BASEBALL.has(awayComp.team.displayName)) continue;
+      }
 
       const homeTeam = homeComp.team.displayName;
       const awayTeam = awayComp.team.displayName;
