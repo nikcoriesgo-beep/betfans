@@ -1,8 +1,9 @@
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
-import { ArrowRight, Trophy, Target, Users, DollarSign } from "lucide-react";
+import { ArrowRight, Trophy, Target, Users, DollarSign, LogIn } from "lucide-react";
 import heroBg from "@assets/generated_images/futuristic_sports_data_background.png";
 import { HowToPlayBanner } from "@/components/HowToPlayPopup";
+import { Link } from "wouter";
 
 export function Hero() {
   return (
@@ -49,16 +50,16 @@ export function Hero() {
             transition={{ duration: 0.5, delay: 0.2 }}
             className="flex flex-col sm:flex-row gap-4 justify-center items-center"
           >
-            <a href="/membership">
+            <Link href="/membership">
               <Button size="lg" className="h-12 px-8 text-base bg-primary text-primary-foreground hover:bg-primary/90 font-semibold shadow-[0_0_20px_rgba(34,197,94,0.3)]">
                 Start Predicting <ArrowRight className="ml-2 w-5 h-5" />
               </Button>
-            </a>
-            <a href="/referrals">
-              <Button size="lg" variant="outline" className="h-12 px-8 text-base border-primary/30 bg-primary/5 hover:bg-primary/10 text-primary backdrop-blur-sm">
-                Earn Residual Income <DollarSign className="ml-2 w-5 h-5" />
+            </Link>
+            <Link href="/auth">
+              <Button size="lg" variant="outline" className="h-12 px-8 text-base border-white/20 bg-white/5 hover:bg-white/10 text-white backdrop-blur-sm" data-testid="button-hero-login">
+                <LogIn className="mr-2 w-5 h-5" /> Member Login
               </Button>
-            </a>
+            </Link>
           </motion.div>
 
           <motion.div
@@ -70,7 +71,7 @@ export function Hero() {
             {[
               { icon: Trophy, title: "Daily Rewards", desc: "Compete for daily, weekly, and monthly cash prizes from the 50% winners pool." },
               { icon: Target, title: "Spider AI Picks", desc: "Access AI-powered predictions with confidence ratings across all major leagues." },
-              { icon: Users, title: "Pro Community", desc: "Follow top predictors, share wins in Bragging Rights, and chat live." },
+              { icon: Users, title: "Pro Community", desc: "Follow top predictors, post on member walls, and compete on the leaderboard." },
               { icon: DollarSign, title: "Affiliate Income", desc: "Earn $1/month for every member you refer — no caps, no limits, forever." },
             ].map((item, i) => (
               <div key={i} className="p-6 rounded-xl border border-white/5 bg-white/5 backdrop-blur-sm hover:border-primary/30 transition-colors group">
