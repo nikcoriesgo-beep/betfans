@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import {
   Trophy, Crown, Star, DollarSign, TrendingUp, Flame,
   Calendar, Clock, Target, Award, Sparkles, ChevronRight,
-  Timer, Zap, Users, ArrowUpRight,
+  Timer, Zap, Users, ArrowUpRight, BarChart3,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
@@ -130,7 +130,7 @@ function WinnerCard({ entry, place, payout, config }: { entry: any; place: numbe
   const isTop3 = place <= 3;
 
   return (
-    <Link href={`/profile?user=${entry.userId}`}>
+    <Link href={`/winners/${entry.userId}`}>
       <Card className={cn(
         "transition-all cursor-pointer group hover:scale-[1.02]",
         isTop3 ? `bg-gradient-to-r ${config.gradient.replace("from-", "from-").replace("to-", "to-")}/5 ${config.border} border` : "bg-card/30 border-white/5 hover:border-white/10"
@@ -152,7 +152,7 @@ function WinnerCard({ entry, place, payout, config }: { entry: any; place: numbe
               <div className="hidden md:flex items-center gap-4 text-xs text-muted-foreground">
                 <span className="flex items-center gap-1"><TrendingUp size={11} /> {winRate}% Win Rate</span>
                 <span className="flex items-center gap-1"><Flame size={11} /> {entry.streak || 0} streak</span>
-                <span>{entry.wins}W - {entry.losses}L</span>
+                <span>{entry.wins}W - {entry.losses}L · {(entry.totalPicks || (entry.wins + entry.losses))} picks</span>
               </div>
             </div>
             <div className="text-right shrink-0">
@@ -165,9 +165,9 @@ function WinnerCard({ entry, place, payout, config }: { entry: any; place: numbe
             </div>
             <ChevronRight size={16} className="text-muted-foreground/30 group-hover:text-foreground/50 transition-colors shrink-0 hidden md:block" />
           </div>
-          <div className="md:hidden grid grid-cols-3 gap-1 mt-2 py-2 px-2 rounded-lg bg-white/[0.03] border border-white/5">
+          <div className="md:hidden grid grid-cols-4 gap-1 mt-2 py-2 px-2 rounded-lg bg-white/[0.03] border border-white/5">
             <div className="text-center">
-              <div className="text-[8px] text-muted-foreground/60 uppercase tracking-wider mb-0.5">Win Rate</div>
+              <div className="text-[8px] text-muted-foreground/60 uppercase tracking-wider mb-0.5">Win%</div>
               <span className="font-mono font-bold text-[11px] text-primary">{winRate}%</span>
             </div>
             <div className="text-center">
@@ -177,6 +177,12 @@ function WinnerCard({ entry, place, payout, config }: { entry: any; place: numbe
                 <span className="text-muted-foreground/40">-</span>
                 <span className="text-red-400">{entry.losses}</span>
               </div>
+            </div>
+            <div className="text-center">
+              <div className="text-[8px] text-muted-foreground/60 uppercase tracking-wider mb-0.5">Picks</div>
+              <span className="font-mono font-bold text-[11px] text-foreground/80">
+                {(entry.totalPicks || (entry.wins + entry.losses))}
+              </span>
             </div>
             <div className="text-center">
               <div className="text-[8px] text-muted-foreground/60 uppercase tracking-wider mb-0.5">Streak</div>
@@ -308,6 +314,106 @@ function PrizePoolTracker({ period, amount, config }: {
   );
 }
 
+function PlatformSportStats({ period }: { period: Period }) {
+  const config = periodConfig[period];
+  const Icon = config.icon;
+
+  const { data: stats, isLoading } = useQuery<any>({
+    queryKey: ["/api/sport-stats", period],
+    queryFn: async () => {
+      const res = await fetch(`/api/sport-stats?period=${period}`);
+      if (!res.ok) return { overall: null, bySport: [] };
+      return res.json();
+    },
+  });
+
+  const overall = stats?.overall;
+  const bySport: any[] = stats?.bySport ?? [];
+  const hasData = overall && overall.total > 0;
+
+  return (
+    <div className="max-w-3xl mx-auto mb-10">
+      <div className="flex items-center gap-2 mb-4">
+        <BarChart3 size={16} className="text-primary" />
+        <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground">Platform Pick Totals — {config.title}</h2>
+      </div>
+
+      {isLoading ? (
+        <div className="flex items-center justify-center py-8">
+          <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+        </div>
+      ) : !hasData ? (
+        <Card className="bg-card/20 border-white/5">
+          <CardContent className="p-6 text-center">
+            <BarChart3 size={32} className="text-muted-foreground/20 mx-auto mb-2" />
+            <p className="text-sm text-muted-foreground">No graded picks recorded for this period yet</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-3">
+          {/* Combined row */}
+          <div className={cn(
+            "p-4 rounded-xl border flex flex-wrap items-center gap-4 bg-gradient-to-r border-primary/20",
+            "from-primary/10 to-primary/5"
+          )} data-testid={`platform-combined-${period}`}>
+            <div className={cn("w-9 h-9 rounded-lg flex items-center justify-center bg-gradient-to-br shrink-0", config.gradient)}>
+              <Icon size={16} className="text-white" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-xs font-bold uppercase tracking-wider text-primary mb-1">All Sports Combined</div>
+              <div className="flex flex-wrap items-center gap-4">
+                <span className="font-mono font-bold text-lg">
+                  <span className="text-green-400">{overall.wins}W</span>
+                  <span className="text-muted-foreground/40 mx-1.5">—</span>
+                  <span className="text-red-400">{overall.losses}L</span>
+                </span>
+                <span className={cn("font-mono font-black text-xl", config.accent)}>{overall.winRate}%</span>
+                <span className="text-xs text-muted-foreground">{overall.total} graded picks</span>
+              </div>
+            </div>
+            {/* Mini win/loss bar */}
+            <div className="w-full sm:w-32 h-2 rounded-full overflow-hidden flex gap-0.5">
+              <div className="bg-green-500 rounded-l-full" style={{ width: `${(overall.wins / overall.total) * 100}%` }} />
+              <div className="bg-red-500 rounded-r-full" style={{ width: `${(overall.losses / overall.total) * 100}%` }} />
+            </div>
+          </div>
+
+          {/* Per-sport grid */}
+          {bySport.length > 0 && (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+              {bySport.map((s: any) => {
+                const isHot = s.winRate >= 60;
+                const isCold = s.winRate < 40;
+                return (
+                  <div
+                    key={s.league}
+                    className={cn(
+                      "p-3 rounded-xl border text-center",
+                      isHot ? "bg-green-500/10 border-green-500/20" : isCold ? "bg-red-500/10 border-red-500/20" : "bg-card/30 border-white/10"
+                    )}
+                    data-testid={`platform-sport-${period}-${s.league}`}
+                  >
+                    <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-1.5">{s.league}</div>
+                    <div className="font-mono text-sm mb-1">
+                      <span className="text-green-400 font-bold">{s.wins}</span>
+                      <span className="text-muted-foreground/40">-</span>
+                      <span className="text-red-400 font-bold">{s.losses}</span>
+                    </div>
+                    <div className={cn("font-mono font-bold text-base", isHot ? "text-green-400" : isCold ? "text-red-400" : "text-primary")}>
+                      {s.winRate}%
+                    </div>
+                    <div className="text-[9px] text-muted-foreground mt-0.5">{s.total} picks</div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PeriodWinners({ period, poolAmount }: { period: Period; poolAmount: number }) {
   const config = periodConfig[period];
   const Icon = config.icon;
@@ -422,6 +528,144 @@ function PayoutHistory() {
   );
 }
 
+function RecordCell({ wins, losses, bold }: { wins: number; losses: number; bold?: boolean }) {
+  return (
+    <div className={cn("font-mono text-center tabular-nums", bold ? "text-base font-black" : "text-sm font-bold")}>
+      <span className="text-green-400">{wins}</span>
+      <span className="text-muted-foreground/30">-</span>
+      <span className="text-red-400">{losses}</span>
+    </div>
+  );
+}
+
+function SportScorecardTable() {
+  const fetchStats = async (p?: string) => {
+    const url = p ? `/api/sport-stats?period=${p}` : `/api/sport-stats`;
+    const res = await fetch(url);
+    if (!res.ok) return { overall: { wins: 0, losses: 0 }, bySport: [] };
+    return res.json();
+  };
+
+  const { data: daily }   = useQuery<any>({ queryKey: ["/api/sport-stats", "last24h"],  queryFn: () => fetchStats("last24h"), refetchInterval: 30000 });
+  const { data: weekly }  = useQuery<any>({ queryKey: ["/api/sport-stats", "weekly"],   queryFn: () => fetchStats("weekly"),  refetchInterval: 60000 });
+  const { data: monthly } = useQuery<any>({ queryKey: ["/api/sport-stats", "monthly"],  queryFn: () => fetchStats("monthly"), refetchInterval: 60000 });
+  const { data: annual }  = useQuery<any>({ queryKey: ["/api/sport-stats", "annual"],   queryFn: () => fetchStats("annual"),  refetchInterval: 60000 });
+
+  const periodData = [daily, weekly, monthly, annual];
+
+  // Collect all unique sports across all periods
+  const SPORT_ORDER = ["NFL", "NBA", "MLB", "NHL", "NCAAB", "NCAABB", "MLS", "NWSL", "WNBA"];
+  const allLeagues = Array.from(
+    new Set(periodData.flatMap(d => (d?.bySport ?? []).map((s: any) => s.league)))
+  ).sort((a, b) => {
+    const ai = SPORT_ORDER.indexOf(a), bi = SPORT_ORDER.indexOf(b);
+    return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+  });
+
+  const getSport = (d: any, league: string) =>
+    d?.bySport?.find((s: any) => s.league === league) ?? { wins: 0, losses: 0 };
+
+  const cols = [
+    { label: "Daily",   icon: Clock,    d: daily,   accent: "text-blue-400" },
+    { label: "Weekly",  icon: Calendar, d: weekly,  accent: "text-emerald-400" },
+    { label: "Monthly", icon: Target,   d: monthly, accent: "text-purple-400" },
+    { label: "Annual",  icon: Trophy,   d: annual,  accent: "text-yellow-400" },
+  ];
+
+  return (
+    <div className="max-w-4xl mx-auto mb-10" data-testid="sport-scorecard-table">
+      <div className="flex items-center gap-2 mb-4">
+        <BarChart3 size={16} className="text-primary" />
+        <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground">Platform Pick Scorecard</h2>
+      </div>
+
+      <Card className="bg-card/20 border-white/5 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-white/10">
+                <th className="text-left py-3 px-4 text-[11px] font-bold uppercase tracking-widest text-muted-foreground w-28">Sport</th>
+                {cols.map(({ label, icon: Icon, accent }) => (
+                  <th key={label} className={cn("py-3 px-3 text-[11px] font-bold uppercase tracking-widest text-center", accent)}>
+                    <div className="flex flex-col items-center gap-0.5">
+                      <Icon size={12} />
+                      {label}
+                    </div>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {/* Per-sport rows */}
+              {allLeagues.map((league, i) => (
+                <tr
+                  key={league}
+                  className={cn("border-b border-white/5 hover:bg-white/[0.02] transition-colors", i % 2 === 0 ? "bg-transparent" : "bg-white/[0.01]")}
+                  data-testid={`row-scorecard-${league}`}
+                >
+                  <td className="py-3 px-4 font-bold text-xs uppercase tracking-widest text-muted-foreground">{league}</td>
+                  {cols.map(({ label, d }) => {
+                    const s = getSport(d, league);
+                    return (
+                      <td key={label} className="py-3 px-3">
+                        <RecordCell wins={s.wins} losses={s.losses} />
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+
+              {allLeagues.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="py-8 text-center text-sm text-muted-foreground">No graded picks recorded yet</td>
+                </tr>
+              )}
+
+              {/* Grand Total row — combined all sports per period */}
+              {allLeagues.length > 0 && (
+                <tr className="border-t-2 border-primary/30 bg-primary/5" data-testid="row-scorecard-grand-total">
+                  <td className="py-3 px-4 font-black text-primary text-xs uppercase tracking-wider flex items-center gap-1.5">
+                    <Award size={12} className="text-primary" /> Grand Total
+                  </td>
+                  {cols.map(({ label, d }) => (
+                    <td key={label} className="py-3 px-3">
+                      <RecordCell wins={d?.overall?.wins ?? 0} losses={d?.overall?.losses ?? 0} bold />
+                    </td>
+                  ))}
+                </tr>
+              )}
+
+              {/* BETFANS TOTAL row — single all-time combined W-L across all sports */}
+              {allLeagues.length > 0 && (
+                <tr className="border-t-2 border-yellow-400/40 bg-yellow-400/5" data-testid="row-scorecard-betfans-total">
+                  <td colSpan={5} className="py-5 px-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <Zap size={12} className="text-yellow-400" />
+                        <span className="font-black text-[10px] uppercase tracking-widest text-yellow-400">BetFans Total</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-xl font-black text-primary tabular-nums">
+                          {annual?.overall?.wins ?? 0}W
+                        </span>
+                        <span className="text-muted-foreground text-sm font-bold">—</span>
+                        <span className="text-xl font-black text-red-400 tabular-nums">
+                          {annual?.overall?.losses ?? 0}L
+                        </span>
+                        <span className="text-[10px] text-muted-foreground uppercase tracking-widest ml-1">All Picks Combined</span>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
 export default function Winners() {
   const [activeTab, setActiveTab] = useState<Period>("daily");
 
@@ -469,6 +713,8 @@ export default function Winners() {
             </span>
           </p>
         </div>
+
+        <SportScorecardTable />
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-10">
           <PrizePoolTracker period="daily" amount={periodAmounts.daily} config={periodConfig.daily} />
@@ -518,6 +764,8 @@ export default function Winners() {
           })}
         </div>
 
+        <PlatformSportStats period={activeTab} />
+
         <div className="max-w-3xl mx-auto">
           <PeriodWinners period={activeTab} poolAmount={periodAmounts[activeTab]} />
         </div>
@@ -550,7 +798,13 @@ export default function Winners() {
                 </span>
               </div>
             </div>
-            <div className="mt-4 p-3 rounded-lg bg-white/5 border border-white/5">
+            <div className="mt-4 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/25">
+              <p className="text-xs text-yellow-300 leading-relaxed">
+                <strong className="text-yellow-200">Qualification Rule:</strong> Only <strong>MLB picks</strong> count toward prize pool eligibility.
+                You must predict <strong>every MLB game daily</strong> to qualify for any payout. Missing even one game that day disqualifies you from that day's pool.
+              </p>
+            </div>
+            <div className="mt-3 p-3 rounded-lg bg-white/5 border border-white/5">
               <p className="text-xs text-muted-foreground">
                 <strong className="text-foreground">How it works:</strong> The prize pool starts at $0.00 and grows in real time as members pay.
                 50% of every membership payment goes directly into the pool. Winners are paid based on their share percentage —
