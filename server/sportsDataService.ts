@@ -403,6 +403,7 @@ export async function syncSportsData(): Promise<{ synced: number; leagues: strin
       if (existing.length > 0) {
         const prev = existing[0];
         await db.update(games).set({
+          gameTime: game.gameTime,
           status: game.status,
           homeScore: game.homeScore,
           awayScore: game.awayScore,
