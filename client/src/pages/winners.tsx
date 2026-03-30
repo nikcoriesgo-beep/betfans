@@ -7,11 +7,13 @@ import { Button } from "@/components/ui/button";
 import {
   Trophy, Crown, Star, DollarSign, TrendingUp, Flame,
   Calendar, Clock, Target, Award, Sparkles, ChevronRight,
-  Timer, Zap, Users, ArrowUpRight, BarChart3,
+  Timer, Zap, Users, ArrowUpRight, BarChart3, AlertTriangle, CheckCircle2, Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
+import { useAuth } from "@/hooks/use-auth";
+import { useToast } from "@/hooks/use-toast";
 
 type Period = "daily" | "weekly" | "monthly" | "annual";
 
@@ -681,6 +683,69 @@ function SportScorecardTable() {
   );
 }
 
+function AdminPayoutPanel() {
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [processingPeriod, setProcessingPeriod] = useState<string | null>(null);
+
+  const isFounder = user?.referralCode === "NIKCOX";
+  if (!isFounder) return null;
+
+  const processPayout = async (period: string) => {
+    setProcessingPeriod(period);
+    try {
+      const res = await fetch("/api/payouts/process", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ period }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast({ title: `${period.charAt(0).toUpperCase() + period.slice(1)} payout processed`, description: `${data.results?.length ?? 0} winner(s) paid.` });
+        queryClient.invalidateQueries({ queryKey: ["/api/prize-pool"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/payouts"] });
+      } else {
+        toast({ title: "Payout failed", description: data.message, variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Payout error", description: "Network error. Try again.", variant: "destructive" });
+    } finally {
+      setProcessingPeriod(null);
+    }
+  };
+
+  return (
+    <Card className="bg-primary/5 border-primary/20 max-w-3xl mx-auto mb-8" data-testid="admin-payout-panel">
+      <CardContent className="p-5">
+        <div className="flex items-center gap-2 mb-4">
+          <DollarSign size={16} className="text-primary" />
+          <span className="font-bold text-sm uppercase tracking-widest text-primary">Admin — Process Payouts</span>
+          <Badge className="bg-primary/20 text-primary text-[10px] ml-auto">Founder Only</Badge>
+        </div>
+        <p className="text-xs text-muted-foreground mb-4">Trigger a payout to the top MLB leaderboard winners for the selected period. Payouts go to their PayPal account. Cannot be reversed.</p>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          {(["daily", "weekly", "monthly", "annual"] as const).map((p) => (
+            <Button
+              key={p}
+              size="sm"
+              variant="outline"
+              className="hover:bg-primary/10 hover:text-primary hover:border-primary/30 gap-1.5"
+              disabled={processingPeriod !== null}
+              onClick={() => processPayout(p)}
+              data-testid={`button-payout-${p}`}
+            >
+              {processingPeriod === p ? <Loader2 size={12} className="animate-spin" /> : <DollarSign size={12} />}
+              {p.charAt(0).toUpperCase() + p.slice(1)}
+            </Button>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function Winners() {
   const [activeTab, setActiveTab] = useState<Period>("daily");
 
@@ -728,6 +793,29 @@ export default function Winners() {
             </span>
           </p>
         </div>
+
+        {/* Prize Pool Qualification Rule — prominent standalone banner */}
+        <div className="max-w-3xl mx-auto mb-8">
+          <div className="rounded-xl border-2 border-yellow-400/50 bg-yellow-500/10 p-5">
+            <div className="flex items-start gap-3">
+              <AlertTriangle size={22} className="text-yellow-400 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-black text-yellow-300 text-base mb-1 uppercase tracking-wide">Prize Pool Qualification Rule</p>
+                <p className="text-sm text-yellow-100/90 leading-relaxed">
+                  To qualify for <strong className="text-yellow-200">any prize pool payout</strong>, you must:
+                </p>
+                <ul className="mt-2 space-y-1.5 text-sm text-yellow-100/90">
+                  <li className="flex items-center gap-2"><CheckCircle2 size={14} className="text-yellow-400 shrink-0" /> Pick <strong className="text-yellow-200">MLB games only</strong> — no other sport counts toward the prize pool</li>
+                  <li className="flex items-center gap-2"><CheckCircle2 size={14} className="text-yellow-400 shrink-0" /> Pick <strong className="text-yellow-200">every single MLB game</strong> scheduled that day</li>
+                  <li className="flex items-center gap-2"><CheckCircle2 size={14} className="text-yellow-400 shrink-0" /> Missing <strong className="text-yellow-200">even one game</strong> disqualifies you from that day's payout</li>
+                </ul>
+                <p className="mt-3 text-xs text-yellow-300/70">This rule applies to daily, weekly, monthly, and annual payouts.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <AdminPayoutPanel />
 
         <SportScorecardTable />
 
