@@ -144,7 +144,18 @@ function SlideContent({ slide, index }: { slide: typeof slides[0]; index: number
         </h2>
 
         <p className="text-lg md:text-xl font-medium text-foreground/80 mb-3">{slide.subtitle}</p>
-        <p className="text-sm text-muted-foreground leading-relaxed mb-6 max-w-sm mx-auto">{slide.description}</p>
+        <p className="text-sm text-muted-foreground leading-relaxed mb-4 max-w-sm mx-auto">{slide.description}</p>
+
+        {slide.step === 4 && (
+          <div className="rounded-lg border border-yellow-400/50 bg-yellow-500/10 px-4 py-3 mb-4 max-w-sm mx-auto text-left">
+            <p className="text-xs font-black text-yellow-300 uppercase tracking-wide mb-1">To Qualify:</p>
+            <ul className="space-y-1 text-xs text-yellow-100/90">
+              <li>✓ <strong className="text-yellow-200">Pick every MLB game</strong> each day — no exceptions</li>
+              <li>✓ <strong className="text-yellow-200">MLB picks only</strong> — other sports don't count</li>
+              <li>✗ Miss one game = <strong className="text-yellow-200">disqualified</strong> from that day's payout</li>
+            </ul>
+          </div>
+        )}
 
         {slide.features && (
           <div className="grid grid-cols-2 gap-2 mb-4 max-w-xs mx-auto">
