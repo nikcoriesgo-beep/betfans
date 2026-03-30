@@ -1,4 +1,5 @@
 import { Navbar } from "@/components/layout/Navbar";
+import { PrizePoolQualRule } from "@/components/PrizePoolQualRule";
 import { Leaderboard } from "@/components/dashboard/Leaderboard";
 import { StatsOverview } from "@/components/dashboard/StatsOverview";
 import { DailyPredictions } from "@/components/dashboard/DailyPredictions";
@@ -143,6 +144,8 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
+
+        <PrizePoolQualRule compact className="mb-8" />
 
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
           <div>
