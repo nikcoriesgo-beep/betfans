@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { PrizePoolQualRule } from "@/components/PrizePoolQualRule";
 import { useRoute } from "wouter";
 import { Navbar } from "@/components/layout/Navbar";
 import { Card, CardContent } from "@/components/ui/card";
@@ -33,25 +34,25 @@ const leagueFilters: { value: LeagueFilter; label: string }[] = [
 const periodConfig: Record<Period, { title: string; subtitle: string; icon: any; accent: string }> = {
   daily: {
     title: "Daily Leaderboard",
-    subtitle: "Today's top predictors — resets every midnight ET",
+    subtitle: "Today's picks — every win adds to your weekly & annual total",
     icon: Clock,
     accent: "from-blue-500/20 to-cyan-500/20",
   },
   weekly: {
     title: "Weekly Leaderboard",
-    subtitle: "This week's sharpest minds — resets every Monday",
+    subtitle: "Running total from this week — accumulates into monthly & annual",
     icon: Calendar,
     accent: "from-emerald-500/20 to-green-500/20",
   },
   monthly: {
     title: "Monthly Leaderboard",
-    subtitle: "This month's elite performers — resets on the 1st",
+    subtitle: "Running total for the month — every graded pick counted",
     icon: Target,
     accent: "from-purple-500/20 to-violet-500/20",
   },
   annual: {
     title: "Annual Leaderboard",
-    subtitle: "Year-long dominance — the ultimate proving ground",
+    subtitle: "Full-year running total — every pick since Jan 1st, building to the championship",
     icon: Trophy,
     accent: "from-yellow-500/20 to-orange-500/20",
   },
@@ -140,7 +141,7 @@ function TopThreePodium({ entries }: { entries: any[] }) {
             </div>
             <p className="font-bold text-sm mb-0.5 text-center max-w-[100px] truncate">{username}</p>
             <TierBadge tier={entry.user?.membershipTier} />
-            <p className="text-primary font-mono font-bold text-lg mt-1">+{(entry.roi || 0).toFixed(1)}%</p>
+            <p className="text-primary font-mono font-bold text-lg mt-1">{entry.wins + entry.losses > 0 ? ((entry.wins / (entry.wins + entry.losses)) * 100).toFixed(1) : "0.0"}%</p>
             <p className="text-xs text-muted-foreground">{entry.wins}W - {entry.losses}L</p>
             <div className={cn(
               "w-24 rounded-t-xl mt-2 bg-gradient-to-t from-primary/10 to-primary/5 border border-b-0 border-primary/10 flex items-end justify-center pb-2",
@@ -164,12 +165,13 @@ export default function LeaderboardPage() {
   const [leagueFilter, setLeagueFilter] = useState<LeagueFilter>("ALL");
 
   const [currentLocation] = useLocation();
-  let period: Period = "daily";
-  if (weeklyMatch) period = "weekly";
+  let period: Period = "annual";
+  if (dailyMatch) period = "daily";
+  else if (weeklyMatch) period = "weekly";
   else if (monthlyMatch) period = "monthly";
   else if (annualMatch) period = "annual";
   else if (currentLocation === "/leaderboard") {
-    navigate("/leaderboard/daily", { replace: true });
+    navigate("/leaderboard/annual", { replace: true });
   }
 
   const config = periodConfig[period];
@@ -202,6 +204,8 @@ export default function LeaderboardPage() {
           </div>
           <p className="text-muted-foreground text-lg">{config.subtitle}</p>
         </div>
+
+        <PrizePoolQualRule compact className="max-w-4xl mx-auto mb-6" />
 
         <div className="max-w-4xl mx-auto mb-6">
           <Tabs value={period} onValueChange={(v) => navigate(`/leaderboard/${v}`)} className="w-full">
@@ -261,9 +265,9 @@ export default function LeaderboardPage() {
               <div className="hidden md:grid grid-cols-12 gap-4 px-6 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider border-b border-white/5">
                 <div className="col-span-1 text-center">Rank</div>
                 <div className="col-span-4">Predictor</div>
-                <div className="col-span-2 text-right">ROI</div>
+                <div className="col-span-2 text-right">Win %</div>
                 <div className="col-span-2 text-right">Record</div>
-                <div className="col-span-2 text-right">Profit</div>
+                <div className="col-span-2 text-right">Total Picks</div>
                 <div className="col-span-1 text-center">Streak</div>
               </div>
 
@@ -321,11 +325,8 @@ export default function LeaderboardPage() {
                         </div>
 
                         <div className="hidden md:block col-span-2 text-right">
-                          <span className={cn(
-                            "font-mono font-bold text-lg",
-                            (entry.roi || 0) >= 0 ? "text-primary" : "text-red-400"
-                          )}>
-                            {(entry.roi || 0) >= 0 ? "+" : ""}{(entry.roi || 0).toFixed(1)}%
+                          <span className="font-mono font-bold text-lg text-primary">
+                            {winRate}%
                           </span>
                         </div>
 
@@ -338,12 +339,10 @@ export default function LeaderboardPage() {
                         </div>
 
                         <div className="hidden md:block col-span-2 text-right">
-                          <span className={cn(
-                            "font-mono font-bold",
-                            (entry.profit || 0) >= 0 ? "text-green-400" : "text-red-400"
-                          )}>
-                            ${Math.round(entry.profit || 0).toLocaleString()}
+                          <span className="font-mono font-bold text-foreground/80">
+                            {(entry.totalPicks || (entry.wins + entry.losses)).toLocaleString()}
                           </span>
+                          <div className="text-[10px] text-muted-foreground">graded</div>
                         </div>
 
                         <div className="hidden md:flex col-span-1 justify-center">
@@ -361,12 +360,9 @@ export default function LeaderboardPage() {
 
                         <div className="md:hidden grid grid-cols-4 gap-1 mt-2 py-2 px-2 rounded-lg bg-white/[0.03] border border-white/5">
                           <div className="text-center">
-                            <div className="text-[8px] text-muted-foreground/60 uppercase tracking-wider mb-0.5">ROI</div>
-                            <span className={cn(
-                              "font-mono font-bold text-[11px]",
-                              (entry.roi || 0) >= 0 ? "text-primary" : "text-red-400"
-                            )}>
-                              {(entry.roi || 0) >= 0 ? "+" : ""}{(entry.roi || 0).toFixed(1)}%
+                            <div className="text-[8px] text-muted-foreground/60 uppercase tracking-wider mb-0.5">Win %</div>
+                            <span className="font-mono font-bold text-[11px] text-primary">
+                              {winRate}%
                             </span>
                           </div>
                           <div className="text-center">
@@ -378,12 +374,9 @@ export default function LeaderboardPage() {
                             </div>
                           </div>
                           <div className="text-center">
-                            <div className="text-[8px] text-muted-foreground/60 uppercase tracking-wider mb-0.5">Profit</div>
-                            <span className={cn(
-                              "font-mono text-[11px] font-bold",
-                              (entry.profit || 0) >= 0 ? "text-green-400" : "text-red-400"
-                            )}>
-                              ${Math.round(entry.profit || 0).toLocaleString()}
+                            <div className="text-[8px] text-muted-foreground/60 uppercase tracking-wider mb-0.5">Total</div>
+                            <span className="font-mono text-[11px] font-bold text-foreground/80">
+                              {(entry.totalPicks || (entry.wins + entry.losses))}
                             </span>
                           </div>
                           <div className="text-center">
@@ -416,8 +409,8 @@ export default function LeaderboardPage() {
                 </Card>
                 <Card className="bg-card/30 border-white/10">
                   <CardContent className="p-4 text-center">
-                    <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Top ROI</p>
-                    <p className="text-2xl font-display font-bold text-green-400">+{(entries[0]?.roi || 0).toFixed(1)}%</p>
+                    <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Top Win %</p>
+                    <p className="text-2xl font-display font-bold text-green-400">{entries[0] && entries[0].wins + entries[0].losses > 0 ? ((entries[0].wins / (entries[0].wins + entries[0].losses)) * 100).toFixed(1) : "0.0"}%</p>
                   </CardContent>
                 </Card>
                 <Card className="bg-card/30 border-white/10">
