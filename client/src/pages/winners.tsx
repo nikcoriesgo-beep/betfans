@@ -546,10 +546,19 @@ function SportScorecardTable() {
     return res.json();
   };
 
-  const { data: daily }   = useQuery<any>({ queryKey: ["/api/sport-stats", "last24h"],  queryFn: () => fetchStats("last24h"), refetchInterval: 30000 });
-  const { data: weekly }  = useQuery<any>({ queryKey: ["/api/sport-stats", "weekly"],   queryFn: () => fetchStats("weekly"),  refetchInterval: 60000 });
-  const { data: monthly } = useQuery<any>({ queryKey: ["/api/sport-stats", "monthly"],  queryFn: () => fetchStats("monthly"), refetchInterval: 60000 });
-  const { data: annual }  = useQuery<any>({ queryKey: ["/api/sport-stats", "annual"],   queryFn: () => fetchStats("annual"),  refetchInterval: 60000 });
+  const FOUNDER_ID = "29b670b7-5296-44dc-a0a0-aec0d878ef9b";
+  const fetchFounderStats = async (p?: string) => {
+    const url = p ? `/api/users/${FOUNDER_ID}/sport-stats?period=${p}` : `/api/users/${FOUNDER_ID}/sport-stats`;
+    const res = await fetch(url);
+    if (!res.ok) return { overall: { wins: 0, losses: 0 }, bySport: [] };
+    return res.json();
+  };
+
+  const { data: daily }        = useQuery<any>({ queryKey: ["/api/sport-stats", "last24h"],  queryFn: () => fetchStats("last24h"), refetchInterval: 30000 });
+  const { data: weekly }       = useQuery<any>({ queryKey: ["/api/sport-stats", "weekly"],   queryFn: () => fetchStats("weekly"),  refetchInterval: 60000 });
+  const { data: monthly }      = useQuery<any>({ queryKey: ["/api/sport-stats", "monthly"],  queryFn: () => fetchStats("monthly"), refetchInterval: 60000 });
+  const { data: annual }       = useQuery<any>({ queryKey: ["/api/sport-stats", "annual"],   queryFn: () => fetchStats("annual"),  refetchInterval: 60000 });
+  const { data: founderAnnual} = useQuery<any>({ queryKey: ["/api/founder-sport-stats"],     queryFn: () => fetchFounderStats("annual"), refetchInterval: 60000 });
 
   const periodData = [daily, weekly, monthly, annual];
 
@@ -635,9 +644,9 @@ function SportScorecardTable() {
                 </tr>
               )}
 
-              {/* BETFANS TOTAL row — MLB prize pool qualifying picks only */}
+              {/* BETFANS TOTAL row — founder's MLB prize pool picks only */}
               {allLeagues.length > 0 && (() => {
-                const mlb = getSport(annual, "MLB");
+                const mlb = getSport(founderAnnual, "MLB");
                 return (
                   <tr className="border-t-2 border-yellow-400/40 bg-yellow-400/5" data-testid="row-scorecard-betfans-total">
                     <td colSpan={5} className="py-5 px-4">
