@@ -68,11 +68,11 @@ const slides = [
     tag: "Step 5",
     title: "Join The\nCommunity",
     subtitle: "Talk trash. Brag. Compete.",
-    description: "Post on member walls, share your winning streaks in Bragging Rights, earn badges, and connect with predictors worldwide on the Member Map.",
+    description: "Post on member walls, earn badges, and connect with predictors worldwide on the Member Map.",
     icon: Users,
     gradient: "from-violet-500 via-purple-500 to-fuchsia-500",
     bgAccent: "bg-violet-500/10",
-    features: ["Profile Walls", "Bragging Rights", "Member Map", "Community Threads"],
+    features: ["Profile Walls", "Member Map", "Community Threads", "Badges"],
   },
   {
     step: 6,
