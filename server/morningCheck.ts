@@ -4,6 +4,7 @@ import { sql } from "drizzle-orm";
 import { syncSportsData, gradeStuckGames } from "./sportsDataService";
 import { storage } from "./storage";
 import { getSubscriptionDetails } from "./paypalService";
+import { processPayoutForPeriod, getPayoutSchedule } from "./payoutService";
 const SELF_URL = process.env.NODE_ENV === "production" ? "https://betfans.us" : "http://localhost:5000";
 // Private ntfy.sh topic — bookmark https://ntfy.sh/betfans-sweep-k9x2m7 to see alerts
 const NTFY_TOPIC = "betfans-sweep-k9x2m7";
@@ -105,7 +106,31 @@ async function runSweep() {
     log(`✗ Grade stuck: ${e.message}`);
   }
 
-  // ── 4. Today's MLB games ──────────────────────────────────────────────────
+  // ── 4. Automatic prize pool payouts ──────────────────────────────────────
+  try {
+    const schedule = getPayoutSchedule(new Date());
+    const payoutSummaries: string[] = [];
+    for (const item of schedule) {
+      try {
+        const result = await timeout(
+          processPayoutForPeriod(item.period, item.periodLabel, item.periodStart, item.periodEnd, log),
+          60_000,
+          { paid: 0, skipped: 0, detail: "Timeout" }
+        );
+        payoutSummaries.push(`${item.period} (${item.periodLabel}): ${result.detail}`);
+        log(`✓ Auto-payout ${item.period}: ${result.detail}`);
+      } catch (pe: any) {
+        payoutSummaries.push(`${item.period}: ERROR — ${pe.message}`);
+        log(`✗ Auto-payout ${item.period}: ${pe.message}`);
+      }
+    }
+    checks.autoPayouts = { ok: true, detail: payoutSummaries.join(" | ") || "No payouts due today" };
+  } catch (e: any) {
+    checks.autoPayouts = { ok: false, detail: e.message };
+    log(`✗ Auto-payouts: ${e.message}`);
+  }
+
+  // ── 5. Today's MLB games ──────────────────────────────────────────────────
   try {
     const etParts = new Intl.DateTimeFormat("en-US", {
       timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit",
@@ -128,7 +153,7 @@ async function runSweep() {
     log(`✗ MLB games: ${e.message}`);
   }
 
-  // ── 5. Frontend asset integrity ───────────────────────────────────────────
+  // ── 6. Frontend asset integrity ───────────────────────────────────────────
   // Fetch the homepage HTML, extract the CSS and JS asset URLs, then verify
   // each one actually returns HTTP 200. This catches missing CSS files.
   try {
