@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
+import { PrizePoolQualRule } from "@/components/PrizePoolQualRule";
 import { Navbar } from "@/components/layout/Navbar";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -216,12 +217,7 @@ export default function DailyPicks() {
           </div>
         )}
 
-        <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-yellow-500/10 border border-yellow-500/25 mb-4" data-testid="banner-mlb-prize-pool">
-          <Trophy size={14} className="text-yellow-400 shrink-0" />
-          <p className="text-xs text-yellow-300 leading-snug">
-            <span className="font-bold">Prize Pool:</span> Only MLB picks qualify. You must pick <span className="font-bold">every MLB game daily</span> to be eligible for payouts.
-          </p>
-        </div>
+        <PrizePoolQualRule className="mb-4" data-testid="banner-mlb-prize-pool" />
 
         <div className="flex items-center gap-2 mb-4 flex-wrap">
           {activeLeagues.filter((l) => LEAGUES.includes(l) || l === "All").map((l) => (
