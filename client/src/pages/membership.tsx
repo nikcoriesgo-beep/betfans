@@ -1,4 +1,5 @@
 import { Navbar } from "@/components/layout/Navbar";
+import { PrizePoolQualRule } from "@/components/PrizePoolQualRule";
 import { Button } from "@/components/ui/button";
 import { Check, Star, Crown, Clock, Trophy, Calendar, Lock, Users, Gift, DollarSign, X, ArrowRight, Copy, ExternalLink } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
@@ -131,11 +132,12 @@ export default function Membership() {
 
   const handlePayPalSuccess = async (subscriptionId: string) => {
     try {
+      const savedAffiliateCode = localStorage.getItem("betfans_affiliate_code") || undefined;
       const res = await fetch("/api/paypal/subscription", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ subscriptionId, tier: checkoutTier }),
+        body: JSON.stringify({ subscriptionId, tier: checkoutTier, affiliateCode: savedAffiliateCode }),
       });
       if (res.ok) {
         setSubscriptionSuccess(true);
@@ -193,13 +195,14 @@ export default function Membership() {
         <div className="mb-20">
           <div className="bg-gradient-to-r from-primary/10 via-primary/5 to-transparent border border-primary/20 rounded-2xl p-8 md:p-12 relative overflow-hidden">
             <div className="absolute top-0 right-0 p-32 bg-primary/20 blur-[100px] rounded-full pointer-events-none" />
-            <div className="text-center max-w-2xl mx-auto mb-12">
+            <div className="text-center max-w-2xl mx-auto mb-8">
               <span className="text-primary font-bold tracking-wider text-sm uppercase mb-2 block">How We Reward Winners</span>
               <h2 className="text-3xl md:text-4xl font-display font-bold mb-4">50% Winners Payout Pool</h2>
               <p className="text-muted-foreground">
                 We believe in rewarding the best predictors. Half of all membership fees go directly back to the community prize pool.
               </p>
             </div>
+            <PrizePoolQualRule className="max-w-2xl mx-auto mb-10 relative z-10" />
             <div className="grid md:grid-cols-3 gap-6 relative z-10">
               <div className="bg-background/40 backdrop-blur-md border border-white/10 rounded-xl p-6 text-center hover:border-primary/40 transition-colors">
                 <div className="w-12 h-12 rounded-full bg-primary/20 text-primary flex items-center justify-center mx-auto mb-4"><Clock size={24} /></div>
