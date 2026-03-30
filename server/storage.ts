@@ -44,6 +44,7 @@ export interface IStorage {
 
   getLeaderboard(period: string, limit?: number): Promise<(LeaderboardEntry & { user: User | null })[]>;
   getLeaderboardByLeague(period: string, league: string, limit?: number): Promise<any[]>;
+  getMLBLeaderboardForDateRange(startDate: Date, endDate: Date, limit?: number): Promise<any[]>;
   getUserStats(userId: string): Promise<{ wins: number; losses: number; profit: number; roi: number; streak: number }>;
   getUserSportStats(userId: string, period?: string): Promise<{
     overall: { wins: number; losses: number; total: number; winRate: number; streak: number; profit: number };
@@ -345,6 +346,51 @@ export class DatabaseStorage implements IStorage {
       profit: e.profit,
       streak: e.streak,
       updatedAt: new Date(),
+      user: userMap.get(e.userId) || null,
+    }));
+  }
+
+  async getMLBLeaderboardForDateRange(startDate: Date, endDate: Date, limit = 50): Promise<any[]> {
+    const mlbGames = await db.select().from(games).where(eq(games.league, "MLB"));
+    const mlbGameIds = new Set(mlbGames.map((g) => g.id));
+    if (mlbGameIds.size === 0) return [];
+
+    const allPreds = await db.select().from(predictions);
+    const filtered = allPreds.filter((p) =>
+      mlbGameIds.has(p.gameId) &&
+      new Date(p.createdAt!) >= startDate &&
+      new Date(p.createdAt!) < endDate
+    );
+
+    const byUser: Record<string, typeof filtered> = {};
+    for (const p of filtered) {
+      if (!byUser[p.userId]) byUser[p.userId] = [];
+      byUser[p.userId].push(p);
+    }
+
+    const entries = Object.entries(byUser).map(([userId, preds]) => {
+      const wins = preds.filter((p) => p.result === "win").length;
+      const losses = preds.filter((p) => p.result === "loss").length;
+      const total = wins + losses;
+      const profit = preds.reduce((acc, p) => acc + (p.payout || 0), 0);
+      const roi = total > 0 ? (profit / total) * 100 : 0;
+      return { userId, wins, losses, total, profit: Math.round(profit * 100) / 100, roi: Math.round(roi * 100) / 100 };
+    });
+
+    entries.sort((a, b) => b.roi - a.roi || b.wins - a.wins);
+    const topEntries = entries.filter((e) => e.wins > 0).slice(0, limit);
+
+    const allUsers = await db.select().from(users);
+    const userMap = new Map(allUsers.map((u) => [u.id, u]));
+
+    return topEntries.map((e, i) => ({
+      id: i + 1,
+      userId: e.userId,
+      rank: i + 1,
+      wins: e.wins,
+      losses: e.losses,
+      roi: e.roi,
+      profit: e.profit,
       user: userMap.get(e.userId) || null,
     }));
   }
