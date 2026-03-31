@@ -8,7 +8,6 @@ const ESPN_NEWS_ENDPOINTS: Record<string, string> = {
   MLS: "https://site.api.espn.com/apis/site/v2/sports/soccer/usa.1/news",
   NWSL: "https://site.api.espn.com/apis/site/v2/sports/soccer/usa.nwsl/news",
   NCAAB: "https://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/news",
-  NCAABB: "https://site.api.espn.com/apis/site/v2/sports/baseball/college-baseball/news",
 };
 
 interface ESPNNewsArticle {
