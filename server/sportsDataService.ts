@@ -7,7 +7,6 @@ const ESPN_ENDPOINTS: Record<string, string> = {
   NBA: "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard",
   MLS: "https://site.api.espn.com/apis/site/v2/sports/soccer/usa.1/scoreboard",
   NCAAB: "https://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard?groups=50",
-  NCAABB: "https://site.api.espn.com/apis/site/v2/sports/baseball/college-baseball/scoreboard",
 };
 
 interface ESPNEvent {
@@ -199,9 +198,7 @@ async function fetchLeagueGames(league: string): Promise<any[]> {
       const awayComp = comp.competitors.find((c) => c.homeAway === "away");
       if (!homeComp || !awayComp) continue;
 
-      if (league === "NCAABB") {
-        if (NON_D1_BASEBALL.has(homeComp.team.displayName) || NON_D1_BASEBALL.has(awayComp.team.displayName)) continue;
-      }
+
 
       const homeTeam = homeComp.team.displayName;
       const awayTeam = awayComp.team.displayName;
@@ -332,7 +329,7 @@ export async function gradeStuckGames(): Promise<number> {
   // Bug fix: the old 4-hour cutoff missed late west coast games that finish
   // before their start time + 4h. Any game marked "live" needs immediate re-check.
   const liveGames = await db.select().from(games)
-    .where(sql`${games.status} = 'live' AND ${games.league} IN ('MLB','NBA','MLS','NCAAB','NCAABB')`);
+    .where(sql`${games.status} = 'live' AND ${games.league} IN ('MLB','NBA','MLS','NCAAB')`);
 
   if (liveGames.length > 0) {
     console.log(`[spider] gradeStuckGames: re-checking ${liveGames.length} live game(s) for completion`);
@@ -387,7 +384,6 @@ export async function syncSportsData(): Promise<{ synced: number; leagues: strin
     NBA: month >= 10 || month <= 6,
     MLS: month >= 2 && month <= 11,
     NCAAB: month >= 11 || month <= 4,
-    NCAABB: month >= 2 && month <= 6,
   };
 
   let totalSynced = 0;
