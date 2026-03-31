@@ -244,12 +244,60 @@ async function fetchLeagueGames(league: string): Promise<any[]> {
   }
 }
 
+function getETDateStr(date: Date): string {
+  // Returns YYYYMMDD in correct ET (handles EST/EDT automatically)
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" })
+    .format(date)
+    .replace(/-/g, "");
+}
+
+async function fetchAndGradeForLeagueDate(league: string, dateStr: string): Promise<number> {
+  const url = ESPN_ENDPOINTS[league];
+  if (!url) return 0;
+  let totalGraded = 0;
+  try {
+    const resp = await fetch(`${url}?dates=${dateStr}`);
+    if (!resp.ok) return 0;
+    const data = await resp.json();
+    for (const event of (data.events || []) as ESPNEvent[]) {
+      if (event.status.type.state !== "post") continue;
+      const comp = event.competitions?.[0];
+      const homeComp = comp?.competitors?.find((c) => c.homeAway === "home");
+      const awayComp = comp?.competitors?.find((c) => c.homeAway === "away");
+      if (!homeComp || !awayComp) continue;
+      const homeTeam = homeComp.team.displayName;
+      const awayTeam = awayComp.team.displayName;
+      const homeScore = homeComp.score ? parseInt(homeComp.score) : null;
+      const awayScore = awayComp.score ? parseInt(awayComp.score) : null;
+      if (homeScore === null || awayScore === null) continue;
+      if (homeScore === 0 && awayScore === 0) continue;
+
+      // Match by team name + date string (ET date of game start)
+      const allLeagueGames = await db.select().from(games)
+        .where(sql`${games.league} = ${league} AND ${games.status} != 'finished'`);
+
+      for (const g of allLeagueGames) {
+        if (g.homeTeam !== homeTeam || g.awayTeam !== awayTeam) continue;
+        if (getETDateStr(new Date(g.gameTime!)) !== dateStr) continue;
+
+        await db.update(games).set({ status: "finished", homeScore, awayScore }).where(eq(games.id, g.id));
+        const graded = await autoGradePredictions(g.id, homeTeam, awayTeam, homeScore, awayScore, g.spread, g.total);
+        if (graded > 0) {
+          console.log(`[spider] gradeStuckGames: graded ${graded} pick(s) — ${awayTeam} @ ${homeTeam} (${dateStr})`);
+          totalGraded += graded;
+        }
+      }
+    }
+  } catch (e) {
+    console.log(`[spider] fetchAndGrade error ${league} ${dateStr}:`, e);
+  }
+  return totalGraded;
+}
+
 export async function gradeStuckGames(): Promise<number> {
   let totalGraded = 0;
 
-  // ── Safety net: grade any pending picks on already-finished games ──────────
-  // This catches the case where the server restarted between a game being marked
-  // "finished" and autoGradePredictions being called (race condition).
+  // ── Pass 1: grade any pending picks on already-finished games ─────────────
   const finishedWithPending = await db
     .select({ g: games, p: predictions })
     .from(predictions)
@@ -280,84 +328,46 @@ export async function gradeStuckGames(): Promise<number> {
     }
   }
 
-  // ── Find games still marked live/upcoming whose game time was > 4 hours ago ─
-  const cutoff = new Date(Date.now() - 4 * 60 * 60 * 1000);
-  const stuckGames = await db
-    .select()
-    .from(games)
-    .where(sql`${games.status} != 'finished' AND ${games.gameTime} < ${cutoff}`);
+  // ── Pass 2: re-check ALL live games immediately (no time cutoff) ──────────
+  // Bug fix: the old 4-hour cutoff missed late west coast games that finish
+  // before their start time + 4h. Any game marked "live" needs immediate re-check.
+  const liveGames = await db.select().from(games)
+    .where(sql`${games.status} = 'live' AND ${games.league} IN ('MLB','NBA','MLS','NCAAB','NCAABB')`);
 
-  // Filter to only leagues we have ESPN endpoints for
-  const actionableStuck = stuckGames.filter((g) => ESPN_ENDPOINTS[g.league]);
-
-  if (actionableStuck.length === 0) {
-    if (stuckGames.length > 0) {
-      console.log(`[spider] gradeStuckGames: ${stuckGames.length} stuck game(s) skipped (removed leagues — NHL/NWSL/NFL/WNBA)`);
-    } else {
-      console.log("[spider] gradeStuckGames: no stuck games found");
+  if (liveGames.length > 0) {
+    console.log(`[spider] gradeStuckGames: re-checking ${liveGames.length} live game(s) for completion`);
+    const byLeagueDate: Record<string, { league: string; dateStr: string }> = {};
+    for (const g of liveGames) {
+      const dateStr = getETDateStr(new Date(g.gameTime!));
+      const key = `${g.league}-${dateStr}`;
+      byLeagueDate[key] = { league: g.league, dateStr };
     }
-    console.log(`[spider] gradeStuckGames: total ${totalGraded} pick(s) graded`);
-    return totalGraded;
+    for (const { league, dateStr } of Object.values(byLeagueDate)) {
+      totalGraded += await fetchAndGradeForLeagueDate(league, dateStr);
+    }
   }
 
-  console.log(`[spider] gradeStuckGames: found ${actionableStuck.length} stuck game(s) — fetching final scores`);
+  // ── Pass 3: catch upcoming/unknown-status games started > 2h ago ─────────
+  // Reduced from 4h to 2h — most games finish within 3 hours of start
+  const cutoff = new Date(Date.now() - 2 * 60 * 60 * 1000);
+  const stuckUpcoming = await db.select().from(games)
+    .where(sql`${games.status} = 'upcoming' AND ${games.gameTime} < ${cutoff} AND ${games.league} IN ('MLB','NBA','MLS','NCAAB','NCAABB')`);
 
-  // Group by league + date so we batch ESPN calls
-  const byLeagueDate: Record<string, { league: string; dateStr: string }> = {};
-  for (const g of actionableStuck) {
-    // Use ET date (ET = UTC-4 for EDT) so late-night ET games get the right ESPN date
-    const etOffset = -4 * 60; // EDT offset in minutes
-    const etTime = new Date(new Date(g.gameTime!).getTime() + etOffset * 60 * 1000);
-    const dateStr = `${etTime.getUTCFullYear()}${String(etTime.getUTCMonth() + 1).padStart(2, "0")}${String(etTime.getUTCDate()).padStart(2, "0")}`;
-    const key = `${g.league}-${dateStr}`;
-    byLeagueDate[key] = { league: g.league, dateStr };
+  if (stuckUpcoming.length > 0) {
+    console.log(`[spider] gradeStuckGames: found ${stuckUpcoming.length} upcoming game(s) past start time — checking`);
+    const byLeagueDate: Record<string, { league: string; dateStr: string }> = {};
+    for (const g of stuckUpcoming) {
+      const dateStr = getETDateStr(new Date(g.gameTime!));
+      const key = `${g.league}-${dateStr}`;
+      byLeagueDate[key] = { league: g.league, dateStr };
+    }
+    for (const { league, dateStr } of Object.values(byLeagueDate)) {
+      totalGraded += await fetchAndGradeForLeagueDate(league, dateStr);
+    }
   }
 
-  for (const { league, dateStr } of Object.values(byLeagueDate)) {
-    const url = ESPN_ENDPOINTS[league];
-    if (!url) continue;
-    try {
-      const resp = await fetch(`${url}?dates=${dateStr}`);
-      if (!resp.ok) continue;
-      const data = await resp.json();
-      for (const event of (data.events || []) as ESPNEvent[]) {
-        if (event.status.type.state !== "post") continue; // only finished games
-        const comp = event.competitions?.[0];
-        const homeComp = comp?.competitors?.find((c) => c.homeAway === "home");
-        const awayComp = comp?.competitors?.find((c) => c.homeAway === "away");
-        if (!homeComp || !awayComp) continue;
-        const homeTeam = homeComp.team.displayName;
-        const awayTeam = awayComp.team.displayName;
-        const homeScore = homeComp.score ? parseInt(homeComp.score) : null;
-        const awayScore = awayComp.score ? parseInt(awayComp.score) : null;
-        if (homeScore === null || awayScore === null) continue;
-        // Skip games that finished 0-0 — likely a data error or game not fully played
-        if (homeScore === 0 && awayScore === 0) continue;
-
-        const gameDate = new Date(event.date);
-        const matching = await db
-          .select()
-          .from(games)
-          .where(
-            sql`${games.league} = ${league}
-              AND ${games.homeTeam} = ${homeTeam}
-              AND ${games.awayTeam} = ${awayTeam}
-              AND DATE(${games.gameTime}) = DATE(${gameDate})
-              AND ${games.status} != 'finished'`
-          );
-
-        for (const g of matching) {
-          await db.update(games).set({ status: "finished", homeScore, awayScore }).where(eq(games.id, g.id));
-          const graded = await autoGradePredictions(g.id, homeTeam, awayTeam, homeScore, awayScore, g.spread, g.total);
-          if (graded > 0) {
-            console.log(`[spider] gradeStuckGames: graded ${graded} pick(s) — ${awayTeam} @ ${homeTeam} (${dateStr})`);
-            totalGraded += graded;
-          }
-        }
-      }
-    } catch (e) {
-      console.log(`[spider] gradeStuckGames: error fetching ${league} for ${dateStr}:`, e);
-    }
+  if (liveGames.length === 0 && stuckUpcoming.length === 0 && finishedWithPending.length === 0) {
+    console.log("[spider] gradeStuckGames: all games up to date");
   }
 
   console.log(`[spider] gradeStuckGames: total ${totalGraded} pick(s) graded`);
@@ -449,18 +459,25 @@ export async function syncSportsData(): Promise<{ synced: number; leagues: strin
 }
 
 let syncInterval: ReturnType<typeof setInterval> | null = null;
+let gradeInterval: ReturnType<typeof setInterval> | null = null;
 
 export function startSportsDataSync(intervalMinutes = 5) {
+  // Full sync: fetch today's games + grade stuck games
   syncSportsData().catch(console.error);
   syncInterval = setInterval(() => {
     syncSportsData().catch(console.error);
   }, intervalMinutes * 60 * 1000);
-  console.log(`[spider] Auto-sync started (every ${intervalMinutes} minutes)`);
+
+  // Rapid grade check every 2 minutes: catches live→finished transitions fast
+  // This runs independently so late-finishing west coast games grade immediately
+  gradeInterval = setInterval(() => {
+    gradeStuckGames().catch(console.error);
+  }, 2 * 60 * 1000);
+
+  console.log(`[spider] Auto-sync started (full sync every ${intervalMinutes}min, grade check every 2min)`);
 }
 
 export function stopSportsDataSync() {
-  if (syncInterval) {
-    clearInterval(syncInterval);
-    syncInterval = null;
-  }
+  if (syncInterval) { clearInterval(syncInterval); syncInterval = null; }
+  if (gradeInterval) { clearInterval(gradeInterval); gradeInterval = null; }
 }
