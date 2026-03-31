@@ -16,7 +16,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 
 type Period = "daily" | "weekly" | "monthly" | "annual";
-type LeagueFilter = "ALL" | "NFL" | "NBA" | "WNBA" | "NHL" | "MLB" | "MLS" | "NWSL" | "NCAAB" | "NCAABB";
+type LeagueFilter = "ALL" | "NFL" | "NBA" | "WNBA" | "NHL" | "MLB" | "MLS" | "NWSL" | "NCAAB";
 
 const leagueFilters: { value: LeagueFilter; label: string }[] = [
   { value: "ALL", label: "All Sports" },
@@ -28,7 +28,6 @@ const leagueFilters: { value: LeagueFilter; label: string }[] = [
   { value: "MLS", label: "MLS" },
   { value: "NWSL", label: "NWSL" },
   { value: "NCAAB", label: "NCAAB" },
-  { value: "NCAABB", label: "College BB" },
 ];
 
 const periodConfig: Record<Period, { title: string; subtitle: string; icon: any; accent: string }> = {
