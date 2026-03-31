@@ -160,7 +160,7 @@ export default function Referrals() {
             </h1>
             <p className="text-muted-foreground text-sm md:text-base max-w-2xl mb-4">
               Share your unique code and earn residual income every month for each member you bring in — as long as they stay a member.
-              No caps. No limits. Compete on the leaderboard for top earner bragging rights.
+              No caps. No limits. Compete on the leaderboard for top earner recognition.
             </p>
             {(isLegend || isFounder) ? (
               <div className="space-y-2">
