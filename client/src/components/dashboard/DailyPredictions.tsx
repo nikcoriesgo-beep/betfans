@@ -12,7 +12,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 
-type Sport = "ALL" | "NFL" | "NBA" | "WNBA" | "NHL" | "NCAAB" | "MLB" | "NCAABB" | "MLS" | "NWSL";
+type Sport = "ALL" | "NFL" | "NBA" | "WNBA" | "NHL" | "NCAAB" | "MLB" | "MLS" | "NWSL";
 
 function QuickPickButtons({ game, userPicks }: { game: any; userPicks: Record<number, string> }) {
   const { isAuthenticated } = useAuth();
@@ -71,7 +71,7 @@ function QuickPickButtons({ game, userPicks }: { game: any; userPicks: Record<nu
     return (
       <div className="flex items-center gap-1.5">
         <Check size={12} className="text-primary" />
-        <span className="text-xs text-primary font-medium truncate max-w-[80px]">{currentPick}</span>
+        <span className="text-xs text-primary font-medium leading-tight">{currentPick}</span>
       </div>
     );
   }
@@ -167,14 +167,13 @@ export function DailyPredictions() {
       
       <div className="px-6 pb-4">
         <Tabs defaultValue="ALL" onValueChange={(v) => setFilter(v as Sport)} className="w-full">
-          <TabsList className="bg-black/20 grid grid-cols-5 md:grid-cols-10 w-full gap-0.5">
+          <TabsList className="bg-black/20 grid grid-cols-5 md:grid-cols-9 w-full gap-0.5">
             <TabsTrigger value="ALL" data-testid="tab-all" className="text-[10px] md:text-xs px-1">All</TabsTrigger>
             <TabsTrigger value="NBA" data-testid="tab-nba" className="text-[10px] md:text-xs px-1">NBA</TabsTrigger>
             <TabsTrigger value="WNBA" data-testid="tab-wnba" className="text-[10px] md:text-xs px-1">WNBA</TabsTrigger>
             <TabsTrigger value="NHL" data-testid="tab-nhl" className="text-[10px] md:text-xs px-1">NHL</TabsTrigger>
             <TabsTrigger value="NCAAB" data-testid="tab-ncaab" className="text-[10px] md:text-xs px-1">NCAAB</TabsTrigger>
             <TabsTrigger value="MLB" data-testid="tab-mlb" className="text-[10px] md:text-xs px-1">MLB</TabsTrigger>
-            <TabsTrigger value="NCAABB" data-testid="tab-ncaabb" className="text-[10px] md:text-xs px-1">CBB</TabsTrigger>
             <TabsTrigger value="MLS" data-testid="tab-mls" className="text-[10px] md:text-xs px-1">MLS</TabsTrigger>
             <TabsTrigger value="NWSL" data-testid="tab-nwsl" className="text-[10px] md:text-xs px-1">NWSL</TabsTrigger>
             <TabsTrigger value="NFL" data-testid="tab-nfl" className="text-[10px] md:text-xs px-1">NFL</TabsTrigger>
@@ -188,10 +187,10 @@ export function DailyPredictions() {
             <div className="hidden md:grid grid-cols-12 gap-2 px-6 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider bg-black/20">
               <div className="col-span-2">Time</div>
               <div className="col-span-1">Lge</div>
-              <div className="col-span-3">Matchup</div>
+              <div className="col-span-4">Matchup</div>
               <div className="col-span-2 text-center">Pick Winner</div>
               <div className="col-span-2 text-right">Spider Pick</div>
-              <div className="col-span-2 text-right">Conf</div>
+              <div className="col-span-1 text-right">Conf</div>
             </div>
 
             {isLoading ? (
@@ -228,9 +227,9 @@ export function DailyPredictions() {
                       </Badge>
                     </div>
 
-                    <div className="col-span-3 flex flex-col justify-center text-sm">
-                      <div className="font-medium text-xs truncate">{game.awayTeam}</div>
-                      <div className="text-muted-foreground text-xs truncate">@ {game.homeTeam}</div>
+                    <div className="col-span-4 flex flex-col justify-center text-sm">
+                      <div className="font-medium text-xs leading-tight">{game.awayTeam}</div>
+                      <div className="text-muted-foreground text-xs leading-tight">@ {game.homeTeam}</div>
                     </div>
 
                     <div className="col-span-2 flex items-center justify-center relative z-20">
@@ -244,11 +243,11 @@ export function DailyPredictions() {
                           <span className="font-mono font-bold text-xs">LOCKED</span>
                         </div>
                       ) : (
-                        <span className="font-mono font-bold text-primary text-xs truncate">{game.spiderPick}</span>
+                        <span className="font-mono font-bold text-primary text-xs">{game.spiderPick}</span>
                       )}
                     </div>
 
-                    <div className="col-span-2 text-right">
+                    <div className="col-span-1 text-right">
                       <div className="flex items-center justify-end gap-1">
                         <div className="text-xs font-mono">{game.spiderConfidence}%</div>
                         <div className={cn(
@@ -293,8 +292,8 @@ export function DailyPredictions() {
                     </div>
                     <div className="flex items-center justify-between">
                       <div className="flex-1 min-w-0 mr-3">
-                        <div className="font-medium text-[13px] truncate">{game.awayTeam}</div>
-                        <div className="text-muted-foreground text-[12px] truncate">@ {game.homeTeam}</div>
+                        <div className="font-medium text-[13px] leading-tight">{game.awayTeam}</div>
+                        <div className="text-muted-foreground text-[12px] leading-tight">@ {game.homeTeam}</div>
                       </div>
                       <div className="flex items-center gap-3 shrink-0">
                         <div className="relative z-20">
