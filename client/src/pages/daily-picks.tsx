@@ -14,14 +14,13 @@ import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
-const LEAGUES = ["All", "MLB", "NBA", "MLS", "NCAAB", "NCAABB"];
+const LEAGUES = ["All", "MLB", "NBA", "MLS", "NCAAB"];
 
 const LEAGUE_COLORS: Record<string, string> = {
   MLB: "bg-red-500/20 text-red-400 border-red-500/30",
   NBA: "bg-orange-500/20 text-orange-400 border-orange-500/30",
   MLS: "bg-sky-500/20 text-sky-400 border-sky-500/30",
   NCAAB: "bg-purple-500/20 text-purple-400 border-purple-500/30",
-  NCAABB: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
 };
 
 const BET_TYPES: Record<string, string[]> = {
@@ -29,7 +28,6 @@ const BET_TYPES: Record<string, string[]> = {
   NBA: ["Moneyline", "Spread", "Over/Under"],
   MLS: ["Moneyline", "Draw", "Over/Under"],
   NCAAB: ["Moneyline", "Spread", "Over/Under"],
-  NCAABB: ["Moneyline", "Run Line", "Over/Under"],
 };
 
 function isToday(dateStr: string) {
