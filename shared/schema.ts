@@ -72,31 +72,6 @@ export const leaderboardEntries = pgTable("leaderboard_entries", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
-export const braggingPosts = pgTable("bragging_posts", {
-  id: serial("id").primaryKey(),
-  userId: text("user_id").notNull().references(() => users.id),
-  content: text("content").notNull(),
-  mediaUrl: text("media_url"),
-  mediaType: text("media_type"),
-  likes: integer("likes").default(0),
-  createdAt: timestamp("created_at").defaultNow(),
-});
-
-export const braggingLikes = pgTable("bragging_likes", {
-  id: serial("id").primaryKey(),
-  postId: integer("post_id").notNull().references(() => braggingPosts.id),
-  userId: text("user_id").notNull().references(() => users.id),
-  createdAt: timestamp("created_at").defaultNow(),
-});
-
-export const braggingComments = pgTable("bragging_comments", {
-  id: serial("id").primaryKey(),
-  postId: integer("post_id").notNull().references(() => braggingPosts.id),
-  userId: text("user_id").notNull().references(() => users.id),
-  content: text("content").notNull(),
-  createdAt: timestamp("created_at").defaultNow(),
-});
-
 export const musicTracks = pgTable("music_tracks", {
   id: serial("id").primaryKey(),
   sunoId: text("suno_id").notNull(),
@@ -182,9 +157,6 @@ export const insertPredictionSchema = createInsertSchema(predictions).omit({ id:
 export const insertGameSchema = createInsertSchema(games).omit({ id: true, createdAt: true });
 export const insertChatMessageSchema = createInsertSchema(chatMessages).omit({ id: true, createdAt: true });
 export const insertTransactionSchema = createInsertSchema(transactions).omit({ id: true, createdAt: true });
-export const insertBraggingPostSchema = createInsertSchema(braggingPosts).omit({ id: true, createdAt: true, likes: true });
-export const insertBraggingCommentSchema = createInsertSchema(braggingComments).omit({ id: true, createdAt: true });
-
 export type InsertPrediction = z.infer<typeof insertPredictionSchema>;
 export type Prediction = typeof predictions.$inferSelect;
 export type InsertGame = z.infer<typeof insertGameSchema>;
@@ -194,11 +166,6 @@ export type ChatMessage = typeof chatMessages.$inferSelect;
 export type InsertTransaction = z.infer<typeof insertTransactionSchema>;
 export type Transaction = typeof transactions.$inferSelect;
 export type LeaderboardEntry = typeof leaderboardEntries.$inferSelect;
-export type BraggingPost = typeof braggingPosts.$inferSelect;
-export type InsertBraggingPost = z.infer<typeof insertBraggingPostSchema>;
-export type BraggingComment = typeof braggingComments.$inferSelect;
-export type InsertBraggingComment = z.infer<typeof insertBraggingCommentSchema>;
-export type BraggingLike = typeof braggingLikes.$inferSelect;
 export type MusicTrack = typeof musicTracks.$inferSelect;
 export type InsertMusicTrack = z.infer<typeof insertMusicTrackSchema>;
 export type Thread = typeof threads.$inferSelect;
