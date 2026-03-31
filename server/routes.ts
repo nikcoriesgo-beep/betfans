@@ -5,7 +5,7 @@ import { storage } from "./storage";
 import { db } from "./db";
 import { users, referrals, games, predictions } from "@shared/schema";
 import { eq, sql } from "drizzle-orm";
-import { insertPredictionSchema, insertChatMessageSchema, insertBraggingPostSchema, insertBraggingCommentSchema, insertThreadSchema, insertThreadReplySchema, insertAdvertiserSchema } from "@shared/schema";
+import { insertPredictionSchema, insertChatMessageSchema, insertThreadSchema, insertThreadReplySchema, insertAdvertiserSchema } from "@shared/schema";
 import { stripeService } from "./stripeService";
 import { WebhookHandlers } from "./webhookHandlers";
 import { getPayPalConfig, getSubscriptionDetails, tierFromPlanId } from "./paypalService";
@@ -904,81 +904,6 @@ export async function registerRoutes(
     });
   });
 
-  app.get("/api/bragging", async (req, res) => {
-    try {
-      const limit = parseInt(req.query.limit as string) || 50;
-      const offset = parseInt(req.query.offset as string) || 0;
-      const posts = await storage.getBraggingPosts(limit, offset);
-      res.json(posts);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch posts" });
-    }
-  });
-
-  app.get("/api/bragging/liked", isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = (req.session as any)?.userId;
-      const likedPosts = await storage.getUserLikedPosts(userId);
-      res.json(likedPosts);
-    } catch (error) {
-      res.json([]);
-    }
-  });
-
-  app.post("/api/bragging", isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = (req.session as any)?.userId;
-      const user = await storage.getUser(userId);
-      if (!user || user.membershipTier === "rookie") {
-        return res.status(403).json({ message: "Membership required to post bragging rights" });
-      }
-      const parsed = insertBraggingPostSchema.parse({ ...req.body, userId });
-      const post = await storage.createBraggingPost(parsed);
-      res.status(201).json(post);
-    } catch (error: any) {
-      res.status(400).json({ message: error.message || "Invalid post data" });
-    }
-  });
-
-  app.delete("/api/bragging/:id", isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = (req.session as any)?.userId;
-      const deleted = await storage.deleteBraggingPost(parseInt(req.params.id), userId);
-      if (!deleted) return res.status(404).json({ message: "Post not found or not authorized" });
-      res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to delete post" });
-    }
-  });
-
-  app.get("/api/bragging/:id/comments", async (req, res) => {
-    try {
-      const comments = await storage.getBraggingComments(parseInt(req.params.id));
-      res.json(comments);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch comments" });
-    }
-  });
-
-  app.post("/api/bragging/:id/comments", isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = (req.session as any)?.userId;
-      const user = await storage.getUser(userId);
-      if (!user || user.membershipTier === "rookie") {
-        return res.status(403).json({ message: "Membership required to comment" });
-      }
-      const parsed = insertBraggingCommentSchema.parse({
-        postId: parseInt(req.params.id),
-        userId,
-        content: req.body.content,
-      });
-      const comment = await storage.createBraggingComment(parsed);
-      res.status(201).json(comment);
-    } catch (error: any) {
-      res.status(400).json({ message: error.message || "Invalid comment" });
-    }
-  });
-
   const ADMIN_USER_IDS = process.env.ADMIN_USER_IDS?.split(",").filter(Boolean) || [];
   const FOUNDER_CODES_ADMIN = ["NIKCOX"];
   function isAdmin(req: any, res: any, next: any) {
@@ -1182,16 +1107,6 @@ export async function registerRoutes(
       res.json({ success: true, ...result });
     } catch (error: any) {
       res.status(500).json({ message: error.message || "Sync failed" });
-    }
-  });
-
-  app.post("/api/bragging/:id/like", isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = (req.session as any)?.userId;
-      const result = await storage.toggleBraggingLike(parseInt(req.params.id), userId);
-      res.json(result);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to toggle like" });
     }
   });
 
