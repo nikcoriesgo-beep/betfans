@@ -9,7 +9,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 
-type League = "ALL" | "NFL" | "NBA" | "WNBA" | "NHL" | "MLB" | "MLS" | "NWSL" | "NCAAB" | "NCAABB";
+type League = "ALL" | "NFL" | "NBA" | "WNBA" | "NHL" | "MLB" | "MLS" | "NWSL" | "NCAAB";
 
 const leagueColors: Record<string, string> = {
   NFL: "bg-green-600/20 text-green-400 border-green-500/30",
@@ -20,7 +20,6 @@ const leagueColors: Record<string, string> = {
   MLS: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
   NWSL: "bg-teal-500/20 text-teal-400 border-teal-500/30",
   NCAAB: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
-  NCAABB: "bg-amber-500/20 text-amber-400 border-amber-500/30",
 };
 
 function timeAgo(dateStr: string) {
@@ -43,7 +42,6 @@ const leagueNames: Record<string, string> = {
   MLS: "MLS Soccer",
   NWSL: "NWSL Soccer",
   NCAAB: "College Basketball",
-  NCAABB: "College Baseball",
 };
 
 function LeagueSection({ league, articles }: { league: string; articles: any[] }) {
@@ -134,7 +132,6 @@ export default function SportsNews() {
     { value: "MLS", label: "MLS" },
     { value: "NWSL", label: "NWSL" },
     { value: "NCAAB", label: "NCAAB" },
-    { value: "NCAABB", label: "College BB" },
   ];
 
   return (
@@ -202,7 +199,7 @@ export default function SportsNews() {
           <div className="space-y-10">
             {(() => {
               const grouped: Record<string, any[]> = {};
-              const leagueOrder = ["NFL", "NBA", "WNBA", "NHL", "MLB", "MLS", "NWSL", "NCAAB", "NCAABB"];
+              const leagueOrder = ["NFL", "NBA", "WNBA", "NHL", "MLB", "MLS", "NWSL", "NCAAB"];
               for (const article of articles) {
                 const league = article.league || "OTHER";
                 if (!grouped[league]) grouped[league] = [];
