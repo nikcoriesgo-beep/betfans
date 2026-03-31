@@ -566,7 +566,7 @@ function SportScorecardTable() {
   const periodData = [daily, weekly, monthly, annual];
 
   // Collect all unique sports across all periods
-  const SPORT_ORDER = ["NFL", "NBA", "MLB", "NHL", "NCAAB", "NCAABB", "MLS", "NWSL", "WNBA"];
+  const SPORT_ORDER = ["NFL", "NBA", "MLB", "NHL", "NCAAB", "MLS", "NWSL", "WNBA"];
   const allLeagues = Array.from(
     new Set(periodData.flatMap(d => (d?.bySport ?? []).map((s: any) => s.league)))
   ).sort((a, b) => {
