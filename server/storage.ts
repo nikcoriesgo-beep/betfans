@@ -5,9 +5,6 @@ import {
   chatMessages, type ChatMessage, type InsertChatMessage,
   transactions, type Transaction, type InsertTransaction,
   leaderboardEntries, type LeaderboardEntry,
-  braggingPosts, type BraggingPost, type InsertBraggingPost,
-  braggingComments, type BraggingComment, type InsertBraggingComment,
-  braggingLikes,
   musicTracks, type MusicTrack, type InsertMusicTrack,
   threads, type Thread, type InsertThread,
   threadReplies, type ThreadReply, type InsertThreadReply,
@@ -54,14 +51,6 @@ export interface IStorage {
     overall: { wins: number; losses: number; total: number; winRate: number };
     bySport: Array<{ league: string; wins: number; losses: number; total: number; winRate: number }>;
   }>;
-
-  getBraggingPosts(limit?: number, offset?: number): Promise<(BraggingPost & { user: User | null; commentCount: number })[]>;
-  createBraggingPost(post: InsertBraggingPost): Promise<BraggingPost>;
-  deleteBraggingPost(id: number, userId: string): Promise<boolean>;
-  getBraggingComments(postId: number): Promise<(BraggingComment & { user: User | null })[]>;
-  createBraggingComment(comment: InsertBraggingComment): Promise<BraggingComment>;
-  toggleBraggingLike(postId: number, userId: string): Promise<{ liked: boolean; likes: number }>;
-  getUserLikedPosts(userId: string): Promise<number[]>;
 
   getMemberLocations(): Promise<Pick<User, "id" | "firstName" | "lastName" | "profileImageUrl" | "membershipTier" | "city" | "state" | "country" | "latitude" | "longitude">[]>;
 
@@ -452,7 +441,7 @@ export class DatabaseStorage implements IStorage {
       else if (r.result === "loss") leagueMap[lg].losses++;
     }
 
-    const SPORT_ORDER = ["NFL", "NBA", "MLB", "NHL", "NCAAB", "NCAABB", "MLS", "NWSL", "WNBA", "Other"];
+    const SPORT_ORDER = ["NFL", "NBA", "MLB", "NHL", "NCAAB", "MLS", "NWSL", "WNBA", "Other"];
     const bySport = Object.entries(leagueMap)
       .filter(([, v]) => v.wins + v.losses > 0)
       .map(([league, v]) => ({
@@ -504,7 +493,7 @@ export class DatabaseStorage implements IStorage {
       else leagueMap[lg].losses++;
     }
 
-    const SPORT_ORDER = ["NFL", "NBA", "MLB", "NHL", "NCAAB", "NCAABB", "MLS", "NWSL", "WNBA", "Other"];
+    const SPORT_ORDER = ["NFL", "NBA", "MLB", "NHL", "NCAAB", "MLS", "NWSL", "WNBA", "Other"];
     const bySport = Object.entries(leagueMap)
       .filter(([, v]) => v.wins + v.losses > 0)
       .map(([league, v]) => ({
@@ -521,86 +510,6 @@ export class DatabaseStorage implements IStorage {
       });
 
     return { overall: { wins: overallWins, losses: overallLosses, total: overallTotal, winRate: overallWinRate }, bySport };
-  }
-
-  async getBraggingPosts(limit = 50, offset = 0): Promise<(BraggingPost & { user: User | null; commentCount: number })[]> {
-    const posts = await db
-      .select()
-      .from(braggingPosts)
-      .leftJoin(users, eq(braggingPosts.userId, users.id))
-      .orderBy(desc(braggingPosts.createdAt))
-      .limit(limit)
-      .offset(offset);
-
-    const postIds = posts.map(p => p.bragging_posts.id);
-    let commentCounts: Record<number, number> = {};
-    if (postIds.length > 0) {
-      const counts = await db.execute(
-        sql`SELECT post_id, COUNT(*)::int as count FROM bragging_comments WHERE post_id = ANY(${postIds}) GROUP BY post_id`
-      );
-      for (const row of counts.rows as any[]) {
-        commentCounts[row.post_id] = row.count;
-      }
-    }
-
-    return posts.map((p) => ({
-      ...p.bragging_posts,
-      user: p.users,
-      commentCount: commentCounts[p.bragging_posts.id] || 0,
-    }));
-  }
-
-  async createBraggingPost(post: InsertBraggingPost): Promise<BraggingPost> {
-    const [created] = await db.insert(braggingPosts).values(post).returning();
-    return created;
-  }
-
-  async deleteBraggingPost(id: number, userId: string): Promise<boolean> {
-    const result = await db.delete(braggingPosts).where(and(eq(braggingPosts.id, id), eq(braggingPosts.userId, userId))).returning();
-    return result.length > 0;
-  }
-
-  async getBraggingComments(postId: number): Promise<(BraggingComment & { user: User | null })[]> {
-    const comments = await db
-      .select()
-      .from(braggingComments)
-      .leftJoin(users, eq(braggingComments.userId, users.id))
-      .where(eq(braggingComments.postId, postId))
-      .orderBy(asc(braggingComments.createdAt));
-
-    return comments.map((c) => ({
-      ...c.bragging_comments,
-      user: c.users,
-    }));
-  }
-
-  async createBraggingComment(comment: InsertBraggingComment): Promise<BraggingComment> {
-    const [created] = await db.insert(braggingComments).values(comment).returning();
-    return created;
-  }
-
-  async toggleBraggingLike(postId: number, userId: string): Promise<{ liked: boolean; likes: number }> {
-    const existing = await db
-      .select()
-      .from(braggingLikes)
-      .where(and(eq(braggingLikes.postId, postId), eq(braggingLikes.userId, userId)));
-
-    if (existing.length > 0) {
-      await db.delete(braggingLikes).where(and(eq(braggingLikes.postId, postId), eq(braggingLikes.userId, userId)));
-      await db.update(braggingPosts).set({ likes: sql`GREATEST(${braggingPosts.likes} - 1, 0)` }).where(eq(braggingPosts.id, postId));
-      const [post] = await db.select({ likes: braggingPosts.likes }).from(braggingPosts).where(eq(braggingPosts.id, postId));
-      return { liked: false, likes: post?.likes || 0 };
-    } else {
-      await db.insert(braggingLikes).values({ postId, userId });
-      await db.update(braggingPosts).set({ likes: sql`${braggingPosts.likes} + 1` }).where(eq(braggingPosts.id, postId));
-      const [post] = await db.select({ likes: braggingPosts.likes }).from(braggingPosts).where(eq(braggingPosts.id, postId));
-      return { liked: true, likes: post?.likes || 0 };
-    }
-  }
-
-  async getUserLikedPosts(userId: string): Promise<number[]> {
-    const likes = await db.select({ postId: braggingLikes.postId }).from(braggingLikes).where(eq(braggingLikes.userId, userId));
-    return likes.map(l => l.postId);
   }
 
   async getMemberLocations(): Promise<Pick<User, "id" | "firstName" | "lastName" | "profileImageUrl" | "membershipTier" | "city" | "state" | "country" | "latitude" | "longitude">[]> {
