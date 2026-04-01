@@ -204,17 +204,6 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              <div className="bg-gradient-to-br from-primary/20 to-transparent border border-primary/20 rounded-xl p-6">
-                <h3 className="font-display font-bold text-lg mb-2">Weekly Challenge</h3>
-                <p className="text-sm text-muted-foreground mb-4">
-                  Predict 5 NBA winners correctly in a row to win the "Hoops King" badge and $500.
-                </p>
-                <div className="w-full bg-black/20 h-2 rounded-full mb-2 overflow-hidden">
-                  <div className="bg-primary h-full w-3/5" />
-                </div>
-                <p className="text-xs text-right font-mono text-primary">3/5 Completed</p>
-              </div>
-
               {isAuthenticated && predictions.length > 0 && (
                 <ShareMyStats
                   username={displayName}
