@@ -371,8 +371,23 @@ export async function gradeStuckGames(): Promise<number> {
   return totalGraded;
 }
 
+async function gradeYesterdayGames(): Promise<void> {
+  // Fetch yesterday's date in ET and grade any unfinished games from it
+  // This catches late west coast games (e.g. 9:40 PM PT) that finish after midnight UTC
+  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const dateStr = getETDateStr(yesterday);
+  const activeLeagues = ["MLB", "NBA", "MLS", "NCAAB"];
+  for (const league of activeLeagues) {
+    const graded = await fetchAndGradeForLeagueDate(league, dateStr);
+    if (graded > 0) console.log(`[spider] yesterday-sweep: graded ${graded} picks for ${league} on ${dateStr}`);
+  }
+}
+
 export async function syncSportsData(): Promise<{ synced: number; leagues: string[] }> {
   console.log("[spider] Syncing live sports data from ESPN...");
+
+  // Grade yesterday's late games first (west coast games finishing after midnight UTC)
+  await gradeYesterdayGames().catch((e) => console.log("[spider] gradeYesterday error:", e));
 
   // Always grade any stuck games first (picks from yesterday or earlier that didn't get graded)
   await gradeStuckGames().catch((e) => console.log("[spider] gradeStuckGames error:", e));
