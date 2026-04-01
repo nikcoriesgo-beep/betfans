@@ -254,7 +254,7 @@ export class DatabaseStorage implements IStorage {
         const roi = total > 0 ? (profit / total) * 100 : 0;
         let streak = 0;
         const sorted = [...preds].sort((a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime());
-        for (const p of sorted) { if (p.result === "win") streak++; else break; }
+        for (const p of sorted) { if (p.result === "pending") continue; if (p.result === "win") streak++; else break; }
         return { userId, wins, losses, profit: Math.round(profit * 100) / 100, roi: Math.round(roi * 100) / 100, streak, total };
       })
       .filter((e) => e.total > 0)
@@ -310,6 +310,7 @@ export class DatabaseStorage implements IStorage {
       let streak = 0;
       const sorted = [...preds].sort((a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime());
       for (const p of sorted) {
+        if (p.result === "pending") continue;
         if (p.result === "win") streak++;
         else break;
       }
@@ -395,6 +396,7 @@ export class DatabaseStorage implements IStorage {
     let streak = 0;
     const sorted = userPreds.sort((a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime());
     for (const p of sorted) {
+      if (p.result === "pending") continue;
       if (p.result === "win") streak++;
       else break;
     }
