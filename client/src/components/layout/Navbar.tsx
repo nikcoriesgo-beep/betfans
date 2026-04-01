@@ -59,7 +59,7 @@ export function Navbar() {
 
   return (
     <>
-      <nav className="fixed top-0 left-0 right-0 z-50 border-b border-border/40 bg-background/80 backdrop-blur-md" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
+      <nav className="fixed top-0 left-0 right-0 z-50 border-b border-border/40 bg-background/80 backdrop-blur-md" style={{ paddingTop: 'env(safe-area-inset-top)' }} data-testid="main-navbar">
         <div className="container mx-auto px-4 h-14 flex items-center justify-between">
 
           <Link href="/" className="flex items-center gap-2 font-display text-xl font-bold tracking-tighter hover:opacity-80 transition-opacity shrink-0" data-testid="link-home">
