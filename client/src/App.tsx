@@ -14,7 +14,6 @@ import GameDetail from "@/pages/game-detail";
 import Profile from "@/pages/profile";
 import MembersMap from "@/pages/members-map";
 import LeaderboardPage from "@/pages/leaderboard";
-import Community from "@/pages/community";
 import Advertising from "@/pages/advertising";
 import Winners from "@/pages/winners";
 import WinnersProbability from "@/pages/winners-probability";
@@ -65,7 +64,6 @@ function Router() {
       <Route path="/" component={Home} />
       <Route path="/dashboard" component={Dashboard} />
       <Route path="/membership" component={Membership} />
-      <Route path="/community" component={Community} />
       <Route path="/members-map" component={MembersMap} />
       <Route path="/leaderboard/daily" component={LeaderboardPage} />
       <Route path="/leaderboard/weekly" component={LeaderboardPage} />
