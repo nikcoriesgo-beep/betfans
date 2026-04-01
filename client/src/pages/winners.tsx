@@ -5,7 +5,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
-  Trophy, Crown, Star, DollarSign, TrendingUp, Flame,
+  Trophy, Crown, Star, DollarSign, TrendingUp,
   Calendar, Clock, Target, Award, Sparkles, ChevronRight,
   Timer, Zap, Users, ArrowUpRight, BarChart3, Loader2,
 } from "lucide-react";
@@ -154,7 +154,6 @@ function WinnerCard({ entry, place, payout, config }: { entry: any; place: numbe
               </div>
               <div className="hidden md:flex items-center gap-4 text-xs text-muted-foreground">
                 <span className="flex items-center gap-1"><TrendingUp size={11} /> {winRate}% Win Rate</span>
-                <span className="flex items-center gap-1"><Flame size={11} /> {entry.streak || 0} streak</span>
                 <span>{entry.wins}W - {entry.losses}L · {(entry.totalPicks || (entry.wins + entry.losses))} picks</span>
               </div>
             </div>
@@ -168,7 +167,7 @@ function WinnerCard({ entry, place, payout, config }: { entry: any; place: numbe
             </div>
             <ChevronRight size={16} className="text-muted-foreground/30 group-hover:text-foreground/50 transition-colors shrink-0 hidden md:block" />
           </div>
-          <div className="md:hidden grid grid-cols-4 gap-1 mt-2 py-2 px-2 rounded-lg bg-white/[0.03] border border-white/5">
+          <div className="md:hidden grid grid-cols-3 gap-1 mt-2 py-2 px-2 rounded-lg bg-white/[0.03] border border-white/5">
             <div className="text-center">
               <div className="text-[8px] text-muted-foreground/60 uppercase tracking-wider mb-0.5">Win%</div>
               <span className="font-mono font-bold text-[11px] text-primary">{winRate}%</span>
@@ -186,16 +185,6 @@ function WinnerCard({ entry, place, payout, config }: { entry: any; place: numbe
               <span className="font-mono font-bold text-[11px] text-foreground/80">
                 {(entry.totalPicks || (entry.wins + entry.losses))}
               </span>
-            </div>
-            <div className="text-center">
-              <div className="text-[8px] text-muted-foreground/60 uppercase tracking-wider mb-0.5">Streak</div>
-              {(entry.streak || 0) >= 3 ? (
-                <div className="flex items-center justify-center gap-0.5 text-orange-500 text-[11px] font-bold">
-                  <Flame size={9} fill="currentColor" /> {entry.streak}
-                </div>
-              ) : (
-                <span className="text-muted-foreground text-[11px] font-mono">{entry.streak || 0}</span>
-              )}
             </div>
           </div>
         </CardContent>
