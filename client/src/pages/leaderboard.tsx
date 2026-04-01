@@ -8,7 +8,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
-  Trophy, Flame, TrendingUp, Medal, Crown, Star,
+  Trophy, TrendingUp, Medal, Crown, Star,
   ArrowUp, ArrowDown, Target, Calendar, Clock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -261,13 +261,12 @@ export default function LeaderboardPage() {
           <Card className="bg-card/30 border-white/10 overflow-hidden">
             <div className={cn("h-1 w-full bg-gradient-to-r", config.accent)} />
             <CardContent className="p-0">
-              <div className="hidden md:grid grid-cols-12 gap-4 px-6 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider border-b border-white/5">
+              <div className="hidden md:grid grid-cols-11 gap-4 px-6 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider border-b border-white/5">
                 <div className="col-span-1 text-center">Rank</div>
                 <div className="col-span-4">Predictor</div>
                 <div className="col-span-2 text-right">Win %</div>
                 <div className="col-span-2 text-right">Record</div>
                 <div className="col-span-2 text-right">Total Picks</div>
-                <div className="col-span-1 text-center">Streak</div>
               </div>
 
               <ScrollArea className="max-h-[600px]">
@@ -292,7 +291,7 @@ export default function LeaderboardPage() {
                         key={entry.id}
                         href={`/profile?user=${entry.userId}`}
                         className={cn(
-                          "block md:grid md:grid-cols-12 md:gap-4 px-4 md:px-6 py-4 md:items-center border-b border-white/5 transition-all hover:bg-white/5 cursor-pointer",
+                          "block md:grid md:grid-cols-11 md:gap-4 px-4 md:px-6 py-4 md:items-center border-b border-white/5 transition-all hover:bg-white/5 cursor-pointer",
                           index < 3 && "bg-gradient-to-r from-primary/5 to-transparent"
                         )}
                         data-testid={`row-leaderboard-${entry.id}`}
@@ -344,20 +343,7 @@ export default function LeaderboardPage() {
                           <div className="text-[10px] text-muted-foreground">graded</div>
                         </div>
 
-                        <div className="hidden md:flex col-span-1 justify-center">
-                          {(entry.streak || 0) >= 3 ? (
-                            <div className="flex items-center gap-1 text-orange-500 font-bold">
-                              <Flame size={16} fill="currentColor" />
-                              {entry.streak}
-                            </div>
-                          ) : (entry.streak || 0) > 0 ? (
-                            <span className="text-muted-foreground font-mono">{entry.streak}</span>
-                          ) : (
-                            <span className="text-muted-foreground">-</span>
-                          )}
-                        </div>
-
-                        <div className="md:hidden grid grid-cols-4 gap-1 mt-2 py-2 px-2 rounded-lg bg-white/[0.03] border border-white/5">
+                        <div className="md:hidden grid grid-cols-3 gap-1 mt-2 py-2 px-2 rounded-lg bg-white/[0.03] border border-white/5">
                           <div className="text-center">
                             <div className="text-[8px] text-muted-foreground/60 uppercase tracking-wider mb-0.5">Win %</div>
                             <span className="font-mono font-bold text-[11px] text-primary">
@@ -377,16 +363,6 @@ export default function LeaderboardPage() {
                             <span className="font-mono text-[11px] font-bold text-foreground/80">
                               {(entry.totalPicks || (entry.wins + entry.losses))}
                             </span>
-                          </div>
-                          <div className="text-center">
-                            <div className="text-[8px] text-muted-foreground/60 uppercase tracking-wider mb-0.5">Streak</div>
-                            {(entry.streak || 0) >= 3 ? (
-                              <div className="flex items-center justify-center gap-0.5 text-orange-500 text-[11px] font-bold">
-                                <Flame size={9} fill="currentColor" /> {entry.streak}
-                              </div>
-                            ) : (
-                              <span className="text-muted-foreground text-[11px] font-mono">{entry.streak || 0}</span>
-                            )}
                           </div>
                         </div>
                       </a>
@@ -422,13 +398,10 @@ export default function LeaderboardPage() {
                 </Card>
                 <Card className="bg-card/30 border-white/10">
                   <CardContent className="p-4 text-center">
-                    <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Best Streak</p>
-                    <div className="flex items-center justify-center gap-1">
-                      <Flame size={20} className="text-orange-500" fill="currentColor" />
-                      <p className="text-2xl font-display font-bold text-orange-500">
-                        {Math.max(...entries.map((e: any) => e.streak || 0))}
-                      </p>
-                    </div>
+                    <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Most Wins</p>
+                    <p className="text-2xl font-display font-bold text-yellow-400">
+                      {Math.max(...entries.map((e: any) => e.wins || 0))}
+                    </p>
                   </CardContent>
                 </Card>
               </>
