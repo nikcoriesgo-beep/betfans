@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { Navbar } from "@/components/layout/Navbar";
 import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -16,21 +16,18 @@ import { Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 
-type Period = "daily" | "weekly" | "monthly" | "annual";
+type Period = "daily" | "annual";
 
 type PrizePoolData = {
   amount: number;
   daily: number;
-  weekly: number;
-  monthly: number;
   annual: number;
 };
 
+const TIER_SHARES = { legend: 0.10, pro: 0.05, rookie: 0.04 };
+
 const periodConfig: Record<Period, {
   title: string;
-  poolShare: number;
-  topWinners: number;
-  splits: number[];
   icon: any;
   gradient: string;
   border: string;
@@ -39,42 +36,14 @@ const periodConfig: Record<Period, {
 }> = {
   daily: {
     title: "Daily Winners",
-    poolShare: 0.05,
-    topWinners: 3,
-    splits: [0.50, 0.30, 0.20],
     icon: Clock,
     gradient: "from-blue-500 to-cyan-500",
     border: "border-blue-500/30",
     accent: "text-blue-400",
     label: "Today's Champions",
   },
-  weekly: {
-    title: "Weekly Winners",
-    poolShare: 0.10,
-    topWinners: 5,
-    splits: [0.35, 0.25, 0.20, 0.12, 0.08],
-    icon: Calendar,
-    gradient: "from-emerald-500 to-green-500",
-    border: "border-emerald-500/30",
-    accent: "text-emerald-400",
-    label: "This Week's Elite",
-  },
-  monthly: {
-    title: "Monthly Winners",
-    poolShare: 0.35,
-    topWinners: 5,
-    splits: [0.40, 0.25, 0.15, 0.12, 0.08],
-    icon: Target,
-    gradient: "from-purple-500 to-violet-500",
-    border: "border-purple-500/30",
-    accent: "text-purple-400",
-    label: "Monthly Legends",
-  },
   annual: {
     title: "Annual Winners",
-    poolShare: 0.50,
-    topWinners: 10,
-    splits: [0.30, 0.20, 0.15, 0.10, 0.08, 0.05, 0.04, 0.03, 0.03, 0.02],
     icon: Trophy,
     gradient: "from-yellow-500 to-orange-500",
     border: "border-yellow-500/30",
@@ -83,109 +52,48 @@ const periodConfig: Record<Period, {
   },
 };
 
+const tierConfig: Record<string, { label: string; color: string; bg: string; border: string; icon: any }> = {
+  legend: { label: "Legend", color: "text-purple-400", bg: "bg-purple-600/20", border: "border-purple-500/30", icon: Crown },
+  pro: { label: "Pro", color: "text-primary", bg: "bg-primary/20", border: "border-primary/30", icon: Star },
+  rookie: { label: "Rookie", color: "text-blue-400", bg: "bg-blue-500/20", border: "border-blue-500/30", icon: Award },
+};
+
 function TierBadge({ tier }: { tier: string | null }) {
   if (tier === "legend") return <Badge className="bg-purple-600/20 text-purple-400 border-purple-500/30 text-[10px] gap-0.5 px-1.5 py-0"><Crown size={10} /> Legend</Badge>;
   if (tier === "pro") return <Badge className="bg-primary/20 text-primary border-primary/30 text-[10px] gap-0.5 px-1.5 py-0"><Star size={10} /> Pro</Badge>;
+  if (tier === "rookie") return <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30 text-[10px] gap-0.5 px-1.5 py-0"><Award size={10} /> Rookie</Badge>;
   return null;
 }
 
-function PlaceMedal({ place }: { place: number }) {
-  if (place === 1) {
-    return (
-      <div className="relative">
-        <div className="w-16 h-16 rounded-full bg-gradient-to-br from-yellow-300 via-yellow-500 to-yellow-700 flex items-center justify-center shadow-lg shadow-yellow-500/40 ring-4 ring-yellow-400/20">
-          <Crown size={28} className="text-white drop-shadow-lg" />
-        </div>
-        <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-yellow-500 flex items-center justify-center text-white text-xs font-black shadow-lg">1</div>
-      </div>
-    );
-  }
-  if (place === 2) {
-    return (
-      <div className="relative">
-        <div className="w-14 h-14 rounded-full bg-gradient-to-br from-gray-200 via-gray-400 to-gray-600 flex items-center justify-center shadow-lg shadow-gray-400/30 ring-4 ring-gray-400/20">
-          <Award size={24} className="text-white drop-shadow-lg" />
-        </div>
-        <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-gray-400 flex items-center justify-center text-white text-xs font-black shadow-lg">2</div>
-      </div>
-    );
-  }
-  if (place === 3) {
-    return (
-      <div className="relative">
-        <div className="w-14 h-14 rounded-full bg-gradient-to-br from-orange-400 via-orange-600 to-orange-800 flex items-center justify-center shadow-lg shadow-orange-500/30 ring-4 ring-orange-500/20">
-          <Award size={24} className="text-white drop-shadow-lg" />
-        </div>
-        <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-orange-600 flex items-center justify-center text-white text-xs font-black shadow-lg">3</div>
-      </div>
-    );
-  }
-  return (
-    <div className="w-12 h-12 rounded-full bg-white/5 border border-white/10 flex items-center justify-center">
-      <span className="text-muted-foreground font-mono font-bold text-lg">{place}</span>
-    </div>
-  );
-}
-
-function WinnerCard({ entry, place, payout, config }: { entry: any; place: number; payout: number; config: typeof periodConfig.daily }) {
+function WinnerCard({ entry, payout, accentClass }: { entry: any; payout: number; accentClass: string }) {
   const name = entry.user ? `${entry.user.firstName || ""} ${entry.user.lastName || ""}`.trim() || "Member" : "Member";
   const winRate = entry.wins + entry.losses > 0 ? ((entry.wins / (entry.wins + entry.losses)) * 100).toFixed(1) : "0";
-  const isTop3 = place <= 3;
 
   return (
     <Link href={`/winners/${entry.userId}`}>
-      <Card className={cn(
-        "transition-all cursor-pointer group hover:scale-[1.02]",
-        isTop3 ? `bg-gradient-to-r ${config.gradient.replace("from-", "from-").replace("to-", "to-")}/5 ${config.border} border` : "bg-card/30 border-white/5 hover:border-white/10"
-      )} data-testid={`card-winner-${place}`}>
-        <CardContent className={cn("p-4 md:p-5", isTop3 && "md:p-6")}>
-          <div className="flex items-center gap-3 md:gap-4">
-            <div className="shrink-0">
-              <PlaceMedal place={place} />
-            </div>
-            <Avatar className={cn("border-2 border-white/10 shrink-0", isTop3 ? "h-10 w-10 md:h-14 md:w-14" : "h-9 w-9 md:h-11 md:w-11")}>
+      <Card className="bg-card/30 border-white/5 hover:border-white/10 transition-all cursor-pointer group hover:scale-[1.02]" data-testid={`card-winner-${entry.userId}`}>
+        <CardContent className="p-4">
+          <div className="flex items-center gap-3">
+            <Avatar className="h-10 w-10 border-2 border-white/10 shrink-0">
               <AvatarImage src={entry.user?.profileImageUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${entry.userId}`} />
               <AvatarFallback>{name[0]}</AvatarFallback>
             </Avatar>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-1.5 mb-0.5">
-                <span className={cn("font-display font-bold truncate", isTop3 ? "text-sm md:text-lg" : "text-xs md:text-sm")}>{name}</span>
+                <span className="font-display font-bold truncate text-sm">{name}</span>
                 <TierBadge tier={entry.user?.membershipTier} />
               </div>
-              <div className="hidden md:flex items-center gap-4 text-xs text-muted-foreground">
+              <div className="flex items-center gap-3 text-xs text-muted-foreground">
                 <span className="flex items-center gap-1"><TrendingUp size={11} /> {winRate}% Win Rate</span>
-                <span>{entry.wins}W - {entry.losses}L · {(entry.totalPicks || (entry.wins + entry.losses))} picks</span>
+                <span>{entry.wins}W - {entry.losses}L</span>
               </div>
             </div>
             <div className="text-right shrink-0">
-              <div className={cn("font-bold font-mono", isTop3 ? "text-lg md:text-2xl" : "text-sm md:text-lg", config.accent)}>
-                ${payout.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-              </div>
-              <div className="text-[10px] text-muted-foreground uppercase tracking-wider">
-                {(config.splits[place - 1] * 100).toFixed(0)}% share
+              <div className={cn("font-bold font-mono text-xl", accentClass)}>
+                {fmtMoney(payout)}
               </div>
             </div>
             <ChevronRight size={16} className="text-muted-foreground/30 group-hover:text-foreground/50 transition-colors shrink-0 hidden md:block" />
-          </div>
-          <div className="md:hidden grid grid-cols-3 gap-1 mt-2 py-2 px-2 rounded-lg bg-white/[0.03] border border-white/5">
-            <div className="text-center">
-              <div className="text-[8px] text-muted-foreground/60 uppercase tracking-wider mb-0.5">Win%</div>
-              <span className="font-mono font-bold text-[11px] text-primary">{winRate}%</span>
-            </div>
-            <div className="text-center">
-              <div className="text-[8px] text-muted-foreground/60 uppercase tracking-wider mb-0.5">Record</div>
-              <div className="font-mono text-[11px]">
-                <span className="text-green-400">{entry.wins}</span>
-                <span className="text-muted-foreground/40">-</span>
-                <span className="text-red-400">{entry.losses}</span>
-              </div>
-            </div>
-            <div className="text-center">
-              <div className="text-[8px] text-muted-foreground/60 uppercase tracking-wider mb-0.5">Picks</div>
-              <span className="font-mono font-bold text-[11px] text-foreground/80">
-                {(entry.totalPicks || (entry.wins + entry.losses))}
-              </span>
-            </div>
           </div>
         </CardContent>
       </Card>
@@ -193,7 +101,7 @@ function WinnerCard({ entry, place, payout, config }: { entry: any; place: numbe
   );
 }
 
-function useCountdown(period: "daily" | "weekly" | "monthly") {
+function useCountdown(period: "daily" | "annual") {
   const [timeLeft, setTimeLeft] = useState("");
   useEffect(() => {
     const calc = () => {
@@ -201,22 +109,20 @@ function useCountdown(period: "daily" | "weekly" | "monthly") {
       let target: Date;
       if (period === "daily") {
         target = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
-      } else if (period === "weekly") {
-        const day = now.getDay();
-        const daysUntilMonday = day === 0 ? 1 : 8 - day;
-        target = new Date(now.getFullYear(), now.getMonth(), now.getDate() + daysUntilMonday);
+        target.setHours(0, 0, 0, 0);
+        const diff = target.getTime() - now.getTime();
+        if (diff <= 0) return "Resetting...";
+        const h = Math.floor(diff / 3600000);
+        const m = Math.floor((diff % 3600000) / 60000);
+        const s = Math.floor((diff % 60000) / 1000);
+        return `${h}h ${m}m ${s}s`;
       } else {
-        target = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+        target = new Date(now.getFullYear() + 1, 0, 1);
+        const diff = target.getTime() - now.getTime();
+        const d = Math.floor(diff / 86400000);
+        const h = Math.floor((diff % 86400000) / 3600000);
+        return `${d}d ${h}h`;
       }
-      target.setHours(0, 0, 0, 0);
-      const diff = target.getTime() - now.getTime();
-      if (diff <= 0) return "Resetting...";
-      const d = Math.floor(diff / 86400000);
-      const h = Math.floor((diff % 86400000) / 3600000);
-      const m = Math.floor((diff % 3600000) / 60000);
-      const s = Math.floor((diff % 60000) / 1000);
-      if (d > 0) return `${d}d ${h}h ${m}m`;
-      return `${h}h ${m}m ${s}s`;
     };
     setTimeLeft(calc());
     const interval = setInterval(() => setTimeLeft(calc()), 1000);
@@ -225,40 +131,45 @@ function useCountdown(period: "daily" | "weekly" | "monthly") {
   return timeLeft;
 }
 
-function PrizePoolTracker({ period, amount, config }: {
-  period: "daily" | "weekly" | "monthly";
-  amount: number;
-  config: typeof periodConfig.daily;
-}) {
-  const Icon = config.icon;
-  const countdown = useCountdown(period);
-  const [prevAmount, setPrevAmount] = useState(amount);
+function fmtMoney(n: number) {
+  if (!n || n <= 0) return "—";
+  return "$" + n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function DailyPrizePoolTracker({ annualAmount }: { annualAmount: number }) {
+  const countdown = useCountdown("daily");
+  const [prevAmount, setPrevAmount] = useState(annualAmount);
   const [isGrowing, setIsGrowing] = useState(false);
 
   useEffect(() => {
-    if (amount > prevAmount && prevAmount > 0) {
+    if (annualAmount > prevAmount && prevAmount > 0) {
       setIsGrowing(true);
       setTimeout(() => setIsGrowing(false), 2000);
     }
-    setPrevAmount(amount);
-  }, [amount]);
+    setPrevAmount(annualAmount);
+  }, [annualAmount]);
+
+  const tiers = [
+    { key: "legend", label: "Legend", share: TIER_SHARES.legend, color: "text-purple-400" },
+    { key: "pro",    label: "Pro",    share: TIER_SHARES.pro,    color: "text-primary" },
+    { key: "rookie", label: "Rookie", share: TIER_SHARES.rookie, color: "text-blue-400" },
+  ];
 
   return (
     <Card className={cn(
-      "relative overflow-hidden transition-all",
-      `${config.border} border`,
+      "relative overflow-hidden transition-all border-blue-500/30 border",
       isGrowing && "ring-2 ring-primary/50"
-    )} data-testid={`tracker-${period}`}>
-      <div className={cn("absolute inset-0 bg-gradient-to-br opacity-10", config.gradient)} />
+    )} data-testid="tracker-daily">
+      <div className="absolute inset-0 bg-gradient-to-br from-blue-500 to-cyan-500 opacity-10" />
       {isGrowing && <div className="absolute inset-0 bg-primary/10 animate-pulse" />}
       <CardContent className="p-5 relative">
         <div className="flex items-start justify-between mb-4">
           <div className="flex items-center gap-2">
-            <div className={cn("w-9 h-9 rounded-lg flex items-center justify-center bg-gradient-to-br shadow-lg", config.gradient)}>
-              <Icon size={18} className="text-white" />
+            <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-gradient-to-br from-blue-500 to-cyan-500 shadow-lg">
+              <Clock size={18} className="text-white" />
             </div>
             <div>
-              <h3 className="font-display font-bold text-sm">{config.title}</h3>
+              <h3 className="font-display font-bold text-sm">Daily Prize Opportunity</h3>
               <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
                 <Zap size={9} className="text-primary" /> LIVE
               </div>
@@ -271,252 +182,237 @@ function PrizePoolTracker({ period, amount, config }: {
         </div>
 
         <div className={cn(
-          "text-3xl font-mono font-black mb-3 transition-all duration-500",
-          config.accent,
+          "text-3xl font-mono font-black mb-4 transition-all duration-500 text-blue-400",
           isGrowing && "scale-105 drop-shadow-[0_0_15px_rgba(34,197,94,0.6)]"
         )}>
-          ${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          {annualAmount > 0 ? "$" + annualAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "Building..."}
         </div>
 
-        <div className="space-y-1.5">
-          {config.splits.slice(0, Math.min(3, config.topWinners)).map((split, i) => {
-            const payout = amount * split;
-            const labels = ["1st Place", "2nd Place", "3rd Place"];
-            const colors = ["text-yellow-400", "text-gray-300", "text-orange-400"];
-            return (
-              <div key={i} className="flex items-center justify-between text-xs">
-                <div className="flex items-center gap-1.5">
-                  <span className={cn("font-bold", colors[i])}>{labels[i]}</span>
-                  <span className="text-muted-foreground/60">({(split * 100).toFixed(0)}%)</span>
-                </div>
-                <span className={cn("font-mono font-bold", config.accent)}>
-                  ${payout.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </span>
+        <div className="space-y-2">
+          {tiers.map((t) => (
+            <div key={t.key} className="flex items-center justify-between text-xs">
+              <div className="flex items-center gap-1.5">
+                <span className={cn("font-bold", t.color)}>{t.label} Winner</span>
+                <span className="text-muted-foreground/60">({(t.share * 100).toFixed(0)}% of prize pool)</span>
               </div>
-            );
-          })}
-          {config.topWinners > 3 && (
-            <div className="text-[10px] text-muted-foreground/50 text-right">
-              +{config.topWinners - 3} more paid out
+              <span className={cn("font-mono font-bold", t.color)}>
+                {fmtMoney(annualAmount * t.share)}
+              </span>
             </div>
-          )}
+          ))}
         </div>
       </CardContent>
     </Card>
   );
 }
 
-function PlatformSportStats({ period }: { period: Period }) {
-  const config = periodConfig[period];
-  const Icon = config.icon;
-
-  const { data: stats, isLoading } = useQuery<any>({
-    queryKey: ["/api/sport-stats", period],
-    queryFn: async () => {
-      const res = await fetch(`/api/sport-stats?period=${period}`);
-      if (!res.ok) return { overall: null, bySport: [] };
-      return res.json();
-    },
-  });
-
-  const overall = stats?.overall;
-  const bySport: any[] = stats?.bySport ?? [];
-  const hasData = overall && overall.total > 0;
+function AnnualPrizePoolTracker({ annualAmount }: { annualAmount: number }) {
+  const countdown = useCountdown("annual");
 
   return (
-    <div className="max-w-3xl mx-auto mb-10">
-      <div className="flex items-center gap-2 mb-4">
-        <BarChart3 size={16} className="text-primary" />
-        <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground">Platform Pick Totals — {config.title}</h2>
-      </div>
-
-      {isLoading ? (
-        <div className="flex items-center justify-center py-8">
-          <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-        </div>
-      ) : !hasData ? (
-        <Card className="bg-card/20 border-white/5">
-          <CardContent className="p-6 text-center">
-            <BarChart3 size={32} className="text-muted-foreground/20 mx-auto mb-2" />
-            <p className="text-sm text-muted-foreground">No graded picks recorded for this period yet</p>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="space-y-3">
-          {/* Combined row */}
-          <div className={cn(
-            "p-4 rounded-xl border flex flex-wrap items-center gap-4 bg-gradient-to-r border-primary/20",
-            "from-primary/10 to-primary/5"
-          )} data-testid={`platform-combined-${period}`}>
-            <div className={cn("w-9 h-9 rounded-lg flex items-center justify-center bg-gradient-to-br shrink-0", config.gradient)}>
-              <Icon size={16} className="text-white" />
+    <Card className="relative overflow-hidden border-yellow-500/30 border" data-testid="tracker-annual">
+      <div className="absolute inset-0 bg-gradient-to-br from-yellow-500 to-orange-500 opacity-10" />
+      <CardContent className="p-5 relative">
+        <div className="flex items-start justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-gradient-to-br from-yellow-500 to-orange-500 shadow-lg">
+              <Trophy size={18} className="text-white" />
             </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-xs font-bold uppercase tracking-wider text-primary mb-1">All Sports Combined</div>
-              <div className="flex flex-wrap items-center gap-4">
-                <span className="font-mono font-bold text-lg">
-                  <span className="text-green-400">{overall.wins}W</span>
-                  <span className="text-muted-foreground/40 mx-1.5">—</span>
-                  <span className="text-red-400">{overall.losses}L</span>
-                </span>
-                <span className={cn("font-mono font-black text-xl", config.accent)}>{overall.winRate}%</span>
-                <span className="text-xs text-muted-foreground">{overall.total} graded picks</span>
-              </div>
-            </div>
-            {/* Mini win/loss bar */}
-            <div className="w-full sm:w-32 h-2 rounded-full overflow-hidden flex gap-0.5">
-              <div className="bg-green-500 rounded-l-full" style={{ width: `${(overall.wins / overall.total) * 100}%` }} />
-              <div className="bg-red-500 rounded-r-full" style={{ width: `${(overall.losses / overall.total) * 100}%` }} />
+            <div>
+              <h3 className="font-display font-bold text-sm">Annual Grand Prize</h3>
+              <div className="text-[10px] text-muted-foreground">Winner takes all remaining</div>
             </div>
           </div>
-
-          {/* Per-sport grid */}
-          {bySport.length > 0 && (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-              {bySport.map((s: any) => {
-                const isHot = s.winRate >= 60;
-                const isCold = s.winRate < 40;
-                return (
-                  <div
-                    key={s.league}
-                    className={cn(
-                      "p-3 rounded-xl border text-center",
-                      isHot ? "bg-green-500/10 border-green-500/20" : isCold ? "bg-red-500/10 border-red-500/20" : "bg-card/30 border-white/10"
-                    )}
-                    data-testid={`platform-sport-${period}-${s.league}`}
-                  >
-                    <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-1.5">{s.league}</div>
-                    <div className="font-mono text-sm mb-1">
-                      <span className="text-green-400 font-bold">{s.wins}</span>
-                      <span className="text-muted-foreground/40">-</span>
-                      <span className="text-red-400 font-bold">{s.losses}</span>
-                    </div>
-                    <div className={cn("font-mono font-bold text-base", isHot ? "text-green-400" : isCold ? "text-red-400" : "text-primary")}>
-                      {s.winRate}%
-                    </div>
-                    <div className="text-[9px] text-muted-foreground mt-0.5">{s.total} picks</div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+          <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-white/5 border border-white/10">
+            <Timer size={12} className="text-muted-foreground" />
+            <span className="text-xs font-mono text-muted-foreground">{countdown}</span>
+          </div>
         </div>
-      )}
-    </div>
+
+        <div className="text-3xl font-mono font-black mb-3 text-yellow-400">
+          {annualAmount > 0 ? "$" + annualAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "Building..."}
+        </div>
+        <p className="text-[11px] text-muted-foreground leading-relaxed">
+          All remaining prize pool accumulates here after daily payouts. Awarded to the best MLB predictor(s) of the year on Jan 1st.
+          Tied annual winners split the pool equally.
+        </p>
+      </CardContent>
+    </Card>
   );
 }
 
-function PeriodWinners({ period, poolAmount }: { period: Period; poolAmount: number }) {
-  const config = periodConfig[period];
-  const Icon = config.icon;
-
+function DailyWinners({ poolAmount }: { poolAmount: number }) {
   const { data: entries = [] } = useQuery<any[]>({
-    queryKey: ["/api/leaderboard", period],
+    queryKey: ["/api/leaderboard", "daily"],
     queryFn: async () => {
-      const res = await fetch(`/api/leaderboard?period=${period}`);
+      const res = await fetch(`/api/leaderboard?period=daily`);
       if (!res.ok) return [];
       return res.json();
     },
   });
 
-  const winners = entries.slice(0, config.topWinners);
+  const tiers = ["legend", "pro", "rookie"] as const;
+
+  const getTopForTier = (tier: string) => {
+    const inTier = entries.filter((e) => e.user?.membershipTier === tier);
+    if (inTier.length === 0) return [];
+    const sorted = [...inTier].sort((a, b) => b.roi - a.roi || b.wins - a.wins);
+    const topRoi = sorted[0].roi;
+    const topWins = sorted[0].wins;
+    return sorted.filter((e) => e.roi === topRoi && e.wins === topWins);
+  };
+
+  return (
+    <div className="space-y-8">
+      {tiers.map((tier) => {
+        const tc = tierConfig[tier];
+        const TierIcon = tc.icon;
+        const share = TIER_SHARES[tier];
+        const tierPool = poolAmount * share;
+        const winners = getTopForTier(tier);
+        const perWinner = winners.length > 0 ? tierPool / winners.length : tierPool;
+
+        return (
+          <div key={tier} className="space-y-3" data-testid={`section-daily-${tier}`}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center", tc.bg, tc.border, "border")}>
+                  <TierIcon size={16} className={tc.color} />
+                </div>
+                <div>
+                  <span className={cn("font-display font-bold text-sm", tc.color)}>{tc.label} Winner</span>
+                  <span className="text-xs text-muted-foreground ml-2">· {(share * 100).toFixed(0)}% of prize pool</span>
+                </div>
+              </div>
+              <div className={cn("font-mono font-bold", tc.color)}>
+                {fmtMoney(tierPool)}
+                {winners.length > 1 && (
+                  <span className="text-muted-foreground text-xs font-normal ml-1">÷ {winners.length}</span>
+                )}
+              </div>
+            </div>
+
+            {winners.length === 0 ? (
+              <Card className="bg-card/20 border-white/5">
+                <CardContent className="p-5 text-center">
+                  <TierIcon size={28} className="text-muted-foreground/20 mx-auto mb-2" />
+                  <p className="text-muted-foreground text-sm">No {tc.label} picks today</p>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="space-y-2">
+                {winners.map((entry) => (
+                  <WinnerCard key={entry.userId} entry={entry} payout={perWinner} accentClass={tc.color} />
+                ))}
+                {winners.length > 1 && (
+                  <p className="text-[10px] text-muted-foreground text-center">
+                    {winners.length} tied — each receives {fmtMoney(perWinner)}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function AnnualWinners({ remainingPool }: { remainingPool: number }) {
+  const { data: entries = [] } = useQuery<any[]>({
+    queryKey: ["/api/leaderboard", "annual"],
+    queryFn: async () => {
+      const res = await fetch(`/api/leaderboard?period=annual`);
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  const topEntries = entries.slice(0, 10);
 
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center bg-gradient-to-br", config.gradient)}>
-            <Icon size={20} className="text-white" />
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-gradient-to-br from-yellow-500 to-orange-500">
+            <Trophy size={20} className="text-white" />
           </div>
           <div>
-            <h2 className="text-xl font-display font-bold">{config.title}</h2>
-            <p className="text-xs text-muted-foreground">{config.label}</p>
+            <h2 className="text-xl font-display font-bold">Annual Standings</h2>
+            <p className="text-xs text-muted-foreground">Year-End Champions — winner takes all remaining pool</p>
           </div>
         </div>
         <div className="text-right">
-          <div className={cn("text-lg font-bold font-mono", config.accent)}>
-            ${poolAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          <div className="text-lg font-bold font-mono text-yellow-400">
+            {fmtMoney(remainingPool)}
           </div>
-          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Pool this period</p>
+          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Remaining Pool</p>
         </div>
       </div>
 
-      {winners.length === 0 ? (
+      {topEntries.length === 0 ? (
         <Card className="bg-card/20 border-white/5">
           <CardContent className="p-8 text-center">
             <Trophy size={36} className="text-muted-foreground/20 mx-auto mb-3" />
-            <p className="text-muted-foreground text-sm">No winners yet for this period</p>
-            <p className="text-xs text-muted-foreground/50 mt-1">Start predicting to claim your share!</p>
+            <p className="text-muted-foreground text-sm">No annual picks yet</p>
+            <p className="text-xs text-muted-foreground/50 mt-1">Start predicting MLB games to claim your share!</p>
           </CardContent>
         </Card>
       ) : (
         <div className="space-y-3">
-          {winners.map((entry: any, i: number) => {
-            const place = i + 1;
-            const payout = poolAmount * (config.splits[i] || 0);
-            return <WinnerCard key={entry.id} entry={entry} place={place} payout={payout} config={config} />;
+          {topEntries.map((entry: any, i: number) => {
+            const isLeader = i === 0;
+            const winRate = entry.wins + entry.losses > 0
+              ? ((entry.wins / (entry.wins + entry.losses)) * 100).toFixed(1)
+              : "0";
+            const name = entry.user ? `${entry.user.firstName || ""} ${entry.user.lastName || ""}`.trim() || "Member" : "Member";
+
+            return (
+              <Link key={entry.userId} href={`/winners/${entry.userId}`}>
+                <Card className={cn(
+                  "transition-all cursor-pointer group hover:scale-[1.02]",
+                  isLeader ? "bg-gradient-to-r from-yellow-500/5 to-orange-500/5 border-yellow-500/30 border" : "bg-card/30 border-white/5 hover:border-white/10"
+                )} data-testid={`card-annual-winner-${i + 1}`}>
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-3">
+                      <div className={cn(
+                        "w-9 h-9 rounded-full flex items-center justify-center text-sm font-black shrink-0",
+                        isLeader ? "bg-gradient-to-br from-yellow-400 to-orange-500 text-white shadow-lg shadow-yellow-500/30" : "bg-white/5 border border-white/10 text-muted-foreground"
+                      )}>
+                        {isLeader ? <Crown size={16} /> : i + 1}
+                      </div>
+                      <Avatar className="h-9 w-9 border border-white/10 shrink-0">
+                        <AvatarImage src={entry.user?.profileImageUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${entry.userId}`} />
+                        <AvatarFallback>{name[0]}</AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5 mb-0.5">
+                          <span className={cn("font-display font-bold truncate", isLeader ? "text-sm" : "text-xs")}>{name}</span>
+                          <TierBadge tier={entry.user?.membershipTier} />
+                        </div>
+                        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                          <span>{winRate}% Win Rate</span>
+                          <span>{entry.wins}W - {entry.losses}L</span>
+                        </div>
+                      </div>
+                      {isLeader && (
+                        <div className="text-right shrink-0">
+                          <div className="text-lg font-bold font-mono text-yellow-400">
+                            {fmtMoney(remainingPool)}
+                          </div>
+                          <div className="text-[10px] text-muted-foreground">Prize if year ends now</div>
+                        </div>
+                      )}
+                      <ChevronRight size={16} className="text-muted-foreground/30 group-hover:text-foreground/50 shrink-0 hidden md:block" />
+                    </div>
+                  </CardContent>
+                </Card>
+              </Link>
+            );
           })}
         </div>
       )}
     </div>
-  );
-}
-
-function PayoutHistory() {
-  const { data: payoutHistory = [] } = useQuery<any[]>({
-    queryKey: ["/api/payouts/history"],
-    queryFn: async () => {
-      const res = await fetch("/api/payouts/history");
-      if (!res.ok) return [];
-      return res.json();
-    },
-  });
-
-  if (payoutHistory.length === 0) return null;
-
-  const statusColor: Record<string, string> = {
-    paid: "text-green-400 bg-green-500/10 border-green-500/20",
-    credited: "text-blue-400 bg-blue-500/10 border-blue-500/20",
-    pending: "text-yellow-400 bg-yellow-500/10 border-yellow-500/20",
-    failed: "text-red-400 bg-red-500/10 border-red-500/20",
-  };
-
-  return (
-    <Card className="bg-card/20 border-white/5 max-w-3xl mx-auto mt-8" data-testid="card-payout-history">
-      <CardContent className="p-6">
-        <h3 className="font-display font-bold text-lg mb-4 flex items-center gap-2">
-          <ArrowUpRight size={18} className="text-primary" /> Recent Payouts
-        </h3>
-        <div className="space-y-2">
-          {payoutHistory.slice(0, 20).map((p: any) => {
-            const name = p.user ? `${p.user.firstName || ""} ${p.user.lastName || ""}`.trim() || "Member" : "Member";
-            return (
-              <div key={p.id} className="flex items-center gap-3 p-3 rounded-lg bg-white/5 border border-white/5" data-testid={`row-payout-${p.id}`}>
-                <Avatar className="h-8 w-8 border border-white/10">
-                  <AvatarImage src={p.user?.profileImageUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${p.userId}`} />
-                  <AvatarFallback>{name[0]}</AvatarFallback>
-                </Avatar>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium truncate">{name}</span>
-                    <Badge variant="outline" className="text-[10px] px-1.5 py-0">#{p.rank}</Badge>
-                  </div>
-                  <span className="text-[10px] text-muted-foreground capitalize">{p.period} · {p.periodLabel}</span>
-                </div>
-                <div className="text-right shrink-0">
-                  <div className="text-sm font-mono font-bold text-primary">
-                    ${p.amount?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </div>
-                  <Badge className={cn("text-[9px] px-1.5 py-0 border", statusColor[p.status] || statusColor.pending)}>
-                    {p.status === "credited" ? "Paid to Card" : p.status === "paid" ? "Paid to Card" : p.status}
-                  </Badge>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </CardContent>
-    </Card>
   );
 }
 
@@ -547,14 +443,11 @@ function SportScorecardTable() {
   };
 
   const { data: daily }        = useQuery<any>({ queryKey: ["/api/sport-stats", "last24h"],  queryFn: () => fetchStats("last24h"), refetchInterval: 30000 });
-  const { data: weekly }       = useQuery<any>({ queryKey: ["/api/sport-stats", "weekly"],   queryFn: () => fetchStats("weekly"),  refetchInterval: 60000 });
-  const { data: monthly }      = useQuery<any>({ queryKey: ["/api/sport-stats", "monthly"],  queryFn: () => fetchStats("monthly"), refetchInterval: 60000 });
   const { data: annual }       = useQuery<any>({ queryKey: ["/api/sport-stats", "annual"],   queryFn: () => fetchStats("annual"),  refetchInterval: 60000 });
   const { data: founderAnnual} = useQuery<any>({ queryKey: ["/api/founder-sport-stats"],     queryFn: () => fetchFounderStats("annual"), refetchInterval: 60000 });
 
-  const periodData = [daily, weekly, monthly, annual];
+  const periodData = [daily, annual];
 
-  // Collect all unique sports across all periods
   const SPORT_ORDER = ["NFL", "NBA", "MLB", "NHL", "NCAAB", "MLS", "NWSL", "WNBA"];
   const allLeagues = Array.from(
     new Set(periodData.flatMap(d => (d?.bySport ?? []).map((s: any) => s.league)))
@@ -567,10 +460,8 @@ function SportScorecardTable() {
     d?.bySport?.find((s: any) => s.league === league) ?? { wins: 0, losses: 0 };
 
   const cols = [
-    { label: "Daily",   icon: Clock,    d: daily,   accent: "text-blue-400" },
-    { label: "Weekly",  icon: Calendar, d: weekly,  accent: "text-emerald-400" },
-    { label: "Monthly", icon: Target,   d: monthly, accent: "text-purple-400" },
-    { label: "Annual",  icon: Trophy,   d: annual,  accent: "text-yellow-400" },
+    { label: "Daily",  icon: Clock,   d: daily,  accent: "text-blue-400" },
+    { label: "Annual", icon: Trophy,  d: annual, accent: "text-yellow-400" },
   ];
 
   return (
@@ -597,7 +488,6 @@ function SportScorecardTable() {
               </tr>
             </thead>
             <tbody>
-              {/* Per-sport rows */}
               {allLeagues.map((league, i) => (
                 <tr
                   key={league}
@@ -618,11 +508,10 @@ function SportScorecardTable() {
 
               {allLeagues.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="py-8 text-center text-sm text-muted-foreground">No graded picks recorded yet</td>
+                  <td colSpan={3} className="py-8 text-center text-sm text-muted-foreground">No graded picks recorded yet</td>
                 </tr>
               )}
 
-              {/* Grand Total row — combined all sports per period */}
               {allLeagues.length > 0 && (
                 <tr className="border-t-2 border-primary/30 bg-primary/5" data-testid="row-scorecard-grand-total">
                   <td className="py-3 px-4 font-black text-primary text-xs uppercase tracking-wider flex items-center gap-1.5">
@@ -636,12 +525,11 @@ function SportScorecardTable() {
                 </tr>
               )}
 
-              {/* BETFANS TOTAL row — founder's MLB prize pool picks only */}
               {allLeagues.length > 0 && (() => {
                 const mlb = getSport(founderAnnual, "MLB");
                 return (
                   <tr className="border-t-2 border-yellow-400/40 bg-yellow-400/5" data-testid="row-scorecard-betfans-total">
-                    <td colSpan={5} className="py-5 px-4">
+                    <td colSpan={3} className="py-5 px-4">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-1.5">
                           <Zap size={12} className="text-yellow-400" />
@@ -651,13 +539,9 @@ function SportScorecardTable() {
                           </div>
                         </div>
                         <div className="flex items-center gap-3">
-                          <span className="text-xl font-black text-primary tabular-nums">
-                            {mlb.wins ?? 0}W
-                          </span>
+                          <span className="text-xl font-black text-primary tabular-nums">{mlb.wins ?? 0}W</span>
                           <span className="text-muted-foreground text-sm font-bold">—</span>
-                          <span className="text-xl font-black text-red-400 tabular-nums">
-                            {mlb.losses ?? 0}L
-                          </span>
+                          <span className="text-xl font-black text-red-400 tabular-nums">{mlb.losses ?? 0}L</span>
                           <span className="text-[10px] text-muted-foreground uppercase tracking-widest ml-1">All Time</span>
                         </div>
                       </div>
@@ -693,7 +577,7 @@ function AdminPayoutPanel() {
       });
       const data = await res.json();
       if (res.ok) {
-        toast({ title: `${period.charAt(0).toUpperCase() + period.slice(1)} payout processed`, description: `${data.results?.length ?? 0} winner(s) paid.` });
+        toast({ title: `${period.charAt(0).toUpperCase() + period.slice(1)} payout processed`, description: data.results?.[0]?.detail || "Done." });
         queryClient.invalidateQueries({ queryKey: ["/api/prize-pool"] });
         queryClient.invalidateQueries({ queryKey: ["/api/payouts"] });
       } else {
@@ -714,9 +598,12 @@ function AdminPayoutPanel() {
           <span className="font-bold text-sm uppercase tracking-widest text-primary">Admin — Process Payouts</span>
           <Badge className="bg-primary/20 text-primary text-[10px] ml-auto">Founder Only</Badge>
         </div>
-        <p className="text-xs text-muted-foreground mb-4">Trigger a payout to the top MLB leaderboard winners for the selected period. Payouts go to their PayPal account. Cannot be reversed.</p>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          {(["daily", "weekly", "monthly", "annual"] as const).map((p) => (
+        <p className="text-xs text-muted-foreground mb-4">
+          Trigger payouts to MLB leaderboard winners. Daily pays out by tier (Legend 10%, Pro 5%, Rookie 4%).
+          Annual pays out all remaining pool to the year's top performer(s). Cannot be reversed.
+        </p>
+        <div className="grid grid-cols-2 gap-2">
+          {(["daily", "annual"] as const).map((p) => (
             <Button
               key={p}
               size="sm"
@@ -736,6 +623,65 @@ function AdminPayoutPanel() {
   );
 }
 
+function PayoutHistory() {
+  const { data: payoutHistory = [] } = useQuery<any[]>({
+    queryKey: ["/api/payouts/history"],
+    queryFn: async () => {
+      const res = await fetch("/api/payouts/history");
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  if (payoutHistory.length === 0) return null;
+
+  const statusColor: Record<string, string> = {
+    paid: "text-green-400 bg-green-500/10 border-green-500/20",
+    credited: "text-blue-400 bg-blue-500/10 border-blue-500/20",
+    wallet_credited: "text-green-400 bg-green-500/10 border-green-500/20",
+    pending: "text-yellow-400 bg-yellow-500/10 border-yellow-500/20",
+    failed: "text-red-400 bg-red-500/10 border-red-500/20",
+  };
+
+  return (
+    <Card className="bg-card/20 border-white/5 max-w-3xl mx-auto mt-8" data-testid="card-payout-history">
+      <CardContent className="p-6">
+        <h3 className="font-display font-bold text-lg mb-4 flex items-center gap-2">
+          <ArrowUpRight size={18} className="text-primary" /> Recent Payouts
+        </h3>
+        <div className="space-y-2">
+          {payoutHistory.slice(0, 20).map((p: any) => {
+            const name = p.user ? `${p.user.firstName || ""} ${p.user.lastName || ""}`.trim() || "Member" : "Member";
+            return (
+              <div key={p.id} className="flex items-center gap-3 p-3 rounded-lg bg-white/5 border border-white/5" data-testid={`row-payout-${p.id}`}>
+                <Avatar className="h-8 w-8 border border-white/10">
+                  <AvatarImage src={p.user?.profileImageUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${p.userId}`} />
+                  <AvatarFallback>{name[0]}</AvatarFallback>
+                </Avatar>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium truncate">{name}</span>
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 capitalize">{p.period}</Badge>
+                  </div>
+                  <span className="text-[10px] text-muted-foreground capitalize">{p.period} · {p.periodLabel}</span>
+                </div>
+                <div className="text-right shrink-0">
+                  <div className="text-sm font-mono font-bold text-primary">
+                    ${p.amount?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </div>
+                  <Badge className={cn("text-[9px] px-1.5 py-0 border", statusColor[p.status] || statusColor.pending)}>
+                    {p.status === "wallet_credited" || p.status === "credited" || p.status === "paid" ? "Paid to Wallet" : p.status}
+                  </Badge>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function Winners() {
   const [activeTab, setActiveTab] = useState<Period>("daily");
 
@@ -743,24 +689,18 @@ export default function Winners() {
     queryKey: ["/api/prize-pool"],
     queryFn: async () => {
       const res = await fetch("/api/prize-pool");
-      if (!res.ok) return { amount: 0, daily: 0, weekly: 0, monthly: 0, annual: 0 };
+      if (!res.ok) return { amount: 0, daily: 0, annual: 0 };
       return res.json();
     },
     refetchInterval: 15000,
   });
 
   const totalPool = prizePool?.amount || 0;
-  const periodAmounts: Record<Period, number> = {
-    daily: prizePool?.daily || 0,
-    weekly: prizePool?.weekly || 0,
-    monthly: prizePool?.monthly || 0,
-    annual: prizePool?.annual || 0,
-  };
+  const dailyPool = prizePool?.daily || 0;
+  const annualPool = prizePool?.annual || 0;
 
   const tabs: { period: Period; label: string; icon: any }[] = [
     { period: "daily", label: "Daily", icon: Clock },
-    { period: "weekly", label: "Weekly", icon: Calendar },
-    { period: "monthly", label: "Monthly", icon: Target },
     { period: "annual", label: "Annual", icon: Trophy },
   ];
 
@@ -779,7 +719,7 @@ export default function Winners() {
           <p className="text-muted-foreground max-w-xl mx-auto">
             The best predictors earn real money. Prize pool grows in real time as members join — currently at{" "}
             <span className="text-primary font-mono font-bold">
-              ${totalPool.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              {totalPool > 0 ? "$" + totalPool.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "growing"}
             </span>
           </p>
         </div>
@@ -790,31 +730,10 @@ export default function Winners() {
 
         <SportScorecardTable />
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-10">
-          <PrizePoolTracker period="daily" amount={periodAmounts.daily} config={periodConfig.daily} />
-          <PrizePoolTracker period="weekly" amount={periodAmounts.weekly} config={periodConfig.weekly} />
-          <PrizePoolTracker period="monthly" amount={periodAmounts.monthly} config={periodConfig.monthly} />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-10 max-w-3xl mx-auto">
+          <DailyPrizePoolTracker annualAmount={annualPool} />
+          <AnnualPrizePoolTracker annualAmount={annualPool} />
         </div>
-
-        <Card className="bg-card/20 border-white/5 mb-10 max-w-3xl mx-auto" data-testid="card-pool-annual">
-          <CardContent className="p-4 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-gradient-to-br from-yellow-500 to-orange-500 shadow-lg">
-                <Trophy size={18} className="text-white" />
-              </div>
-              <div>
-                <h3 className="font-display font-bold text-sm">Annual Grand Prize</h3>
-                <p className="text-[10px] text-muted-foreground">Top {periodConfig.annual.topWinners} paid at year end</p>
-              </div>
-            </div>
-            <div className="text-right">
-              <div className="text-2xl font-mono font-black text-yellow-400">
-                ${periodAmounts.annual.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </div>
-              <p className="text-[10px] text-muted-foreground">Accumulated this year</p>
-            </div>
-          </CardContent>
-        </Card>
 
         <div className="flex justify-center gap-2 mb-8">
           {tabs.map((tab) => {
@@ -824,7 +743,7 @@ export default function Winners() {
                 key={tab.period}
                 onClick={() => setActiveTab(tab.period)}
                 className={cn(
-                  "flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium transition-all",
+                  "flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-medium transition-all",
                   activeTab === tab.period
                     ? "bg-primary text-primary-foreground shadow-[0_0_15px_rgba(34,197,94,0.3)]"
                     : "bg-white/5 text-muted-foreground hover:bg-white/10 hover:text-foreground"
@@ -838,10 +757,12 @@ export default function Winners() {
           })}
         </div>
 
-        <PlatformSportStats period={activeTab} />
-
         <div className="max-w-3xl mx-auto">
-          <PeriodWinners period={activeTab} poolAmount={periodAmounts[activeTab]} />
+          {activeTab === "daily" ? (
+            <DailyWinners poolAmount={annualPool} />
+          ) : (
+            <AnnualWinners remainingPool={annualPool} />
+          )}
         </div>
 
         <Card className="bg-card/20 border-white/5 max-w-3xl mx-auto mt-10">
@@ -850,25 +771,43 @@ export default function Winners() {
               <DollarSign size={18} className="text-primary" /> How the Prize Pool Works
             </h3>
             <div className="space-y-3">
-              {Object.entries(periodConfig).map(([key, cfg]) => {
-                const amount = periodAmounts[key as Period];
-                const Icon = cfg.icon;
-                return (
-                  <div key={key} className="flex items-center gap-3">
-                    <Icon size={16} className={cfg.accent} />
-                    <span className="text-sm flex-1">{cfg.title}</span>
-                    <span className="text-xs text-muted-foreground">{(cfg.poolShare * 100).toFixed(0)}% split</span>
-                    <span className={cn("font-mono font-bold text-sm", cfg.accent)}>
-                      ${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </span>
-                  </div>
-                );
-              })}
+              <div className="flex items-center gap-3">
+                <Crown size={16} className="text-purple-400" />
+                <span className="text-sm flex-1">Daily — Legend Winner</span>
+                <span className="text-xs text-muted-foreground">10% of prize pool</span>
+                <span className="font-mono font-bold text-sm text-purple-400">
+                  {fmtMoney(annualPool * TIER_SHARES.legend)}
+                </span>
+              </div>
+              <div className="flex items-center gap-3">
+                <Star size={16} className="text-primary" />
+                <span className="text-sm flex-1">Daily — Pro Winner</span>
+                <span className="text-xs text-muted-foreground">5% of prize pool</span>
+                <span className="font-mono font-bold text-sm text-primary">
+                  {fmtMoney(annualPool * TIER_SHARES.pro)}
+                </span>
+              </div>
+              <div className="flex items-center gap-3">
+                <Award size={16} className="text-blue-400" />
+                <span className="text-sm flex-1">Daily — Rookie Winner</span>
+                <span className="text-xs text-muted-foreground">4% of prize pool</span>
+                <span className="font-mono font-bold text-sm text-blue-400">
+                  {fmtMoney(annualPool * TIER_SHARES.rookie)}
+                </span>
+              </div>
+              <div className="flex items-center gap-3">
+                <Trophy size={16} className="text-yellow-400" />
+                <span className="text-sm flex-1">Annual Grand Prize</span>
+                <span className="text-xs text-muted-foreground">All remaining pool</span>
+                <span className="font-mono font-bold text-sm text-yellow-400">
+                  {fmtMoney(annualPool)}
+                </span>
+              </div>
               <div className="border-t border-white/10 pt-3 mt-3 flex items-center gap-3">
                 <Trophy size={16} className="text-primary" />
                 <span className="text-sm font-bold flex-1">Total Prize Pool (All Time)</span>
                 <span className="font-mono font-bold text-lg text-primary">
-                  ${totalPool.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  {fmtMoney(totalPool)}
                 </span>
               </div>
             </div>
@@ -880,15 +819,17 @@ export default function Winners() {
             </div>
             <div className="mt-3 p-3 rounded-lg bg-white/5 border border-white/5">
               <p className="text-xs text-muted-foreground">
-                <strong className="text-foreground">How it works:</strong> The prize pool starts at $0.00 and grows in real time as members pay.
-                50% of every membership payment goes directly into the pool. Winners are paid based on their share percentage —
-                the higher you rank, the bigger your cut. Daily winners split 5%, weekly 10%, monthly 35%, and annual champions take 50%.
+                <strong className="text-foreground">How it works:</strong> Each day, the best MLB predictor in each membership tier wins their tier's pool share.
+                Legend winners take 10%, Pro winners take 5%, and Rookie winners take 4%.
+                Tied winners split their tier's share equally. The remaining 81% accumulates all year for the annual grand prize.
+                On January 1st, the year's top MLB predictor wins the entire remaining pool.
+                Tied annual winners split the pool equally.
               </p>
             </div>
             <div className="mt-3 p-3 rounded-lg bg-primary/5 border border-primary/10">
               <p className="text-xs text-muted-foreground">
-                <strong className="text-primary">Payouts:</strong> Winnings are paid directly to the PayPal account you subscribed with.
-                Your payout is automatically credited to your account — no extra steps needed.
+                <strong className="text-primary">Payouts:</strong> Winnings are credited directly to your BetFans wallet.
+                Your payout is automatically credited — no extra steps needed.
               </p>
             </div>
             <div className="mt-4">
