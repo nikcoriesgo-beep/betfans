@@ -93,6 +93,13 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/auth/logout", (req: any, res) => {
+    req.session.destroy((err: any) => {
+      res.clearCookie("connect.sid");
+      res.json({ ok: true });
+    });
+  });
+
   async function fetchMLBSchedule(dateStr: string) {
     try {
       const url = `https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=${dateStr}&hydrate=team,linescore,probablePitcher`;
@@ -638,20 +645,17 @@ export async function registerRoutes(
       const total = await storage.getPrizePoolTotal();
       const now = new Date();
       const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      const weekStart = new Date(dayStart);
-      weekStart.setDate(weekStart.getDate() - weekStart.getDay() + 1);
-      if (weekStart > now) weekStart.setDate(weekStart.getDate() - 7);
-      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
       const yearStart = new Date(now.getFullYear(), 0, 1);
 
-      const [daily, weekly, monthly, annual] = await Promise.all([
+      const [daily, yearContributions, dailyPaidThisYear] = await Promise.all([
         storage.getPrizePoolTotalByPeriod(dayStart),
-        storage.getPrizePoolTotalByPeriod(weekStart),
-        storage.getPrizePoolTotalByPeriod(monthStart),
         storage.getPrizePoolTotalByPeriod(yearStart),
+        storage.getTotalPayoutsByPeriod(yearStart),
       ]);
 
-      res.json({ amount: total, daily, weekly, monthly, annual });
+      const annualRemaining = Math.max(0, yearContributions - dailyPaidThisYear);
+
+      res.json({ amount: total, daily, weekly: 0, monthly: 0, annual: annualRemaining });
     } catch (error) {
       res.json({ amount: 0, daily: 0, weekly: 0, monthly: 0, annual: 0 });
     }
@@ -1177,188 +1181,29 @@ export async function registerRoutes(
     }
   });
 
-  const PAYOUT_SPLITS: Record<string, number[]> = {
-    daily: [0.50, 0.30, 0.20],
-    weekly: [0.35, 0.25, 0.20, 0.12, 0.08],
-    monthly: [0.40, 0.25, 0.15, 0.12, 0.08],
-    annual: [0.30, 0.20, 0.15, 0.10, 0.08, 0.05, 0.04, 0.03, 0.03, 0.02],
-  };
-
   app.post("/api/payouts/process", isAuthenticated, isAdmin, async (req: any, res) => {
     try {
       const { period } = req.body;
-      if (!period || !PAYOUT_SPLITS[period]) {
-        return res.status(400).json({ message: "Invalid period. Use daily, weekly, monthly, or annual." });
-      }
-
-      const splits = PAYOUT_SPLITS[period];
-      const topCount = splits.length;
-      // Prize pool eligibility: MLB winners only — keeps members focused on daily MLB
-      const leaderboard = (await storage.getLeaderboardByLeague(period, "MLB", topCount * 5))
-        .filter((e: any) => e.wins > 0)
-        .slice(0, topCount);
-
-      if (leaderboard.length === 0) {
-        return res.status(400).json({ message: "No leaderboard entries for this period" });
+      if (!period || !["daily", "annual"].includes(period)) {
+        return res.status(400).json({ message: "Invalid period. Use daily or annual." });
       }
 
       const now = new Date();
-      let periodStart: Date;
-      if (period === "daily") {
-        periodStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      } else if (period === "weekly") {
-        periodStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        periodStart.setDate(periodStart.getDate() - periodStart.getDay() + 1);
-        if (periodStart > now) periodStart.setDate(periodStart.getDate() - 7);
-      } else if (period === "monthly") {
-        periodStart = new Date(now.getFullYear(), now.getMonth(), 1);
-      } else {
-        periodStart = new Date(now.getFullYear(), 0, 1);
-      }
-
-      const poolAmount = await storage.getPrizePoolTotalByPeriod(periodStart);
-      if (poolAmount <= 0) {
-        return res.status(400).json({ message: "No prize pool funds for this period" });
-      }
-
       const periodLabel = period === "daily"
         ? now.toISOString().split("T")[0]
-        : period === "weekly"
-          ? `${now.getFullYear()}-W${Math.ceil((now.getTime() - new Date(now.getFullYear(), 0, 1).getTime()) / 604800000)}`
-          : period === "monthly"
-            ? `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
-            : `${now.getFullYear()}`;
+        : `${now.getFullYear()}`;
 
-      const existing = await storage.getPayoutsByPeriod(period, periodLabel);
-      if (existing.length > 0) {
-        return res.status(400).json({ message: `Payouts already processed for ${period} ${periodLabel}` });
-      }
+      const periodStart = period === "daily"
+        ? new Date(now.getFullYear(), now.getMonth(), now.getDate())
+        : new Date(now.getFullYear(), 0, 1);
+      const periodEnd = period === "daily"
+        ? new Date(periodStart.getTime() + 86400000)
+        : new Date(now.getFullYear() + 1, 0, 1);
 
-      const { getUncachableStripeClient } = await import("./stripeClient");
-      const stripe = await getUncachableStripeClient();
-      const results: any[] = [];
+      const { processPayoutForPeriod } = await import("./payoutService");
+      const result = await processPayoutForPeriod(period, periodLabel, periodStart, periodEnd);
 
-      for (let i = 0; i < Math.min(leaderboard.length, topCount); i++) {
-        const entry = leaderboard[i];
-        const share = splits[i];
-        const payoutAmount = Math.floor(poolAmount * share * 100) / 100;
-
-        if (payoutAmount < 1) continue;
-
-        // Skip members whose payment has lapsed (Legend grace or otherwise)
-        const entryUser = await storage.getUser(entry.userId);
-        if (entryUser?.subscriptionCancelledAt) {
-          results.push({ userId: entry.userId, rank: i + 1, skipped: true, reason: "Payment lapsed — not eligible for prize pool (MLB winners only)" });
-          continue;
-        }
-
-        const payout = await storage.createPayout({
-          userId: entry.userId,
-          amount: payoutAmount,
-          period,
-          periodLabel,
-          rank: i + 1,
-          sharePercent: share * 100,
-        });
-
-        let stripeStatus = "pending";
-        let stripeId = null;
-
-        try {
-          const user = await storage.getUser(entry.userId);
-          if (user?.stripeCustomerId) {
-            const customer = await stripe.customers.retrieve(user.stripeCustomerId) as any;
-            const defaultPaymentMethod = customer.invoice_settings?.default_payment_method
-              || customer.default_source;
-
-            if (defaultPaymentMethod) {
-              const paymentMethod = await stripe.paymentMethods.retrieve(
-                typeof defaultPaymentMethod === "string" ? defaultPaymentMethod : defaultPaymentMethod.id
-              );
-
-              if (paymentMethod.type === "card" && paymentMethod.card) {
-                const transfer = await stripe.refunds.create({
-                  amount: Math.round(payoutAmount * 100),
-                  payment_intent: undefined as any,
-                  metadata: {
-                    type: "prize_payout",
-                    period,
-                    periodLabel,
-                    rank: String(i + 1),
-                    userId: entry.userId,
-                  },
-                  reason: "requested_by_customer",
-                  instructions_email: user.email || undefined,
-                } as any).catch(async () => {
-                  const balanceTx = await stripe.customers.createBalanceTransaction(
-                    user.stripeCustomerId!,
-                    {
-                      amount: -Math.round(payoutAmount * 100),
-                      currency: "usd",
-                      description: `BetFans ${period} prize payout - Rank #${i + 1} (${(share * 100).toFixed(0)}% share)`,
-                    }
-                  );
-                  return balanceTx;
-                });
-
-                stripeId = (transfer as any).id;
-                stripeStatus = "paid";
-              } else {
-                const balanceTx = await stripe.customers.createBalanceTransaction(
-                  user.stripeCustomerId,
-                  {
-                    amount: -Math.round(payoutAmount * 100),
-                    currency: "usd",
-                    description: `BetFans ${period} prize payout - Rank #${i + 1} (${(share * 100).toFixed(0)}% share)`,
-                  }
-                );
-                stripeId = balanceTx.id;
-                stripeStatus = "credited";
-              }
-            } else {
-              const balanceTx = await stripe.customers.createBalanceTransaction(
-                user.stripeCustomerId,
-                {
-                  amount: -Math.round(payoutAmount * 100),
-                  currency: "usd",
-                  description: `BetFans ${period} prize payout - Rank #${i + 1} (${(share * 100).toFixed(0)}% share)`,
-                }
-              );
-              stripeId = balanceTx.id;
-              stripeStatus = "credited";
-            }
-          }
-        } catch (err: any) {
-          console.error(`Payout Stripe error for user ${entry.userId}:`, err.message);
-          stripeStatus = "failed";
-        }
-
-        await storage.updatePayout(payout.id, {
-          stripeTransferId: stripeId,
-          status: stripeStatus,
-          paidAt: stripeStatus === "paid" || stripeStatus === "credited" ? new Date() : null,
-        });
-
-        const updatedUser = await storage.getUser(entry.userId);
-        if (updatedUser) {
-          const currentBalance = parseFloat(updatedUser.walletBalance || "0");
-          await storage.updateUser(entry.userId, {
-            walletBalance: String(currentBalance + payoutAmount),
-          });
-        }
-
-        results.push({
-          rank: i + 1,
-          userId: entry.userId,
-          name: entry.user ? `${entry.user.firstName || ""} ${entry.user.lastName || ""}`.trim() : "Member",
-          amount: payoutAmount,
-          share: (share * 100).toFixed(0) + "%",
-          status: stripeStatus,
-        });
-      }
-
-      console.log(`Payouts processed for ${period} ${periodLabel}:`, results);
-      res.json({ period, periodLabel, poolAmount, payouts: results });
+      res.json({ period, periodLabel, results: [result] });
     } catch (error: any) {
       console.error("Payout processing error:", error);
       res.status(500).json({ message: "Failed to process payouts: " + error.message });
