@@ -423,9 +423,14 @@ export async function syncSportsData(): Promise<{ synced: number; leagues: strin
 
       if (existing.length > 0) {
         const prev = existing[0];
+        // Never mark a game as finished before its scheduled start time
+        // ESPN sometimes returns stale/incorrect "post" status for future games
+        const safeStatus = (game.status === "finished" && game.gameTime > new Date())
+          ? (prev.status ?? "upcoming")
+          : game.status;
         await db.update(games).set({
           gameTime: game.gameTime,
-          status: game.status,
+          status: safeStatus,
           homeScore: game.homeScore,
           awayScore: game.awayScore,
           spread: game.spread || prev.spread,
