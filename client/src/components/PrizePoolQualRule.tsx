@@ -42,7 +42,7 @@ export function PrizePoolQualRule({ compact = false, className }: Props) {
               Missing <strong className="text-yellow-200">even one game</strong> disqualifies you from that day's payout
             </li>
           </ul>
-          <p className="mt-2 text-xs text-yellow-300/70">Applies to daily, weekly, monthly, and annual prize pool payouts.</p>
+          <p className="mt-2 text-xs text-yellow-300/70">Applies to daily and annual prize pool payouts.</p>
         </div>
       </div>
     </div>
