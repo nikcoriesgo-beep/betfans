@@ -145,11 +145,11 @@ export class DatabaseStorage implements IStorage {
     const cutoff = new Date(Date.now() - 12 * 60 * 60 * 1000);
     if (league && league !== "ALL") {
       return db.select().from(games)
-        .where(and(eq(games.league, league), sql`${games.gameTime} >= ${cutoff}`))
+        .where(and(eq(games.league, league), sql`${games.gameTime} >= ${cutoff} AND ${games.status} != 'postponed'`))
         .orderBy(asc(games.gameTime));
     }
     return db.select().from(games)
-      .where(sql`${games.gameTime} >= ${cutoff}`)
+      .where(sql`${games.gameTime} >= ${cutoff} AND ${games.status} != 'postponed'`)
       .orderBy(asc(games.gameTime));
   }
 
