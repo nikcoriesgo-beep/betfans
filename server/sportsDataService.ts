@@ -28,7 +28,8 @@ interface ESPNEvent {
   }>;
 }
 
-function mapStatus(espnState: string): string {
+function mapStatus(espnState: string, typeName?: string): string {
+  if (typeName === "STATUS_POSTPONED" || typeName === "STATUS_CANCELLED" || typeName === "STATUS_SUSPENDED") return "postponed";
   if (espnState === "pre") return "upcoming";
   if (espnState === "in") return "live";
   if (espnState === "post") return "finished";
@@ -202,7 +203,7 @@ async function fetchLeagueGames(league: string): Promise<any[]> {
 
       const homeTeam = homeComp.team.displayName;
       const awayTeam = awayComp.team.displayName;
-      const status = mapStatus(event.status.type.state);
+      const status = mapStatus(event.status.type.state, event.status.type.name);
       const homeScore = homeComp.score ? parseInt(homeComp.score) : null;
       const awayScore = awayComp.score ? parseInt(awayComp.score) : null;
 
