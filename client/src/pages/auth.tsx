@@ -8,7 +8,9 @@ import { useLocation } from "wouter";
 import { queryClient } from "@/lib/queryClient";
 
 export default function Auth() {
-  const [mode, setMode] = useState<"login" | "signup">("signup");
+  const params = new URLSearchParams(window.location.search);
+  const initialMode = params.get("mode") === "signup" ? "signup" : "login";
+  const [mode, setMode] = useState<"login" | "signup">(initialMode);
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [firstName, setFirstName] = useState("");
@@ -77,7 +79,7 @@ export default function Auth() {
         } catch {}
       }
 
-      toast({ title: mode === "signup" ? "Welcome to BetFans!" : "Welcome back!" });
+      if (mode === "signup") toast({ title: "Welcome to BetFans!" });
       setLocation("/membership");
     } catch {
       toast({ title: "Error", description: "Something went wrong. Please try again.", variant: "destructive" });
