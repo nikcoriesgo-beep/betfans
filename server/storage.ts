@@ -78,6 +78,7 @@ export interface IStorage {
   addPrizePoolContribution(amount: number, source: string, stripePaymentId?: string, userId?: string): Promise<void>;
   getPrizePoolTotal(): Promise<number>;
   getPrizePoolTotalByPeriod(periodStart: Date): Promise<number>;
+  getTotalPayoutsByPeriod(periodStart: Date): Promise<number>;
 
   createPayout(data: { userId: string; amount: number; period: string; periodLabel: string; rank: number; sharePercent: number }): Promise<Payout>;
   updatePayout(id: number, data: Partial<Payout>): Promise<Payout | null>;
@@ -141,10 +142,15 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getGames(league?: string): Promise<Game[]> {
+    const cutoff = new Date(Date.now() - 12 * 60 * 60 * 1000);
     if (league && league !== "ALL") {
-      return db.select().from(games).where(eq(games.league, league)).orderBy(asc(games.gameTime));
+      return db.select().from(games)
+        .where(and(eq(games.league, league), sql`${games.gameTime} >= ${cutoff}`))
+        .orderBy(asc(games.gameTime));
     }
-    return db.select().from(games).orderBy(asc(games.gameTime));
+    return db.select().from(games)
+      .where(sql`${games.gameTime} >= ${cutoff}`)
+      .orderBy(asc(games.gameTime));
   }
 
   async getGame(id: number): Promise<Game | null> {
@@ -731,6 +737,15 @@ export class DatabaseStorage implements IStorage {
       total: sql<number>`COALESCE(SUM(${prizePoolContributions.amount}), 0)`,
     }).from(prizePoolContributions).where(
       sql`${prizePoolContributions.createdAt} >= ${periodStart}`
+    );
+    return Number(result?.total || 0);
+  }
+
+  async getTotalPayoutsByPeriod(periodStart: Date): Promise<number> {
+    const [result] = await db.select({
+      total: sql<number>`COALESCE(SUM(${payouts.amount}), 0)`,
+    }).from(payouts).where(
+      sql`${payouts.createdAt} >= ${periodStart}`
     );
     return Number(result?.total || 0);
   }
