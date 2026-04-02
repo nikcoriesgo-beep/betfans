@@ -37,6 +37,9 @@ export default defineConfig({
     },
   },
   root: path.resolve(import.meta.dirname, "client"),
+  define: {
+    __BUILD_ID__: JSON.stringify(Date.now().toString()),
+  },
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
