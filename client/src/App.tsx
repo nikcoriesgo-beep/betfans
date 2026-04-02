@@ -9,7 +9,6 @@ import NotFound from "@/pages/not-found";
 import Home from "@/pages/home";
 import Dashboard from "@/pages/dashboard";
 import Membership from "@/pages/membership";
-
 import GameDetail from "@/pages/game-detail";
 import Profile from "@/pages/profile";
 import MembersMap from "@/pages/members-map";
@@ -28,9 +27,12 @@ import Auth from "@/pages/auth";
 import { PhoneConsentModal } from "@/components/PhoneConsentModal";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
+declare const __BUILD_ID__: string;
+
 const PUBLIC_PATHS = ["/", "/auth", "/membership"];
 const FOUNDER_CODES = ["NIKCOX"];
 const PAID_TIERS = ["rookie", "pro", "legend"];
+const BUILD_KEY = "bf_build_id";
 
 function PaymentGate({ children }: { children: ReactNode }) {
   const { user, isLoading } = useAuth();
@@ -66,8 +68,6 @@ function Router() {
       <Route path="/membership" component={Membership} />
       <Route path="/members-map" component={MembersMap} />
       <Route path="/leaderboard/daily" component={LeaderboardPage} />
-      <Route path="/leaderboard/weekly" component={LeaderboardPage} />
-      <Route path="/leaderboard/monthly" component={LeaderboardPage} />
       <Route path="/leaderboard/annual" component={LeaderboardPage} />
       <Route path="/leaderboard" component={LeaderboardPage} />
       <Route path="/profile" component={Profile} />
@@ -119,11 +119,31 @@ function ReplitFounderAutoLogin() {
   return null;
 }
 
+function BuildVersionGuard() {
+  useEffect(() => {
+    const stored = localStorage.getItem(BUILD_KEY);
+    if (stored !== __BUILD_ID__) {
+      fetch("/api/auth/logout", { method: "POST", credentials: "include" })
+        .catch(() => {})
+        .finally(() => {
+          const affiliate = localStorage.getItem("betfans_affiliate_code");
+          localStorage.clear();
+          if (affiliate) localStorage.setItem("betfans_affiliate_code", affiliate);
+          localStorage.setItem(BUILD_KEY, __BUILD_ID__);
+          queryClient.clear();
+          window.location.replace("/auth");
+        });
+    }
+  }, []);
+  return null;
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <Toaster />
+        <BuildVersionGuard />
         <AffiliateCodeCapture />
         <ReplitFounderAutoLogin />
         <ErrorBoundary>
