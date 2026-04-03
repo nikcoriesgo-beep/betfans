@@ -203,34 +203,27 @@ export default function Membership() {
               </p>
             </div>
             <PrizePoolQualRule className="max-w-2xl mx-auto mb-10 relative z-10" />
-            <div className="grid md:grid-cols-4 gap-4 relative z-10">
+            <div className="grid md:grid-cols-3 gap-6 relative z-10">
               <div className="bg-background/40 backdrop-blur-md border border-white/10 rounded-xl p-6 text-center hover:border-primary/40 transition-colors">
                 <div className="w-12 h-12 rounded-full bg-primary/20 text-primary flex items-center justify-center mx-auto mb-4"><Clock size={24} /></div>
-                <div className="text-xs text-muted-foreground uppercase tracking-widest mb-1">Rookie</div>
-                <div className="text-4xl font-bold font-display text-primary mb-2">4%</div>
-                <h3 className="font-bold text-base mb-2">Daily Payout</h3>
-                <p className="text-xs text-muted-foreground">4% of the annual prize pool paid out daily to Rookie top performers.</p>
+                <div className="text-xs text-muted-foreground uppercase tracking-widest mb-1">Daily Winner</div>
+                <div className="text-3xl font-bold font-display text-primary mb-1">4% · 5% · 10%</div>
+                <h3 className="font-bold text-base mb-2">One Winner Per Day</h3>
+                <p className="text-xs text-muted-foreground">Each day the top predictor wins. Rookie winners earn 4%, Pro 5%, Legend 10% of the annual prize pool. Ties split the 10% max equally.</p>
               </div>
-              <div className="bg-background/40 backdrop-blur-md border border-white/10 rounded-xl p-6 text-center hover:border-primary/40 transition-colors">
-                <div className="w-12 h-12 rounded-full bg-primary/20 text-primary flex items-center justify-center mx-auto mb-4"><Clock size={24} /></div>
-                <div className="text-xs text-muted-foreground uppercase tracking-widest mb-1">Pro</div>
-                <div className="text-4xl font-bold font-display text-primary mb-2">5%</div>
-                <h3 className="font-bold text-base mb-2">Daily Payout</h3>
-                <p className="text-xs text-muted-foreground">5% of the annual prize pool paid out daily to Pro top performers.</p>
-              </div>
-              <div className="bg-background/40 backdrop-blur-md border border-white/10 rounded-xl p-6 text-center hover:border-primary/40 transition-colors transform md:-translate-y-4 shadow-xl border-primary/30">
-                <div className="w-12 h-12 rounded-full bg-primary/20 text-primary flex items-center justify-center mx-auto mb-4"><Crown size={24} /></div>
-                <div className="text-xs text-muted-foreground uppercase tracking-widest mb-1">Legend</div>
-                <div className="text-5xl font-bold font-display text-primary mb-2">10%</div>
-                <h3 className="font-bold text-lg mb-2">Daily Payout</h3>
-                <p className="text-xs text-muted-foreground">10% of the annual prize pool paid out daily to the Legend top performer.</p>
+              <div className="bg-background/40 backdrop-blur-md border border-primary/30 rounded-xl p-6 text-center hover:border-primary/60 transition-colors transform md:-translate-y-4 shadow-xl">
+                <div className="w-14 h-14 rounded-full bg-primary/20 text-primary flex items-center justify-center mx-auto mb-4"><Crown size={28} /></div>
+                <div className="text-xs text-muted-foreground uppercase tracking-widest mb-1">Legend Tier</div>
+                <div className="text-5xl font-bold font-display text-primary mb-1">10%</div>
+                <h3 className="font-bold text-lg mb-2">Max Daily Payout</h3>
+                <p className="text-xs text-muted-foreground">Legend members earn the highest daily payout. 10% of the annual pool — the maximum any single winner can receive in a day.</p>
               </div>
               <div className="bg-background/40 backdrop-blur-md border border-white/10 rounded-xl p-6 text-center hover:border-primary/40 transition-colors">
                 <div className="w-12 h-12 rounded-full bg-primary/20 text-primary flex items-center justify-center mx-auto mb-4"><Trophy size={24} /></div>
                 <div className="text-xs text-muted-foreground uppercase tracking-widest mb-1">Year-End</div>
-                <div className="text-4xl font-bold font-display text-primary mb-2">All</div>
-                <h3 className="font-bold text-base mb-2">Annual Prize</h3>
-                <p className="text-xs text-muted-foreground">The annual leaderboard champion claims all remaining prize pool funds.</p>
+                <div className="text-4xl font-bold font-display text-primary mb-1">All</div>
+                <h3 className="font-bold text-base mb-2">Annual Grand Prize</h3>
+                <p className="text-xs text-muted-foreground">The annual leaderboard champion claims every dollar remaining in the prize pool at year-end.</p>
               </div>
             </div>
           </div>
