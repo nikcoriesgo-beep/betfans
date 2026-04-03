@@ -194,21 +194,22 @@ export async function registerRoutes(
       // --- MLB Stats API for pitcher names ---
       const mlbApiGames = await fetchMLBSchedule(dateStr);
 
-      // --- Founder stats ---
+      // --- Founder stats (join predictions with games to get all-time MLB record) ---
       let stats = { wins: 0, losses: 0, profit: 0, roi: 0, streak: 0, totalPicks: 0 };
       if (founder) {
-        const allDbMlb = await storage.getGames("MLB");
-        const allMlbIds = new Set(allDbMlb.map((g) => g.id));
-        const allPredictions = await storage.getUserPredictions(founder.id);
-        const mlbPredictions = allPredictions.filter((p) => allMlbIds.has(p.gameId));
-        const wins = mlbPredictions.filter((p) => p.result === "win").length;
-        const losses = mlbPredictions.filter((p) => p.result === "loss").length;
-        const profit = mlbPredictions.reduce((acc, p) => acc + (p.payout || 0), 0);
+        const mlbRows = await db
+          .select({ result: predictions.result, payout: predictions.payout, createdAt: predictions.createdAt })
+          .from(predictions)
+          .innerJoin(games, eq(predictions.gameId, games.id))
+          .where(and(eq(predictions.userId, founder.id), eq(games.league, "MLB")));
+        const wins = mlbRows.filter((p) => p.result === "win").length;
+        const losses = mlbRows.filter((p) => p.result === "loss").length;
+        const profit = mlbRows.reduce((acc, p) => acc + (p.payout || 0), 0);
         const total = wins + losses;
         const roi = total > 0 ? (profit / total) * 100 : 0;
         let streak = 0;
-        for (const p of [...mlbPredictions].sort((a,b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime())) {
-          if (p.result === "win") streak++; else break;
+        for (const p of [...mlbRows].sort((a,b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime())) {
+          if (p.result === "win") streak++; else if (p.result === "loss") break;
         }
         stats = { wins, losses, profit: Math.round(profit*100)/100, roi: Math.round(roi*100)/100, streak, totalPicks: total };
       }
