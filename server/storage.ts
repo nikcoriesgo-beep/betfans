@@ -392,15 +392,21 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getUserStats(userId: string): Promise<{ wins: number; losses: number; profit: number; roi: number; streak: number }> {
-    const userPreds = await db.select().from(predictions).where(eq(predictions.userId, userId));
-    const wins = userPreds.filter((p) => p.result === "win").length;
-    const losses = userPreds.filter((p) => p.result === "loss").length;
-    const profit = userPreds.reduce((acc, p) => acc + (p.payout || 0), 0);
+    const rows = await db
+      .select({ result: predictions.result, payout: predictions.payout, createdAt: predictions.createdAt, league: games.league })
+      .from(predictions)
+      .leftJoin(games, eq(predictions.gameId, games.id))
+      .where(eq(predictions.userId, userId));
+
+    const mlbRows = rows.filter(r => r.league === "MLB");
+    const wins = mlbRows.filter((p) => p.result === "win").length;
+    const losses = mlbRows.filter((p) => p.result === "loss").length;
+    const profit = mlbRows.reduce((acc, p) => acc + (p.payout || 0), 0);
     const total = wins + losses;
     const roi = total > 0 ? (profit / total) * 100 : 0;
 
     let streak = 0;
-    const sorted = userPreds.sort((a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime());
+    const sorted = [...mlbRows].sort((a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime());
     for (const p of sorted) {
       if (p.result === "pending") continue;
       if (p.result === "win") streak++;
