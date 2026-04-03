@@ -421,10 +421,13 @@ export default function Profile() {
   const profileUserId = isOwnProfile ? user?.id : viewUserId;
 
   const avatarUpload = useMutation({
-    mutationFn: async (file: File) => {
-      const formData = new FormData();
-      formData.append("avatar", file);
-      const res = await fetch("/api/user/avatar", { method: "POST", body: formData, credentials: "include" });
+    mutationFn: async (dataUrl: string) => {
+      const res = await fetch("/api/user/avatar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageData: dataUrl }),
+        credentials: "include",
+      });
       if (!res.ok) throw new Error("Upload failed");
       return res.json();
     },
@@ -440,8 +443,24 @@ export default function Profile() {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!file.type.startsWith("image/")) { toast({ title: "Invalid file", description: "Please select an image file.", variant: "destructive" }); return; }
-    if (file.size > 5 * 1024 * 1024) { toast({ title: "File too large", description: "Please select an image under 5MB.", variant: "destructive" }); return; }
-    avatarUpload.mutate(file);
+    if (file.size > 10 * 1024 * 1024) { toast({ title: "File too large", description: "Please select an image under 10MB.", variant: "destructive" }); return; }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const MAX = 400;
+        const scale = Math.min(MAX / img.width, MAX / img.height, 1);
+        canvas.width = img.width * scale;
+        canvas.height = img.height * scale;
+        const ctx = canvas.getContext("2d")!;
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+        avatarUpload.mutate(dataUrl);
+      };
+      img.src = ev.target?.result as string;
+    };
+    reader.readAsDataURL(file);
   };
 
   useEffect(() => {
@@ -454,6 +473,13 @@ export default function Profile() {
     queryKey: ["/api/stats"],
     queryFn: async () => { const res = await fetch("/api/stats", { credentials: "include" }); if (!res.ok) return { wins: 0, losses: 0, profit: 0, roi: 0, streak: 0 }; return res.json(); },
     enabled: isAuthenticated && isOwnProfile,
+  });
+
+  const targetUserId = isOwnProfile ? user?.id : viewUserId;
+  const { data: sportStats } = useQuery<{ overall: any; bySport: any[] }>({
+    queryKey: ["/api/users", targetUserId, "sport-stats"],
+    queryFn: async () => { const res = await fetch(`/api/users/${targetUserId}/sport-stats`); if (!res.ok) return { overall: null, bySport: [] }; return res.json(); },
+    enabled: !!targetUserId,
   });
 
   const { data: predictions = [] } = useQuery<any[]>({
@@ -544,7 +570,7 @@ export default function Profile() {
                   <div className="text-2xl font-bold font-mono text-green-400" data-testid="text-total-profit">{stats ? `$${Math.round(stats.profit || 0).toLocaleString()}` : "--"}</div>
                 </div>
                 <div className="p-4 rounded-xl bg-card/30 border border-white/5">
-                  <div className="text-muted-foreground text-xs uppercase tracking-wider mb-1">Win Rate</div>
+                  <div className="text-muted-foreground text-xs uppercase tracking-wider mb-1">MLB Win Rate</div>
                   <div className="text-2xl font-bold font-mono text-primary" data-testid="text-win-rate">{winRate}%</div>
                 </div>
                 <div className="p-4 rounded-xl bg-card/30 border border-white/5">
@@ -559,6 +585,75 @@ export default function Profile() {
             )}
           </div>
         </div>
+
+        {sportStats && (sportStats.overall?.total > 0 || sportStats.bySport?.length > 0) && (
+          <div className="mb-10">
+            <div className="flex items-center gap-2 mb-4">
+              <Trophy size={18} className="text-primary" />
+              <h2 className="text-lg font-display font-bold">Pick Score Breakdown</h2>
+            </div>
+
+            {/* Combined Overall Score */}
+            {sportStats.overall && sportStats.overall.total > 0 && (
+              <div className="mb-4 p-4 rounded-xl bg-gradient-to-r from-primary/10 to-primary/5 border border-primary/20">
+                <div className="flex items-center justify-between flex-wrap gap-3">
+                  <div>
+                    <div className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Combined Score — All Sports</div>
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <span className="font-mono font-bold text-2xl">
+                        <span className="text-green-400">{sportStats.overall.wins}W</span>
+                        <span className="text-muted-foreground/40 mx-1">-</span>
+                        <span className="text-red-400">{sportStats.overall.losses}L</span>
+                      </span>
+                      <span className="text-primary font-mono font-bold text-xl">{sportStats.overall.winRate}%</span>
+                      <span className="text-xs text-muted-foreground">{sportStats.overall.total} graded picks</span>
+                    </div>
+                  </div>
+                  {sportStats.overall.streak > 0 && (
+                    <div className="flex items-center gap-1 text-orange-500 font-bold text-sm">
+                      <TrendingUp size={16} /> {sportStats.overall.streak} WIN STREAK
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Per-Sport Grid */}
+            {sportStats.bySport.length > 0 && (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                {sportStats.bySport.map((s: any) => {
+                  const pct = s.winRate;
+                  const isHot = pct >= 60;
+                  const isCold = pct < 40;
+                  return (
+                    <div
+                      key={s.league}
+                      className={cn(
+                        "p-3 rounded-xl border text-center",
+                        isHot ? "bg-green-500/10 border-green-500/20" : isCold ? "bg-red-500/10 border-red-500/20" : "bg-card/30 border-white/10"
+                      )}
+                      data-testid={`card-sport-${s.league}`}
+                    >
+                      <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-1.5">{s.league}</div>
+                      <div className="font-mono text-sm mb-1">
+                        <span className="text-green-400 font-bold">{s.wins}</span>
+                        <span className="text-muted-foreground/40">-</span>
+                        <span className="text-red-400 font-bold">{s.losses}</span>
+                      </div>
+                      <div className={cn(
+                        "font-mono font-bold text-base",
+                        isHot ? "text-green-400" : isCold ? "text-red-400" : "text-primary"
+                      )}>
+                        {pct}%
+                      </div>
+                      <div className="text-[9px] text-muted-foreground mt-0.5">{s.total} picks</div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         {isOwnProfile ? (
           <Tabs defaultValue="threads" className="space-y-8">
