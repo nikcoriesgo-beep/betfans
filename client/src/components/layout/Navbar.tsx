@@ -19,8 +19,6 @@ export function Navbar() {
 
   const leaderboardItems = [
     { label: "Daily", href: "/leaderboard/daily", icon: Clock },
-    { label: "Weekly", href: "/leaderboard/weekly", icon: Calendar },
-    { label: "Monthly", href: "/leaderboard/monthly", icon: Target },
     { label: "Annual", href: "/leaderboard/annual", icon: Trophy },
   ];
 
