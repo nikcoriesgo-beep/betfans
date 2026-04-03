@@ -345,11 +345,11 @@ export async function gradeStuckGames(): Promise<number> {
     }
   }
 
-  // ── Pass 3: catch upcoming/unknown-status games started > 2h ago ─────────
-  // Reduced from 4h to 2h — most games finish within 3 hours of start
+  // ── Pass 3: catch upcoming/unknown-status games started > 2h ago (but < 24h so we don't re-check ancient games) ──
   const cutoff = new Date(Date.now() - 2 * 60 * 60 * 1000);
+  const oldCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const stuckUpcoming = await db.select().from(games)
-    .where(sql`${games.status} = 'upcoming' AND ${games.gameTime} < ${cutoff} AND ${games.league} IN ('MLB','NBA','MLS','NCAAB','NCAABB')`);
+    .where(sql`${games.status} = 'upcoming' AND ${games.gameTime} < ${cutoff} AND ${games.gameTime} > ${oldCutoff} AND ${games.league} IN ('MLB','NBA','MLS','NCAAB','NCAABB')`);
 
   if (stuckUpcoming.length > 0) {
     console.log(`[spider] gradeStuckGames: found ${stuckUpcoming.length} upcoming game(s) past start time — checking`);
