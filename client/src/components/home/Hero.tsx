@@ -69,7 +69,7 @@ export function Hero() {
             className="grid grid-cols-1 md:grid-cols-4 gap-6 mt-20 text-left"
           >
             {[
-              { icon: Trophy, title: "Daily Rewards", desc: "Compete for daily, weekly, and monthly cash prizes from the 50% winners pool." },
+              { icon: Trophy, title: "Daily Rewards", desc: "Compete for daily cash prizes and the annual grand prize from the 50% winners pool." },
               { icon: Target, title: "Spider AI Picks", desc: "Access AI-powered predictions with confidence ratings across all major leagues." },
               { icon: Users, title: "Pro Community", desc: "Follow top predictors, post on member walls, and compete on the leaderboard." },
               { icon: DollarSign, title: "Affiliate Income", desc: "Earn $1/month for every member you refer — no caps, no limits, forever." },
