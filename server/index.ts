@@ -17,6 +17,15 @@ declare module "http" {
   }
 }
 
+// Prevent any unhandled error from crashing the process
+process.on("uncaughtException", (err) => {
+  console.error("[crash-guard] Uncaught exception (server kept alive):", err?.message || err);
+});
+
+process.on("unhandledRejection", (reason) => {
+  console.error("[crash-guard] Unhandled rejection (server kept alive):", reason);
+});
+
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
     hour: "numeric",
@@ -85,12 +94,14 @@ async function initStripe() {
 (async () => {
   await registerRoutes(httpServer, app);
 
+  // Error handler — log the error but never re-throw (that crashes the process)
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
-
-    res.status(status).json({ message });
-    throw err;
+    console.error("[api-error]", status, message);
+    if (!res.headersSent) {
+      res.status(status).json({ message });
+    }
   });
 
   if (process.env.NODE_ENV === "production") {
@@ -119,20 +130,13 @@ async function initStripe() {
     startMorningSweep();
   }
 
-  // External keep-alive: dev server (on Replit) pings the production site (on Render)
-  // This is genuine external traffic from a different server — prevents Render spin-down
-  {
-    const { default: httpsModule } = await import("https");
-    const PING_URL = "https://betfans.us/api/health";
-    setInterval(() => {
-      httpsModule.get(PING_URL, (res) => {
-        res.resume();
-        log(`Keep-alive ping → ${res.statusCode}`, "keepalive");
-      }).on("error", (e: Error) => {
-        log(`Keep-alive ping failed: ${e.message}`, "keepalive");
-      });
-    }, 60 * 1000);
-    log("Keep-alive ping started (every 60s → betfans.us/api/health)", "keepalive");
-  }
+  // Keep the production service alive — ping every 4 minutes in all environments
+  const { default: httpsModule } = await import("https");
+  const PING_URL = "https://betfans.us/api/health";
+  setInterval(() => {
+    httpsModule.get(PING_URL, (res) => {
+      res.resume();
+    }).on("error", () => {});
+  }, 4 * 60 * 1000);
 
 })();
