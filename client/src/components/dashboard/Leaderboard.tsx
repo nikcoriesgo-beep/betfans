@@ -7,10 +7,10 @@ import { Flame, TrendingUp, Medal, ArrowUp, ArrowDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 
-type Period = "daily" | "weekly" | "monthly" | "annual";
+type Period = "daily" | "annual";
 
 export function Leaderboard() {
-  const [period, setPeriod] = useState<Period>("weekly");
+  const [period, setPeriod] = useState<Period>("daily");
 
   const { data: entries = [] } = useQuery<any[]>({
     queryKey: ["/api/leaderboard", period],
@@ -29,14 +29,12 @@ export function Leaderboard() {
             <Medal className="text-primary" />
             Top Predictors
           </CardTitle>
-          <CardDescription>Global rankings based on ROI and Accuracy</CardDescription>
+          <CardDescription>Global rankings based on Win Rate and Accuracy</CardDescription>
         </div>
-        <Tabs value={period} onValueChange={(v) => setPeriod(v as Period)} className="w-full md:w-[400px]">
-          <TabsList className="grid w-full grid-cols-4 bg-muted/50">
+        <Tabs value={period} onValueChange={(v) => setPeriod(v as Period)} className="w-full md:w-[200px]">
+          <TabsList className="grid w-full grid-cols-2 bg-muted/50">
             <TabsTrigger value="daily" data-testid="tab-leaderboard-daily">Daily</TabsTrigger>
-            <TabsTrigger value="weekly" data-testid="tab-leaderboard-weekly">Weekly</TabsTrigger>
-            <TabsTrigger value="monthly" data-testid="tab-leaderboard-monthly">Monthly</TabsTrigger>
-            <TabsTrigger value="annual" data-testid="tab-leaderboard-annual">All Time</TabsTrigger>
+            <TabsTrigger value="annual" data-testid="tab-leaderboard-annual">Annual</TabsTrigger>
           </TabsList>
         </Tabs>
       </CardHeader>
@@ -45,8 +43,8 @@ export function Leaderboard() {
           <div className="hidden md:grid grid-cols-12 gap-4 px-4 py-2 text-sm font-medium text-muted-foreground uppercase tracking-wider">
             <div className="col-span-1 text-center">Rank</div>
             <div className="col-span-4">Predictor</div>
-            <div className="col-span-2 text-right">ROI</div>
-            <div className="col-span-2 text-right">Win Rate</div>
+            <div className="col-span-2 text-right">Win %</div>
+            <div className="col-span-2 text-right">Record</div>
             <div className="col-span-2 text-right">Profit</div>
             <div className="col-span-1 text-center">Streak</div>
           </div>
@@ -112,11 +110,13 @@ export function Leaderboard() {
                   </div>
 
                   <div className="hidden md:block col-span-2 text-right font-mono font-bold text-primary">
-                    +{(entry.roi || 0).toFixed(1)}%
+                    {winRate}%
                   </div>
 
                   <div className="hidden md:block col-span-2 text-right font-mono">
-                    {winRate}%
+                    <span className="text-green-400">{entry.wins}W</span>
+                    <span className="text-muted-foreground mx-1">-</span>
+                    <span className="text-red-400">{entry.losses}L</span>
                   </div>
 
                   <div className="hidden md:block col-span-2 text-right font-mono text-green-400">
@@ -136,17 +136,14 @@ export function Leaderboard() {
 
                   <div className="md:hidden grid grid-cols-4 gap-1 mt-2 py-2 px-2 rounded-lg bg-white/[0.03] border border-white/5">
                     <div className="text-center">
-                      <div className="text-[8px] text-muted-foreground/60 uppercase tracking-wider mb-0.5">ROI</div>
-                      <span className={cn(
-                        "font-mono font-bold text-[11px]",
-                        (entry.roi || 0) >= 0 ? "text-primary" : "text-red-400"
-                      )}>
-                        {(entry.roi || 0) >= 0 ? "+" : ""}{(entry.roi || 0).toFixed(1)}%
+                      <div className="text-[8px] text-muted-foreground/60 uppercase tracking-wider mb-0.5">Win %</div>
+                      <span className="font-mono font-bold text-[11px] text-primary">
+                        {winRate}%
                       </span>
                     </div>
                     <div className="text-center">
-                      <div className="text-[8px] text-muted-foreground/60 uppercase tracking-wider mb-0.5">Win Rate</div>
-                      <span className="font-mono font-bold text-[11px] text-foreground">{winRate}%</span>
+                      <div className="text-[8px] text-muted-foreground/60 uppercase tracking-wider mb-0.5">Record</div>
+                      <span className="font-mono font-bold text-[11px] text-foreground">{entry.wins}-{entry.losses}</span>
                     </div>
                     <div className="text-center">
                       <div className="text-[8px] text-muted-foreground/60 uppercase tracking-wider mb-0.5">Profit</div>
