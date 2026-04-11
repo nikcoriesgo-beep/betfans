@@ -2,11 +2,13 @@ import { Navbar } from "@/components/layout/Navbar";
 import { Hero } from "@/components/home/Hero";
 import { Leaderboard } from "@/components/dashboard/Leaderboard";
 import { Button } from "@/components/ui/button";
-import { ArrowRight, Check, DollarSign, Users, TrendingUp, Share2, Trophy, Zap } from "lucide-react";
+import { ArrowRight, Check, DollarSign, Users, TrendingUp, Share2, Trophy, Zap, LogIn } from "lucide-react";
 import { AdBannerTop, AdBannerInline, AdMarquee } from "@/components/AdBanner";
 import { QuickShareButton } from "@/components/SharePicksCard";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState, useRef } from "react";
+import { useAuth } from "@/hooks/use-auth";
+import { Link } from "wouter";
 
 function CaptureReferralCode() {
   useEffect(() => {
@@ -126,6 +128,21 @@ function AnimatedCounter({ value, prefix = "" }: { value: number; prefix?: strin
 }
 
 export default function Home() {
+  const { user, isLoading: authLoading } = useAuth();
+  const homeTierRank: Record<string, number> = { rookie: 1, pro: 2, legend: 3 };
+  const homeCurrentTier = user?.membershipTier || "free";
+  const homeCurrentRank = homeTierRank[homeCurrentTier] || 0;
+  const homePlanLabel = (planName: string) => {
+    const rank = homeTierRank[planName.toLowerCase()] || 0;
+    if (!user) return "Get Started";
+    if (homeCurrentRank === rank) return "Current Plan";
+    if (homeCurrentRank > rank) return `${planName} Plan`;
+    return `Upgrade to ${planName}`;
+  };
+  const homePlanDisabled = (planName: string) => {
+    const rank = homeTierRank[planName.toLowerCase()] || 0;
+    return homeCurrentRank >= rank;
+  };
   const { data: memberData } = useQuery({
     queryKey: ["/api/member-count"],
     queryFn: async () => {
@@ -151,6 +168,14 @@ export default function Home() {
     <div className="min-h-screen bg-background">
       <CaptureReferralCode />
       <Navbar />
+      {!user && (
+        <Link href="/auth" data-testid="login-banner" className="block mt-16 bg-primary text-primary-foreground py-4 px-4 flex items-center justify-center gap-3 hover:bg-primary/90 transition-colors cursor-pointer">
+          <span className="text-base font-bold tracking-wide font-display">Already a member?</span>
+          <span className="flex items-center gap-1.5 bg-black/25 text-white font-bold text-sm px-5 py-2 rounded-full">
+            <LogIn size={15} /> Log In Now
+          </span>
+        </Link>
+      )}
       <Hero />
       <LiveMemberFeed />
       <AdBannerTop />
@@ -194,6 +219,9 @@ export default function Home() {
         </div>
       </section>
 
+      {/* Ad Unit — below prize pool */}
+      <div className="w-full flex justify-center py-4 bg-black/10" id="betfans-ad-slot" />
+
       {/* Sneak Peek Section */}
       <section className="py-20 bg-black/20">
         <div className="container mx-auto px-4">
@@ -204,11 +232,11 @@ export default function Home() {
                 See who's dominating the charts today. Our real-time leaderboard tracks every verified prediction across all major leagues.
               </p>
             </div>
-            <a href="/dashboard">
+            <Link href="/dashboard">
               <Button variant="outline" className="gap-2">
                 View Full Leaderboard <ArrowRight size={16} />
               </Button>
-            </a>
+            </Link>
           </div>
           
           <Leaderboard />
@@ -223,9 +251,9 @@ export default function Home() {
           <h2 className="text-3xl md:text-4xl font-display font-bold mb-12">Choose Your Edge</h2>
           <div className="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
             {[
-              { name: "Rookie", price: "$19/mo", features: ["Basic Stats", "Daily Leaderboard", "Follow 5 Pros"] },
-              { name: "Pro", price: "$29/mo", features: ["Advanced Analytics", "Unlimited Following", "API Access", "Pro Badge"] },
-              { name: "Legend", price: "$99/mo", features: ["$50/mo Per Referral", "Private Discord", "White-label Reports", "Legend Badge"], highlight: true },
+              { name: "Rookie", price: "$19/mo", earn: "$5 instant + $5/mo residual", features: ["Basic Stats", "Daily Leaderboard", "Follow 5 Pros"] },
+              { name: "Pro", price: "$29/mo", earn: "$10 instant + $10/mo residual", features: ["Advanced Analytics", "Unlimited Following", "API Access", "Pro Badge"] },
+              { name: "Legend", price: "$99/mo", earn: "$50 instant + $50/mo residual", features: ["Spider AI Picks", "Private Discord", "White-label Reports", "Legend Badge"], highlight: true },
             ].map((plan, i) => (
               <div key={i} className={`p-8 rounded-2xl border ${plan.highlight ? 'bg-yellow-500/5 border-yellow-500/50 relative overflow-hidden transform md:-translate-y-4 transition-transform shadow-[0_0_30px_rgba(234,179,8,0.15)]' : 'bg-card/30 border-white/5'} flex flex-col`}>
                 {plan.highlight && (
@@ -234,7 +262,11 @@ export default function Home() {
                   </div>
                 )}
                 <h3 className="text-xl font-bold font-display mb-2">{plan.name}</h3>
-                <div className="text-4xl font-bold mb-6">{plan.price}</div>
+                <div className="text-4xl font-bold mb-4">{plan.price}</div>
+                <div className={`rounded-xl px-3 py-2 mb-5 border text-xs font-bold flex items-center gap-2 ${plan.highlight ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-300' : 'bg-primary/10 border-primary/20 text-primary'}`}>
+                  <Check size={12} className="shrink-0" />
+                  {plan.earn} per referral
+                </div>
                 <ul className="space-y-4 mb-8 flex-1 text-left">
                   {plan.features.map((f, j) => (
                     <li key={j} className="flex items-center gap-3 text-sm text-muted-foreground">
@@ -245,11 +277,15 @@ export default function Home() {
                     </li>
                   ))}
                 </ul>
-                <a href="/membership">
-                  <Button className={plan.highlight ? "w-full bg-gradient-to-r from-yellow-500 to-yellow-600 text-black hover:from-yellow-400 hover:to-yellow-500 font-bold" : "w-full"} variant={plan.highlight ? "default" : "outline"}>
-                    Get Started
+                <Link href="/membership">
+                  <Button
+                    className={plan.highlight && !homePlanDisabled(plan.name) ? "w-full bg-gradient-to-r from-yellow-500 to-yellow-600 text-black hover:from-yellow-400 hover:to-yellow-500 font-bold" : "w-full"}
+                    variant={plan.highlight && !homePlanDisabled(plan.name) ? "default" : "outline"}
+                    disabled={homePlanDisabled(plan.name)}
+                  >
+                    {homePlanLabel(plan.name)}
                   </Button>
-                </a>
+                </Link>
               </div>
             ))}
           </div>
@@ -263,18 +299,17 @@ export default function Home() {
               Affiliate Program
             </span>
             <h2 className="text-3xl md:text-4xl font-display font-bold mb-4" data-testid="text-affiliate-heading">
-              Earn <span className="text-primary">$1/Month</span> For Every Member You Refer
+              Earn <span className="text-primary">$5–$50/Month</span> For Every Member You Refer
             </h2>
             <p className="text-muted-foreground max-w-2xl mx-auto">
-              No caps. No limits. Refer 100 members = $100/month residual income. 
-              Refer 1,000 = $1,000/month. Compete against the Founder on the Residual Income Leaderboard.
+              No caps. No limits. Every tier earns an instant payout the moment someone signs up with your code, plus monthly residual income — Rookie $5/mo, Pro $10/mo, Legend $50/mo.
             </p>
           </div>
           <div className="grid md:grid-cols-3 gap-8 max-w-4xl mx-auto mb-12">
             {[
               { icon: Share2, value: "Share", label: "Your unique referral link", desc: "Every member gets a personal affiliate code to share" },
               { icon: Users, value: "Grow", label: "Build your network", desc: "Refer friends, followers, and sports fans" },
-              { icon: DollarSign, value: "Earn", label: "$1/mo per active member", desc: "Residual income as long as they stay subscribed" },
+              { icon: DollarSign, value: "Earn", label: "$5–$50/mo per active member", desc: "Residual income based on your tier — as long as they stay subscribed" },
             ].map((item, i) => (
               <div key={i} className="text-center p-6 rounded-xl border border-white/5 bg-white/5 backdrop-blur-sm">
                 <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center text-primary mx-auto mb-4">
@@ -287,16 +322,16 @@ export default function Home() {
             ))}
           </div>
           <div className="text-center flex flex-col sm:flex-row gap-3 justify-center">
-            <a href="/referrals">
+            <Link href="/referrals">
               <Button size="lg" className="gap-2 shadow-[0_0_15px_rgba(34,197,94,0.3)]" data-testid="button-join-affiliate">
                 Join Affiliate Program <ArrowRight size={16} />
               </Button>
-            </a>
-            <a href="/referrals">
+            </Link>
+            <Link href="/referrals">
               <Button size="lg" variant="outline" className="gap-2 border-white/10" data-testid="button-view-residual">
                 <TrendingUp size={16} /> View Residual Income Leaderboard
               </Button>
-            </a>
+            </Link>
           </div>
         </div>
       </section>
@@ -316,9 +351,9 @@ export default function Home() {
             <div className="flex items-center gap-4">
               <QuickShareButton text="Join BetFans — the sports prediction platform where you predict, compete, win, and earn residual income!" className="text-xs" />
               <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                <a href="/membership"><span className="hover:text-primary cursor-pointer">Membership</span></a>
-                <a href="/referrals"><span className="hover:text-primary cursor-pointer">Affiliate Program</span></a>
-                <a href="/referrals"><span className="hover:text-primary cursor-pointer">Residual Income</span></a>
+                <Link href="/membership"><span className="hover:text-primary cursor-pointer">Membership</span></Link>
+                <Link href="/referrals"><span className="hover:text-primary cursor-pointer">Affiliate Program</span></Link>
+                <Link href="/referrals"><span className="hover:text-primary cursor-pointer">Residual Income</span></Link>
                 <a href="mailto:nikcox@betfans.us" className="hover:text-primary cursor-pointer">Contact</a>
               </div>
             </div>
