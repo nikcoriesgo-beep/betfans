@@ -6,15 +6,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Trophy, Crown, Star, DollarSign, TrendingUp,
-  Calendar, Clock, Target, Award, Sparkles, ChevronRight,
-  Timer, Zap, Users, ArrowUpRight, BarChart3, Loader2,
+  Clock, Award, Sparkles, ChevronRight,
+  Timer, Zap, Users, ArrowUpRight, BarChart3,
 } from "lucide-react";
 import { PrizePoolQualRule } from "@/components/PrizePoolQualRule";
 import { cn } from "@/lib/utils";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { useAuth } from "@/hooks/use-auth";
-import { useToast } from "@/hooks/use-toast";
 
 type Period = "daily" | "annual";
 
@@ -24,7 +22,7 @@ type PrizePoolData = {
   annual: number;
 };
 
-const TIER_SHARES = { legend: 0.10, pro: 0.05, rookie: 0.04 };
+const DAILY_POOL_SHARE = 0.10;
 
 const periodConfig: Record<Period, {
   title: string;
@@ -136,24 +134,20 @@ function fmtMoney(n: number) {
   return "$" + n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function DailyPrizePoolTracker({ annualAmount }: { annualAmount: number }) {
+function DailyPrizePoolTracker({ poolAmount }: { poolAmount: number }) {
   const countdown = useCountdown("daily");
-  const [prevAmount, setPrevAmount] = useState(annualAmount);
+  const [prevAmount, setPrevAmount] = useState(poolAmount);
   const [isGrowing, setIsGrowing] = useState(false);
 
   useEffect(() => {
-    if (annualAmount > prevAmount && prevAmount > 0) {
+    if (poolAmount > prevAmount && prevAmount > 0) {
       setIsGrowing(true);
       setTimeout(() => setIsGrowing(false), 2000);
     }
-    setPrevAmount(annualAmount);
-  }, [annualAmount]);
+    setPrevAmount(poolAmount);
+  }, [poolAmount]);
 
-  const tiers = [
-    { key: "legend", label: "Legend", share: TIER_SHARES.legend, color: "text-purple-400" },
-    { key: "pro",    label: "Pro",    share: TIER_SHARES.pro,    color: "text-primary" },
-    { key: "rookie", label: "Rookie", share: TIER_SHARES.rookie, color: "text-blue-400" },
-  ];
+  const dailyPrize = poolAmount * DAILY_POOL_SHARE;
 
   return (
     <Card className={cn(
@@ -182,24 +176,22 @@ function DailyPrizePoolTracker({ annualAmount }: { annualAmount: number }) {
         </div>
 
         <div className={cn(
-          "text-3xl font-mono font-black mb-4 transition-all duration-500 text-blue-400",
+          "text-3xl font-mono font-black mb-1 transition-all duration-500 text-blue-400",
           isGrowing && "scale-105 drop-shadow-[0_0_15px_rgba(34,197,94,0.6)]"
         )}>
-          {annualAmount > 0 ? "$" + annualAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "Building..."}
+          {poolAmount > 0 ? "$" + poolAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "Building..."}
         </div>
+        <div className="text-[10px] text-muted-foreground/60 uppercase tracking-wider mb-4">Remaining Prize Pool</div>
 
-        <div className="space-y-2">
-          {tiers.map((t) => (
-            <div key={t.key} className="flex items-center justify-between text-xs">
-              <div className="flex items-center gap-1.5">
-                <span className={cn("font-bold", t.color)}>{t.label} Winner</span>
-                <span className="text-muted-foreground/60">({(t.share * 100).toFixed(0)}% of prize pool)</span>
-              </div>
-              <span className={cn("font-mono font-bold", t.color)}>
-                {fmtMoney(annualAmount * t.share)}
-              </span>
-            </div>
-          ))}
+        <div className="flex items-center justify-between text-xs p-2.5 rounded-lg bg-primary/10 border border-primary/20">
+          <div className="flex items-center gap-1.5">
+            <Trophy size={12} className="text-primary" />
+            <span className="font-bold text-primary">Today's Winner</span>
+            <span className="text-muted-foreground/60">(10% of pool · all tiers compete)</span>
+          </div>
+          <span className="font-mono font-bold text-primary">
+            {fmtMoney(dailyPrize)}
+          </span>
         </div>
       </CardContent>
     </Card>
@@ -251,69 +243,57 @@ function DailyWinners({ poolAmount }: { poolAmount: number }) {
     },
   });
 
-  const tiers = ["legend", "pro", "rookie"] as const;
-
-  const getTopForTier = (tier: string) => {
-    const inTier = entries.filter((e) => e.user?.membershipTier === tier);
-    if (inTier.length === 0) return [];
-    const sorted = [...inTier].sort((a, b) => b.roi - a.roi || b.wins - a.wins);
-    const topRoi = sorted[0].roi;
-    const topWins = sorted[0].wins;
-    return sorted.filter((e) => e.roi === topRoi && e.wins === topWins);
-  };
+  const eligible = entries.filter((e) => {
+    const tier = e.user?.membershipTier;
+    return tier === "legend" || tier === "pro" || tier === "rookie";
+  });
+  const sorted = [...eligible].sort((a, b) => b.roi - a.roi || b.wins - a.wins);
+  const topRoi = sorted[0]?.roi;
+  const topWins = sorted[0]?.wins;
+  const winners = sorted.length > 0 ? sorted.filter((e) => e.roi === topRoi && e.wins === topWins) : [];
+  const dailyPool = poolAmount * DAILY_POOL_SHARE;
+  const perWinner = winners.length > 0 ? dailyPool / winners.length : dailyPool;
 
   return (
-    <div className="space-y-8">
-      {tiers.map((tier) => {
-        const tc = tierConfig[tier];
-        const TierIcon = tc.icon;
-        const share = TIER_SHARES[tier];
-        const tierPool = poolAmount * share;
-        const winners = getTopForTier(tier);
-        const perWinner = winners.length > 0 ? tierPool / winners.length : tierPool;
-
-        return (
-          <div key={tier} className="space-y-3" data-testid={`section-daily-${tier}`}>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center", tc.bg, tc.border, "border")}>
-                  <TierIcon size={16} className={tc.color} />
-                </div>
-                <div>
-                  <span className={cn("font-display font-bold text-sm", tc.color)}>{tc.label} Winner</span>
-                  <span className="text-xs text-muted-foreground ml-2">· {(share * 100).toFixed(0)}% of prize pool</span>
-                </div>
-              </div>
-              <div className={cn("font-mono font-bold", tc.color)}>
-                {fmtMoney(tierPool)}
-                {winners.length > 1 && (
-                  <span className="text-muted-foreground text-xs font-normal ml-1">÷ {winners.length}</span>
-                )}
-              </div>
-            </div>
-
-            {winners.length === 0 ? (
-              <Card className="bg-card/20 border-white/5">
-                <CardContent className="p-5 text-center">
-                  <TierIcon size={28} className="text-muted-foreground/20 mx-auto mb-2" />
-                  <p className="text-muted-foreground text-sm">No {tc.label} picks today</p>
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="space-y-2">
-                {winners.map((entry) => (
-                  <WinnerCard key={entry.userId} entry={entry} payout={perWinner} accentClass={tc.color} />
-                ))}
-                {winners.length > 1 && (
-                  <p className="text-[10px] text-muted-foreground text-center">
-                    {winners.length} tied — each receives {fmtMoney(perWinner)}
-                  </p>
-                )}
-              </div>
-            )}
+    <div className="space-y-4" data-testid="section-daily-unified">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-primary/20 border border-primary/30">
+            <Trophy size={16} className="text-primary" />
           </div>
-        );
-      })}
+          <div>
+            <span className="font-display font-bold text-sm text-primary">Today's Best Predictor</span>
+            <span className="text-xs text-muted-foreground ml-2">· 10% of prize pool · all tiers compete</span>
+          </div>
+        </div>
+        <div className="font-mono font-bold text-primary">
+          {fmtMoney(dailyPool)}
+          {winners.length > 1 && (
+            <span className="text-muted-foreground text-xs font-normal ml-1">÷ {winners.length}</span>
+          )}
+        </div>
+      </div>
+
+      {winners.length === 0 ? (
+        <Card className="bg-card/20 border-white/5">
+          <CardContent className="p-5 text-center">
+            <Trophy size={28} className="text-muted-foreground/20 mx-auto mb-2" />
+            <p className="text-muted-foreground text-sm">No qualifying picks today</p>
+            <p className="text-xs text-muted-foreground/50 mt-1">Pick every MLB game to qualify</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-2">
+          {winners.map((entry) => (
+            <WinnerCard key={entry.userId} entry={entry} payout={perWinner} accentClass="text-primary" />
+          ))}
+          {winners.length > 1 && (
+            <p className="text-[10px] text-muted-foreground text-center">
+              {winners.length} tied — each receives {fmtMoney(perWinner)}
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -557,71 +537,6 @@ function SportScorecardTable() {
   );
 }
 
-function AdminPayoutPanel() {
-  const { user } = useAuth();
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
-  const [processingPeriod, setProcessingPeriod] = useState<string | null>(null);
-
-  const isFounder = user?.referralCode === "NIKCOX";
-  if (!isFounder) return null;
-
-  const processPayout = async (period: string) => {
-    setProcessingPeriod(period);
-    try {
-      const res = await fetch("/api/payouts/process", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ period }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        toast({ title: `${period.charAt(0).toUpperCase() + period.slice(1)} payout processed`, description: data.results?.[0]?.detail || "Done." });
-        queryClient.invalidateQueries({ queryKey: ["/api/prize-pool"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/payouts"] });
-      } else {
-        toast({ title: "Payout failed", description: data.message, variant: "destructive" });
-      }
-    } catch {
-      toast({ title: "Payout error", description: "Network error. Try again.", variant: "destructive" });
-    } finally {
-      setProcessingPeriod(null);
-    }
-  };
-
-  return (
-    <Card className="bg-primary/5 border-primary/20 max-w-3xl mx-auto mb-8" data-testid="admin-payout-panel">
-      <CardContent className="p-5">
-        <div className="flex items-center gap-2 mb-4">
-          <DollarSign size={16} className="text-primary" />
-          <span className="font-bold text-sm uppercase tracking-widest text-primary">Admin — Process Payouts</span>
-          <Badge className="bg-primary/20 text-primary text-[10px] ml-auto">Founder Only</Badge>
-        </div>
-        <p className="text-xs text-muted-foreground mb-4">
-          Trigger payouts to MLB leaderboard winners. Daily pays out by tier (Legend 10%, Pro 5%, Rookie 4%).
-          Annual pays out all remaining pool to the year's top performer(s). Cannot be reversed.
-        </p>
-        <div className="grid grid-cols-2 gap-2">
-          {(["daily", "annual"] as const).map((p) => (
-            <Button
-              key={p}
-              size="sm"
-              variant="outline"
-              className="hover:bg-primary/10 hover:text-primary hover:border-primary/30 gap-1.5"
-              disabled={processingPeriod !== null}
-              onClick={() => processPayout(p)}
-              data-testid={`button-payout-${p}`}
-            >
-              {processingPeriod === p ? <Loader2 size={12} className="animate-spin" /> : <DollarSign size={12} />}
-              {p.charAt(0).toUpperCase() + p.slice(1)}
-            </Button>
-          ))}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
 
 function PayoutHistory() {
   const { data: payoutHistory = [] } = useQuery<any[]>({
@@ -726,12 +641,10 @@ export default function Winners() {
 
         <PrizePoolQualRule className="max-w-3xl mx-auto mb-8" />
 
-        <AdminPayoutPanel />
-
         <SportScorecardTable />
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-10 max-w-3xl mx-auto">
-          <DailyPrizePoolTracker annualAmount={annualPool} />
+          <DailyPrizePoolTracker poolAmount={totalPool} />
           <AnnualPrizePoolTracker annualAmount={annualPool} />
         </div>
 
@@ -759,7 +672,7 @@ export default function Winners() {
 
         <div className="max-w-3xl mx-auto">
           {activeTab === "daily" ? (
-            <DailyWinners poolAmount={annualPool} />
+            <DailyWinners poolAmount={totalPool} />
           ) : (
             <AnnualWinners remainingPool={annualPool} />
           )}
@@ -772,27 +685,11 @@ export default function Winners() {
             </h3>
             <div className="space-y-3">
               <div className="flex items-center gap-3">
-                <Crown size={16} className="text-purple-400" />
-                <span className="text-sm flex-1">Daily — Legend Winner</span>
+                <Trophy size={16} className="text-primary" />
+                <span className="text-sm flex-1">Daily Winner (all tiers compete)</span>
                 <span className="text-xs text-muted-foreground">10% of prize pool</span>
-                <span className="font-mono font-bold text-sm text-purple-400">
-                  {fmtMoney(annualPool * TIER_SHARES.legend)}
-                </span>
-              </div>
-              <div className="flex items-center gap-3">
-                <Star size={16} className="text-primary" />
-                <span className="text-sm flex-1">Daily — Pro Winner</span>
-                <span className="text-xs text-muted-foreground">5% of prize pool</span>
                 <span className="font-mono font-bold text-sm text-primary">
-                  {fmtMoney(annualPool * TIER_SHARES.pro)}
-                </span>
-              </div>
-              <div className="flex items-center gap-3">
-                <Award size={16} className="text-blue-400" />
-                <span className="text-sm flex-1">Daily — Rookie Winner</span>
-                <span className="text-xs text-muted-foreground">4% of prize pool</span>
-                <span className="font-mono font-bold text-sm text-blue-400">
-                  {fmtMoney(annualPool * TIER_SHARES.rookie)}
+                  {fmtMoney(totalPool * DAILY_POOL_SHARE)}
                 </span>
               </div>
               <div className="flex items-center gap-3">
@@ -804,8 +701,8 @@ export default function Winners() {
                 </span>
               </div>
               <div className="border-t border-white/10 pt-3 mt-3 flex items-center gap-3">
-                <Trophy size={16} className="text-primary" />
-                <span className="text-sm font-bold flex-1">Total Prize Pool (All Time)</span>
+                <DollarSign size={16} className="text-primary" />
+                <span className="text-sm font-bold flex-1">Remaining Prize Pool</span>
                 <span className="font-mono font-bold text-lg text-primary">
                   {fmtMoney(totalPool)}
                 </span>
@@ -819,9 +716,9 @@ export default function Winners() {
             </div>
             <div className="mt-3 p-3 rounded-lg bg-white/5 border border-white/5">
               <p className="text-xs text-muted-foreground">
-                <strong className="text-foreground">How it works:</strong> Each day, the best MLB predictor in each membership tier wins their tier's pool share.
-                Legend winners take 10%, Pro winners take 5%, and Rookie winners take 4%.
-                Tied winners split their tier's share equally. The remaining 81% accumulates all year for the annual grand prize.
+                <strong className="text-foreground">How it works:</strong> Each day, all members compete together regardless of tier.
+                The best MLB predictor wins 10% of the prize pool. Tied winners split the 10% equally.
+                The remaining 90% accumulates all year for the annual grand prize.
                 On January 1st, the year's top MLB predictor wins the entire remaining pool.
                 Tied annual winners split the pool equally.
               </p>
