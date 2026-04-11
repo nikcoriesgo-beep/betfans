@@ -33,6 +33,7 @@ export function Navbar() {
 
   const allMobileItems = [
     { label: "Home", href: "/" },
+    { label: "How to Play", href: "/how-to-play" },
     { label: "Daily Picks", href: "/daily-picks" },
     ...moreItems,
   ];
@@ -69,7 +70,12 @@ export function Navbar() {
 
           <div className="hidden md:flex items-center gap-5">
             <Link href="/" className={linkClass(location === "/")}>Home</Link>
-            <Link href="/daily-picks" className={linkClass(location === "/daily-picks")}>Daily Picks</Link>
+            {!isAuthenticated && (
+              <Link href="/how-to-play" className={linkClass(location === "/how-to-play")} data-testid="link-how-to-play">How to Play</Link>
+            )}
+            {isAuthenticated && (
+              <Link href="/daily-picks" className={linkClass(location === "/daily-picks")}>Daily Picks</Link>
+            )}
 
             <div className="relative" ref={lbRef}>
               <button
@@ -205,10 +211,14 @@ export function Navbar() {
         <div className="absolute top-14 left-0 right-0 z-40 pointer-events-none" style={{ top: 'calc(3.5rem + env(safe-area-inset-top))' }}>
           <div className="pointer-events-auto">
             <PrizePoolTicker />
+            <div
+              id="betfans-leaderboard-ad"
+              className="w-full bg-black/40 border-b border-white/5 flex justify-center items-center min-h-[50px] overflow-hidden"
+            />
           </div>
         </div>
       </nav>
-      <div className="h-10" />
+      <div className="h-[100px]" />
     </>
   );
 }
