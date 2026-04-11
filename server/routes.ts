@@ -4,7 +4,7 @@ import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integra
 import { storage } from "./storage";
 import { db } from "./db";
 import { users, referrals, games, predictions } from "@shared/schema";
-import { eq, sql } from "drizzle-orm";
+import { eq, sql, and } from "drizzle-orm";
 import { insertPredictionSchema, insertChatMessageSchema, insertThreadSchema, insertThreadReplySchema, insertAdvertiserSchema } from "@shared/schema";
 import { stripeService } from "./stripeService";
 import { WebhookHandlers } from "./webhookHandlers";
@@ -143,7 +143,8 @@ export async function registerRoutes(
 
   app.get("/api/baseball-breakfast", async (req, res) => {
     try {
-      const [founderRow] = await db.select().from(users).where(eq(users.referralCode, "NIKCOX")).limit(1);
+      const FOUNDER_ID = "29b670b7-5296-44dc-a0a0-aec0d878ef9b";
+      const [founderRow] = await db.select().from(users).where(eq(users.id, FOUNDER_ID)).limit(1);
       const founder = founderRow || null;
 
       // ET date — Intl is immune to Replit's dev-server frozen clock
@@ -398,13 +399,27 @@ export async function registerRoutes(
       const period = (req.query.period as string) || "weekly";
       const league = req.query.league as string | undefined;
 
+      // Fetch total prize pool payouts per user (all time)
+      const { payouts } = await import("@shared/schema");
+      const prizeRows = await db
+        .select({ userId: payouts.userId, total: sql<number>`COALESCE(SUM(${payouts.amount}), 0)` })
+        .from(payouts)
+        .groupBy(payouts.userId);
+      const prizeMap: Record<string, number> = {};
+      for (const row of prizeRows) {
+        prizeMap[row.userId] = Math.round(Number(row.total) * 100) / 100;
+      }
+
+      const augment = (entries: any[]) =>
+        entries.map((e: any) => ({ ...e, totalPrizes: prizeMap[e.userId] ?? 0 }));
+
       if (league && league !== "ALL") {
         const sportLeaderboard = await storage.getLeaderboardByLeague(period, league);
-        return res.json(sportLeaderboard);
+        return res.json(augment(sportLeaderboard));
       }
 
       const leaderboard = await storage.getLeaderboard(period);
-      res.json(leaderboard);
+      res.json(augment(leaderboard));
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch leaderboard" });
     }
@@ -469,12 +484,16 @@ export async function registerRoutes(
       const enriched = await Promise.all(
         result.map(async (r) => {
           const user = await storage.getUser(r.userId);
+          const tier = user?.membershipTier || "rookie";
+          const perReferral = tier === "legend" ? 50 : tier === "pro" ? 10 : 5;
           return {
             userId: r.userId,
             activeReferrals: r.activeReferrals,
+            monthlyIncome: r.activeReferrals * perReferral,
             firstName: user?.firstName || null,
             lastName: user?.lastName || null,
             profileImageUrl: user?.profileImageUrl || null,
+            membershipTier: tier,
             isFounder: founderId ? r.userId === founderId : false,
           };
         })
@@ -620,6 +639,10 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/ads.txt", (_req, res) => {
+    res.redirect(301, "https://monetumo.com/ads-txt/betfans-us");
+  });
+
   app.get("/api/health", (_req, res) => {
     res.json({ status: "ok", ts: Date.now() });
   });
@@ -647,16 +670,20 @@ export async function registerRoutes(
       const now = new Date();
       const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       const yearStart = new Date(now.getFullYear(), 0, 1);
+      const epoch = new Date(0);
 
-      const [daily, yearContributions, dailyPaidThisYear] = await Promise.all([
+      const [daily, yearContributions, dailyPaidThisYear, allTimePaid] = await Promise.all([
         storage.getPrizePoolTotalByPeriod(dayStart),
         storage.getPrizePoolTotalByPeriod(yearStart),
         storage.getTotalPayoutsByPeriod(yearStart),
+        storage.getTotalPayoutsByPeriod(epoch),
       ]);
 
       const annualRemaining = Math.max(0, yearContributions - dailyPaidThisYear);
+      // Remaining pool = total contributions minus all payouts ever made
+      const remaining = Math.max(0, Math.round((total - allTimePaid) * 100) / 100);
 
-      res.json({ amount: total, daily, weekly: 0, monthly: 0, annual: annualRemaining });
+      res.json({ amount: remaining, daily, weekly: 0, monthly: 0, annual: annualRemaining });
     } catch (error) {
       res.json({ amount: 0, daily: 0, weekly: 0, monthly: 0, annual: 0 });
     }
@@ -824,8 +851,9 @@ export async function registerRoutes(
             if (referrer && referrer.id !== userId) {
               await storage.createReferral(referrer.id, userId);
               await db.update(users).set({ referredBy: referrer.id }).where(eq(users.id, userId));
-              // Instant signup bonus to referrer's wallet ($50 for Legend referrals, $1 otherwise)
-              const signupBonus = (confirmedTier === "legend" || referrer.membershipTier === "legend") ? 50 : 1;
+              // Instant signup bonus to referrer's wallet — tier-based
+              // Rookie join: $5 instant | Pro join: $10 instant | Legend join: $50 instant
+              const signupBonus = confirmedTier === "legend" ? 50 : confirmedTier === "pro" ? 10 : 5;
               const referrerBalance = parseFloat(referrer.walletBalance || "0");
               await storage.updateUser(referrer.id, { walletBalance: String(referrerBalance + signupBonus) });
               await storage.createTransaction({ userId: referrer.id, type: "referral_bonus", amount: signupBonus, description: `Signup bonus — ${upperCode} referred a ${confirmedTier} member`, status: "completed" });
