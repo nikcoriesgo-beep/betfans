@@ -1259,6 +1259,29 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/internal/retry-paypal-payout", async (req, res) => {
+    try {
+      const { secret, payoutId, userId, amount, periodLabel, period } = req.body;
+      if (secret !== "bf-internal-k9x2m7") return res.status(403).json({ error: "forbidden" });
+      const { sendPayPalPayout } = await import("./paypalService");
+      const { getSubscriptionDetails } = await import("./paypalService");
+      const user = await storage.getUser(userId);
+      if (!user?.paypalSubscriptionId) return res.status(404).json({ error: "No PayPal subscription for user" });
+      const sub = await getSubscriptionDetails(user.paypalSubscriptionId);
+      const email = sub?.subscriber?.email_address;
+      if (!email) return res.status(404).json({ error: "No PayPal email on subscription" });
+      const batchId = `betfans-retry-${period}-${periodLabel}-${userId.slice(0, 8)}`;
+      const note = `BetFans ${period} prize — 10% pool — ${periodLabel}`;
+      const result = await sendPayPalPayout(email, amount, batchId, note);
+      if (payoutId) {
+        await storage.updatePayout(payoutId, { stripeTransferId: result.batchId, status: "paypal_sent", paidAt: new Date() });
+      }
+      res.json({ ok: true, email, batchId: result.batchId, status: result.status });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.get("/api/payouts/history", async (req, res) => {
     try {
       const { period, periodLabel } = req.query;

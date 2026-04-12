@@ -1,11 +1,5 @@
 import { storage } from "./storage";
-
-export const PAYOUT_SPLITS: Record<string, number[]> = {
-  daily: [0.50, 0.30, 0.20],
-  weekly: [0.35, 0.25, 0.20, 0.12, 0.08],
-  monthly: [0.40, 0.25, 0.15, 0.12, 0.08],
-  annual: [0.30, 0.20, 0.15, 0.10, 0.08, 0.05, 0.04, 0.03, 0.03, 0.02],
-};
+import { sendPayPalPayout, getSubscriptionDetails } from "./paypalService";
 
 function getETMidnight(date: Date): Date {
   const etStr = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(date);
@@ -18,43 +12,98 @@ function getETMidnight(date: Date): Date {
   return new Date(Date.UTC(year, month - 1, day, offsetHours, 0, 0, 0));
 }
 
-export async function processPayoutForPeriod(
+async function getPayPalEmailForUser(userId: string): Promise<string | null> {
+  try {
+    const user = await storage.getUser(userId);
+    if (!user?.paypalSubscriptionId) return null;
+    const sub = await getSubscriptionDetails(user.paypalSubscriptionId);
+    return sub?.subscriber?.email_address || null;
+  } catch {
+    return null;
+  }
+}
+
+async function sendAndRecordPayout(
+  payoutId: number,
+  userId: string,
+  amount: number,
+  periodLabel: string,
   period: string,
+  tiedCount: number,
+  log: (msg: string) => void,
+): Promise<void> {
+  const email = await getPayPalEmailForUser(userId);
+
+  if (!email) {
+    log(`⚠ No PayPal email for ${userId} — wallet credited only, manual transfer needed`);
+    await storage.updatePayout(payoutId, {
+      status: "wallet_credited",
+      paidAt: new Date(),
+    });
+    return;
+  }
+
+  try {
+    const batchId = `betfans-${period}-${periodLabel}-${userId.slice(0, 8)}`;
+    const note = `BetFans ${period} prize — 10% pool${tiedCount > 1 ? ` split ${tiedCount} ways` : ""} — ${periodLabel}`;
+    const result = await sendPayPalPayout(email, amount, batchId, note);
+
+    await storage.updatePayout(payoutId, {
+      stripeTransferId: result.batchId,
+      status: "paypal_sent",
+      paidAt: new Date(),
+    });
+    log(`✓ PayPal payout sent to ${email} — batch ${result.batchId} (${result.status})`);
+  } catch (e: any) {
+    log(`✗ PayPal payout failed for ${userId}: ${e.message} — wallet still credited`);
+    await storage.updatePayout(payoutId, {
+      status: "wallet_credited",
+      paidAt: new Date(),
+    });
+  }
+}
+
+async function processDailyPayout(
   periodLabel: string,
   periodStart: Date,
   periodEnd: Date,
-  log: (msg: string) => void = console.log,
+  log: (msg: string) => void,
 ): Promise<{ paid: number; skipped: number; detail: string }> {
-  const splits = PAYOUT_SPLITS[period];
-  if (!splits) throw new Error(`Unknown period: ${period}`);
-  const topCount = splits.length;
-
-  const existing = await storage.getPayoutsByPeriod(period, periodLabel);
+  const existing = await storage.getPayoutsByPeriod("daily", periodLabel);
   if (existing.length > 0) {
-    return { paid: 0, skipped: 0, detail: `Already processed for ${period} ${periodLabel}` };
+    return { paid: 0, skipped: 0, detail: `Already processed for daily ${periodLabel}` };
   }
 
-  const leaderboard = await storage.getMLBLeaderboardForDateRange(periodStart, periodEnd, topCount * 5);
-  const topWinners = leaderboard.slice(0, topCount);
+  const poolAmount = (await storage.getPrizePoolTotalByPeriod(periodStart)) || 99;
+  const dailyShare = Math.floor(poolAmount * 0.10 * 100) / 100;
 
-  if (topWinners.length === 0) {
-    return { paid: 0, skipped: 0, detail: `No MLB winners for ${period} ${periodLabel}` };
+  const leaderboard = await storage.getMLBLeaderboardForDateRange(periodStart, periodEnd, 500);
+  if (leaderboard.length === 0) {
+    return { paid: 0, skipped: 0, detail: `No MLB picks for daily ${periodLabel}` };
   }
 
-  const poolAmount = await storage.getPrizePoolTotalByPeriod(periodStart);
-  if (poolAmount <= 0) {
-    return { paid: 0, skipped: 0, detail: `No prize pool funds for ${period} ${periodLabel}` };
+  const eligible = leaderboard.filter((e: any) => {
+    const tier = e.user?.membershipTier;
+    return tier === "legend" || tier === "pro" || tier === "rookie";
+  });
+  if (eligible.length === 0) {
+    return { paid: 0, skipped: 0, detail: `No qualifying members for daily ${periodLabel}` };
+  }
+
+  const sorted = [...eligible].sort((a: any, b: any) => b.roi - a.roi || b.wins - a.wins);
+  const topRoi = sorted[0].roi;
+  const topWins = sorted[0].wins;
+  const tied = sorted.filter((e: any) => e.roi === topRoi && e.wins === topWins);
+  const perWinner = Math.floor((dailyShare / tied.length) * 100) / 100;
+
+  if (perWinner < 0.01) {
+    return { paid: 0, skipped: 0, detail: `Payout amount too small for daily ${periodLabel}` };
   }
 
   let paid = 0;
   let skipped = 0;
 
-  for (let i = 0; i < topWinners.length; i++) {
-    const entry = topWinners[i];
-    const share = splits[i];
-    const payoutAmount = Math.floor(poolAmount * share * 100) / 100;
-    if (payoutAmount < 1) continue;
-
+  for (const entry of tied) {
     const entryUser = await storage.getUser(entry.userId);
     if (entryUser?.subscriptionCancelledAt) {
       log(`~ Payout skipped for ${entry.userId} — payment lapsed`);
@@ -64,44 +113,133 @@ export async function processPayoutForPeriod(
 
     const payout = await storage.createPayout({
       userId: entry.userId,
-      amount: payoutAmount,
-      period,
+      amount: perWinner,
+      period: "daily",
       periodLabel,
-      rank: i + 1,
-      sharePercent: share * 100,
-    });
-
-    await storage.updatePayout(payout.id, {
-      stripeTransferId: null,
-      status: "wallet_credited",
-      paidAt: new Date(),
+      rank: 1,
+      sharePercent: (0.10 / tied.length) * 100,
     });
 
     const updatedUser = await storage.getUser(entry.userId);
     if (updatedUser) {
       const currentBalance = parseFloat(updatedUser.walletBalance || "0");
       await storage.updateUser(entry.userId, {
-        walletBalance: String(currentBalance + payoutAmount),
+        walletBalance: String(currentBalance + perWinner),
       });
     }
 
     await storage.createTransaction({
       userId: entry.userId,
       type: "prize_payout",
-      amount: payoutAmount,
-      description: `BetFans ${period} prize payout — Rank #${i + 1} (${(share * 100).toFixed(0)}%) — ${periodLabel}`,
+      amount: perWinner,
+      description: `BetFans daily prize — 10% pool${tied.length > 1 ? ` split ${tied.length} ways` : ""} — ${periodLabel}`,
       status: "completed",
     });
 
-    log(`✓ Paid $${payoutAmount} to ${entry.userId} (Rank #${i + 1}, ${periodLabel})`);
+    await sendAndRecordPayout(payout.id, entry.userId, perWinner, periodLabel, "daily", tied.length, log);
+
+    log(`✓ Paid $${perWinner} to ${entry.userId} (daily winner, ${periodLabel})`);
     paid++;
   }
 
   return {
     paid,
     skipped,
-    detail: `${paid} winner(s) paid $${poolAmount.toFixed(2)} pool — ${skipped} skipped`,
+    detail: `${paid} winner(s) paid $${perWinner} each from $${poolAmount.toFixed(2)} pool — ${skipped} skipped`,
   };
+}
+
+async function processAnnualPayout(
+  periodLabel: string,
+  periodStart: Date,
+  periodEnd: Date,
+  log: (msg: string) => void,
+): Promise<{ paid: number; skipped: number; detail: string }> {
+  const existing = await storage.getPayoutsByPeriod("annual", periodLabel);
+  if (existing.length > 0) {
+    return { paid: 0, skipped: 0, detail: `Already processed for annual ${periodLabel}` };
+  }
+
+  const yearContributions = await storage.getPrizePoolTotalByPeriod(periodStart);
+  const dailyPaidThisYear = await storage.getTotalPayoutsByPeriod(periodStart);
+  const remainingPool = Math.max(0, yearContributions - dailyPaidThisYear);
+
+  if (remainingPool <= 0) {
+    return { paid: 0, skipped: 0, detail: `No remaining prize pool for annual ${periodLabel}` };
+  }
+
+  const leaderboard = await storage.getMLBLeaderboardForDateRange(periodStart, periodEnd, 500);
+  if (leaderboard.length === 0) {
+    return { paid: 0, skipped: 0, detail: `No MLB picks for annual ${periodLabel}` };
+  }
+
+  const topRoi = leaderboard[0].roi;
+  const topWins = leaderboard[0].wins;
+  const tied = leaderboard.filter((e: any) => e.roi === topRoi && e.wins === topWins);
+  const perWinnerAmount = Math.floor((remainingPool / tied.length) * 100) / 100;
+
+  let paid = 0;
+  let skipped = 0;
+
+  for (const entry of tied) {
+    const entryUser = await storage.getUser(entry.userId);
+    if (entryUser?.subscriptionCancelledAt) {
+      log(`~ Annual payout skipped for ${entry.userId} — payment lapsed`);
+      skipped++;
+      continue;
+    }
+
+    const payout = await storage.createPayout({
+      userId: entry.userId,
+      amount: perWinnerAmount,
+      period: "annual",
+      periodLabel,
+      rank: 1,
+      sharePercent: 100 / tied.length,
+    });
+
+    const updatedUser = await storage.getUser(entry.userId);
+    if (updatedUser) {
+      const currentBalance = parseFloat(updatedUser.walletBalance || "0");
+      await storage.updateUser(entry.userId, {
+        walletBalance: String(currentBalance + perWinnerAmount),
+      });
+    }
+
+    await storage.createTransaction({
+      userId: entry.userId,
+      type: "prize_payout",
+      amount: perWinnerAmount,
+      description: `BetFans annual prize — full remaining pool${tied.length > 1 ? ` split ${tied.length} ways` : ""} — ${periodLabel}`,
+      status: "completed",
+    });
+
+    await sendAndRecordPayout(payout.id, entry.userId, perWinnerAmount, periodLabel, "annual", tied.length, log);
+
+    log(`✓ Annual paid $${perWinnerAmount} to ${entry.userId} (${periodLabel})`);
+    paid++;
+  }
+
+  return {
+    paid,
+    skipped,
+    detail: `${paid} annual winner(s) paid $${remainingPool.toFixed(2)} remaining pool — ${skipped} skipped`,
+  };
+}
+
+export async function processPayoutForPeriod(
+  period: string,
+  periodLabel: string,
+  periodStart: Date,
+  periodEnd: Date,
+  log: (msg: string) => void = console.log,
+): Promise<{ paid: number; skipped: number; detail: string }> {
+  if (period === "daily") {
+    return processDailyPayout(periodLabel, periodStart, periodEnd, log);
+  } else if (period === "annual") {
+    return processAnnualPayout(periodLabel, periodStart, periodEnd, log);
+  }
+  throw new Error(`Unknown period: ${period}`);
 }
 
 export function getPayoutSchedule(now: Date): Array<{ period: string; periodLabel: string; periodStart: Date; periodEnd: Date }> {
@@ -120,32 +258,6 @@ export function getPayoutSchedule(now: Date): Array<{ period: string; periodLabe
     periodStart: yesterdayMidnightET,
     periodEnd: todayMidnightET,
   });
-
-  const etDow = new Date(now.toLocaleString("en-US", { timeZone: "America/New_York" })).getDay();
-  if (etDow === 1) {
-    const lastMonMidnight = getETMidnight(new Date(now.getTime() - 7 * 86400000));
-    const thisMonMidnight = getETMidnight(new Date(now.getTime() - 0 * 86400000));
-    const weekLabel = `${year}-W${Math.ceil((now.getTime() - new Date(Date.UTC(year, 0, 1)).getTime()) / 604800000) - 1}`;
-    results.push({
-      period: "weekly",
-      periodLabel: weekLabel,
-      periodStart: lastMonMidnight,
-      periodEnd: thisMonMidnight,
-    });
-  }
-
-  if (day === 1) {
-    const prevMonthYear = month === 1 ? year - 1 : year;
-    const prevMonth = month === 1 ? 12 : month - 1;
-    const firstOfPrevMonth = getETMidnight(new Date(Date.UTC(prevMonthYear, prevMonth - 1, 1)));
-    const firstOfThisMonth = yesterdayMidnightET;
-    results.push({
-      period: "monthly",
-      periodLabel: `${prevMonthYear}-${String(prevMonth).padStart(2, "0")}`,
-      periodStart: firstOfPrevMonth,
-      periodEnd: firstOfThisMonth,
-    });
-  }
 
   if (month === 1 && day === 1) {
     const lastYear = year - 1;
