@@ -23,13 +23,13 @@ import DailyPicks from "@/pages/daily-picks";
 import ArticleReader from "@/pages/article-reader";
 import Referrals from "@/pages/referrals";
 import ResidualIncome from "@/pages/residual-income";
+import HowToPlay from "@/pages/how-to-play";
 import Auth from "@/pages/auth";
 import { PhoneConsentModal } from "@/components/PhoneConsentModal";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 declare const __BUILD_ID__: string;
 
-const PUBLIC_PATHS = ["/", "/auth", "/membership"];
 const FOUNDER_CODES = ["NIKCOX"];
 const PAID_TIERS = ["rookie", "pro", "legend"];
 const BUILD_KEY = "bf_build_id";
@@ -38,24 +38,17 @@ function PaymentGate({ children }: { children: ReactNode }) {
   const { user, isLoading } = useAuth();
   const [location, navigate] = useLocation();
 
-  const isPublic = PUBLIC_PATHS.some(
-    (p) => location === p || location.startsWith(p + "?") || location.startsWith(p + "/")
-  );
-
   useEffect(() => {
-    if (isLoading || isPublic) return;
-    if (!user) {
-      navigate("/auth");
-      return;
-    }
+    if (isLoading || !user) return;
     const isFounder = FOUNDER_CODES.includes(user.referralCode ?? "");
     const isPaid = PAID_TIERS.includes(user.membershipTier ?? "");
-    if (!isFounder && !isPaid) {
+    const isMembershipPage = location === "/membership" || location.startsWith("/membership?");
+    const isAuthPage = location === "/auth" || location.startsWith("/auth?");
+    if (!isFounder && !isPaid && !isMembershipPage && !isAuthPage) {
       navigate("/membership");
     }
-  }, [user, isLoading, location, isPublic]);
+  }, [user, isLoading, location]);
 
-  if (isLoading && !isPublic) return null;
   return <>{children}</>;
 }
 
@@ -80,6 +73,7 @@ function Router() {
       <Route path="/daily-picks" component={DailyPicks} />
       <Route path="/referrals" component={Referrals} />
       <Route path="/residual-income" component={ResidualIncome} />
+      <Route path="/how-to-play" component={HowToPlay} />
       <Route path="/auth" component={Auth} />
       <Route path="/advertising" component={Advertising} />
       <Route path="/game/:id" component={GameDetail} />
@@ -131,7 +125,7 @@ function BuildVersionGuard() {
           if (affiliate) localStorage.setItem("betfans_affiliate_code", affiliate);
           localStorage.setItem(BUILD_KEY, __BUILD_ID__);
           queryClient.clear();
-          window.location.replace("/auth");
+          window.location.href = "/";
         });
     }
   }, []);
