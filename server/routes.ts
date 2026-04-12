@@ -1259,6 +1259,42 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/internal/paypal-refund-payout", async (req, res) => {
+    try {
+      const { secret, subscriptionId, amount, note } = req.body;
+      if (secret !== "bf-internal-k9x2m7") return res.status(403).json({ error: "forbidden" });
+      const clientId = process.env.PAYPAL_CLIENT_ID;
+      const clientSecret = process.env.PAYPAL_CLIENT_SECRET;
+      const creds = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
+      const tokenRes = await fetch("https://api-m.paypal.com/v1/oauth2/token", {
+        method: "POST",
+        headers: { Authorization: `Basic ${creds}`, "Content-Type": "application/x-www-form-urlencoded" },
+        body: "grant_type=client_credentials",
+      });
+      const { access_token: token } = await tokenRes.json() as any;
+      if (!token) return res.status(500).json({ error: "No PayPal token" });
+      // Get subscription transactions to find the capture ID
+      const txRes = await fetch(`https://api-m.paypal.com/v1/billing/subscriptions/${subscriptionId}/transactions?start_time=2026-01-01T00:00:00Z&end_time=${new Date().toISOString()}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const txData = await txRes.json() as any;
+      const transactions = txData?.transactions || [];
+      const completedTx = transactions.find((t: any) => t.status === "COMPLETED");
+      if (!completedTx) return res.status(404).json({ error: "No completed transaction found", raw: txData });
+      const captureId = completedTx.id;
+      // Issue a partial refund equal to the prize amount
+      const refundRes = await fetch(`https://api-m.paypal.com/v2/payments/captures/${captureId}/refund`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ amount: { value: amount.toFixed(2), currency_code: "USD" }, note_to_payer: note }),
+      });
+      const refundData = await refundRes.json() as any;
+      res.json({ status: refundRes.status, captureId, refundData });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.post("/api/internal/paypal-diag", async (req, res) => {
     try {
       const { secret } = req.body;
