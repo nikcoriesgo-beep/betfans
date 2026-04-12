@@ -5,6 +5,7 @@ import { eq, and, sql } from "drizzle-orm";
 const ESPN_ENDPOINTS: Record<string, string> = {
   MLB: "https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard",
   NBA: "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard",
+  NHL: "https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/scoreboard",
   MLS: "https://site.api.espn.com/apis/site/v2/sports/soccer/usa.1/scoreboard",
   NCAAB: "https://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard?groups=50",
 };
@@ -78,11 +79,12 @@ function gradePick(
   predType: string,
   homeTeam: string,
   awayTeam: string,
-  homeScore: number,
-  awayScore: number,
+  homeScore: number | null,
+  awayScore: number | null,
   spread: string | null,
   total: string | null,
 ): "win" | "loss" | "push" | "pending" {
+  if (homeScore === null || homeScore === undefined || awayScore === null || awayScore === undefined) return "pending";
   const pick = pickText.toLowerCase();
   const homeWords = homeTeam.toLowerCase().split(" ").filter((w) => w.length > 2);
   const awayWords = awayTeam.toLowerCase().split(" ").filter((w) => w.length > 2);
@@ -129,11 +131,14 @@ async function autoGradePredictions(
   gameId: number,
   homeTeam: string,
   awayTeam: string,
-  homeScore: number,
-  awayScore: number,
+  homeScore: number | null,
+  awayScore: number | null,
   spread: string | null,
   total: string | null,
 ): Promise<number> {
+  // Never grade on a 0-0 score — game hasn't started or data is bad
+  if (homeScore === 0 && awayScore === 0) return 0;
+
   const pending = await db
     .select()
     .from(predictions)
@@ -330,7 +335,7 @@ export async function gradeStuckGames(): Promise<number> {
   // Bug fix: the old 4-hour cutoff missed late west coast games that finish
   // before their start time + 4h. Any game marked "live" needs immediate re-check.
   const liveGames = await db.select().from(games)
-    .where(sql`${games.status} = 'live' AND ${games.league} IN ('MLB','NBA','MLS','NCAAB')`);
+    .where(sql`${games.status} = 'live' AND ${games.league} IN ('MLB','NBA','NHL','MLS','NCAAB')`);
 
   if (liveGames.length > 0) {
     console.log(`[spider] gradeStuckGames: re-checking ${liveGames.length} live game(s) for completion`);
@@ -349,7 +354,7 @@ export async function gradeStuckGames(): Promise<number> {
   const cutoff = new Date(Date.now() - 2 * 60 * 60 * 1000);
   const oldCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const stuckUpcoming = await db.select().from(games)
-    .where(sql`${games.status} = 'upcoming' AND ${games.gameTime} < ${cutoff} AND ${games.gameTime} > ${oldCutoff} AND ${games.league} IN ('MLB','NBA','MLS','NCAAB','NCAABB')`);
+    .where(sql`${games.status} = 'upcoming' AND ${games.gameTime} < ${cutoff} AND ${games.gameTime} > ${oldCutoff} AND ${games.league} IN ('MLB','NBA','NHL','MLS','NCAAB','NCAABB')`);
 
   if (stuckUpcoming.length > 0) {
     console.log(`[spider] gradeStuckGames: found ${stuckUpcoming.length} upcoming game(s) past start time — checking`);
@@ -373,31 +378,53 @@ export async function gradeStuckGames(): Promise<number> {
 }
 
 async function gradeYesterdayGames(): Promise<void> {
-  // Fetch yesterday's date in ET and grade any unfinished games from it
-  // This catches late west coast games (e.g. 9:40 PM PT) that finish after midnight UTC
-  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
-  const dateStr = getETDateStr(yesterday);
-  const activeLeagues = ["MLB", "NBA", "MLS", "NCAAB"];
-  for (const league of activeLeagues) {
-    const graded = await fetchAndGradeForLeagueDate(league, dateStr);
-    if (graded > 0) console.log(`[spider] yesterday-sweep: graded ${graded} picks for ${league} on ${dateStr}`);
+  // Look back 3 days to catch postponed/rescheduled games that finally played
+  // West coast games, doubleheaders, and weather postponements all handled
+  const activeLeagues = ["MLB", "NBA", "NHL", "MLS", "NCAAB"];
+  for (let daysBack = 1; daysBack <= 3; daysBack++) {
+    const d = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
+    const dateStr = getETDateStr(d);
+    for (const league of activeLeagues) {
+      const graded = await fetchAndGradeForLeagueDate(league, dateStr);
+      if (graded > 0) console.log(`[spider] lookback-${daysBack}d: graded ${graded} picks for ${league} on ${dateStr}`);
+    }
+  }
+}
+
+async function auditStalePicks(): Promise<void> {
+  // Warn when any pick is still pending 36+ hours after submission — signals a grading gap
+  const cutoff = new Date(Date.now() - 36 * 60 * 60 * 1000);
+  const stale = await db
+    .select({ pred: predictions, game: games })
+    .from(predictions)
+    .innerJoin(games, eq(predictions.gameId, games.id))
+    .where(sql`${predictions.result} = 'pending' AND ${predictions.createdAt} < ${cutoff}`);
+  if (stale.length > 0) {
+    console.log(`[spider] ⚠ STALE PICKS: ${stale.length} pick(s) ungraded after 36h:`);
+    for (const row of stale) {
+      console.log(`  → pick="${row.pred.pick}" game="${row.game.awayTeam} @ ${row.game.homeTeam}" status=${row.game.status} gameTime=${row.game.gameTime}`);
+    }
   }
 }
 
 export async function syncSportsData(): Promise<{ synced: number; leagues: string[] }> {
   console.log("[spider] Syncing live sports data from ESPN...");
 
-  // Grade yesterday's late games first (west coast games finishing after midnight UTC)
+  // Look back 3 days for postponed/rescheduled games + late west coast finishers
   await gradeYesterdayGames().catch((e) => console.log("[spider] gradeYesterday error:", e));
 
-  // Always grade any stuck games first (picks from yesterday or earlier that didn't get graded)
+  // Grade any stuck picks on already-finished games
   await gradeStuckGames().catch((e) => console.log("[spider] gradeStuckGames error:", e));
+
+  // Audit: warn if any pick is still pending after 36h — surfaces grading gaps immediately
+  await auditStalePicks().catch((e) => console.log("[spider] auditStalePicks error:", e));
 
   const now = new Date();
   const month = now.getMonth() + 1;
   const seasonActive: Record<string, boolean> = {
     MLB: month >= 3 && month <= 10,
     NBA: month >= 10 || month <= 6,
+    NHL: month >= 10 || month <= 6,
     MLS: month >= 2 && month <= 11,
     NCAAB: month >= 11 || month <= 4,
   };
@@ -444,7 +471,7 @@ export async function syncSportsData(): Promise<{ synced: number; leagues: strin
         }).where(eq(games.id, prev.id));
 
         if (
-          game.status === "finished" &&
+          safeStatus === "finished" &&
           game.homeScore !== null &&
           game.awayScore !== null
         ) {
