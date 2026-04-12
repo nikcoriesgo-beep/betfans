@@ -1259,6 +1259,41 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/internal/paypal-diag", async (req, res) => {
+    try {
+      const { secret } = req.body;
+      if (secret !== "bf-internal-k9x2m7") return res.status(403).json({ error: "forbidden" });
+      const clientId = process.env.PAYPAL_CLIENT_ID;
+      const clientSecret = process.env.PAYPAL_CLIENT_SECRET;
+      const creds = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
+      const tokenRes = await fetch("https://api-m.paypal.com/v1/oauth2/token", {
+        method: "POST",
+        headers: { Authorization: `Basic ${creds}`, "Content-Type": "application/x-www-form-urlencoded" },
+        body: "grant_type=client_credentials",
+      });
+      const tokenData = await tokenRes.json() as any;
+      const token = tokenData.access_token;
+      if (!token) return res.json({ step: "token", status: tokenRes.status, data: tokenData });
+      // Try payout with full raw response
+      const payoutRes = await fetch("https://api-m.paypal.com/v1/payments/payouts", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sender_batch_header: { sender_batch_id: "diag-test-001", email_subject: "Test" },
+          items: [{ recipient_type: "EMAIL", amount: { value: "0.01", currency: "USD" }, receiver: "test@example.com", sender_item_id: "diag-001", note: "test" }]
+        }),
+      });
+      const payoutData = await payoutRes.json() as any;
+      const userInfoRes = await fetch("https://api-m.paypal.com/v1/oauth2/token/userinfo?schema=paypalv1.1", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const userInfo = await userInfoRes.json() as any;
+      res.json({ tokenOk: true, scopes: tokenData.scope, payoutStatus: payoutRes.status, payoutRaw: payoutData, userInfo });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.post("/api/internal/retry-paypal-payout", async (req, res) => {
     try {
       const { secret, payoutId, userId, amount, periodLabel, period } = req.body;
