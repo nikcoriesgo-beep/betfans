@@ -463,11 +463,7 @@ export default function Profile() {
     reader.readAsDataURL(file);
   };
 
-  useEffect(() => {
-    if (!isLoading && !isAuthenticated && !viewUserId) {
-      window.location.href = "/auth";
-    }
-  }, [isAuthenticated, isLoading, viewUserId]);
+  const showSignInPrompt = !isLoading && !isAuthenticated && !viewUserId;
 
   const { data: stats } = useQuery({
     queryKey: ["/api/stats"],
@@ -509,6 +505,25 @@ export default function Profile() {
   const tierLabel = tier === "legend" ? "LEGEND" : tier === "pro" ? "PRO MEMBER" : "ROOKIE";
 
   const formatDate = (dateStr: string) => new Date(dateStr).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+
+  if (showSignInPrompt) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Navbar />
+        <div className="container mx-auto px-4 pt-32 pb-12 flex flex-col items-center justify-center text-center gap-6">
+          <div className="w-20 h-20 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center">
+            <Lock size={36} className="text-primary" />
+          </div>
+          <h1 className="text-3xl font-display font-bold">Sign In to View Your Profile</h1>
+          <p className="text-muted-foreground max-w-sm">Your picks, wallet, and stats are waiting. Sign in to access your personal dashboard.</p>
+          <div className="flex gap-3">
+            <a href="/auth"><Button className="gap-2 font-display font-bold px-6">Sign In</Button></a>
+            <a href="/auth?mode=signup"><Button variant="outline" className="gap-2 px-6">Create Account</Button></a>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">
