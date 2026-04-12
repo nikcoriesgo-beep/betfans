@@ -83,7 +83,7 @@ function QuickPickButtons({ game, userPicks }: { game: any; userPicks: Record<nu
           e.preventDefault();
           e.stopPropagation();
           if (!isAuthenticated) {
-            window.location.href = "/auth";
+            toast({ title: "Sign in to make picks", description: "Join BetFans to start predicting games and win cash.", variant: "default" });
             return;
           }
           pickMutation.mutate(`${game.awayTeam} ML`);
@@ -99,7 +99,7 @@ function QuickPickButtons({ game, userPicks }: { game: any; userPicks: Record<nu
           e.preventDefault();
           e.stopPropagation();
           if (!isAuthenticated) {
-            window.location.href = "/auth";
+            toast({ title: "Sign in to make picks", description: "Join BetFans to start predicting games and win cash.", variant: "default" });
             return;
           }
           pickMutation.mutate(`${game.homeTeam} ML`);

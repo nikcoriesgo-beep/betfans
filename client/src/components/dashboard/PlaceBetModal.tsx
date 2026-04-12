@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
+import { useToast } from "@/hooks/use-toast";
 
 interface PlaceBetModalProps {
   trigger?: React.ReactNode;
@@ -24,6 +25,7 @@ export function PlaceBetModal({ trigger, defaultGame }: PlaceBetModalProps) {
   const [selectedType, setSelectedType] = useState("spread");
   const [selectedSide, setSelectedSide] = useState<"home" | "away" | "over" | "under" | null>(null);
   const { isAuthenticated } = useAuth();
+  const { toast } = useToast();
 
   const game = defaultGame || {
     id: 1,
@@ -64,7 +66,7 @@ export function PlaceBetModal({ trigger, defaultGame }: PlaceBetModalProps) {
 
   const handlePlace = () => {
     if (!isAuthenticated) {
-      window.location.href = "/auth";
+      toast({ title: "Sign in to make picks", description: "Join BetFans to start predicting games and win cash.", variant: "default" });
       return;
     }
     setStep(2);
