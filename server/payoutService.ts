@@ -1,5 +1,5 @@
 import { storage } from "./storage";
-import { sendPayPalPayout, getSubscriptionDetails } from "./paypalService";
+import { sendPayPalSubscriptionRefund } from "./paypalService";
 
 function getETMidnight(date: Date): Date {
   const etStr = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(date);
@@ -12,17 +12,6 @@ function getETMidnight(date: Date): Date {
   return new Date(Date.UTC(year, month - 1, day, offsetHours, 0, 0, 0));
 }
 
-async function getPayPalEmailForUser(userId: string): Promise<string | null> {
-  try {
-    const user = await storage.getUser(userId);
-    if (!user?.paypalSubscriptionId) return null;
-    const sub = await getSubscriptionDetails(user.paypalSubscriptionId);
-    return sub?.subscriber?.email_address || null;
-  } catch {
-    return null;
-  }
-}
-
 async function sendAndRecordPayout(
   payoutId: number,
   userId: string,
@@ -32,34 +21,27 @@ async function sendAndRecordPayout(
   tiedCount: number,
   log: (msg: string) => void,
 ): Promise<void> {
-  const email = await getPayPalEmailForUser(userId);
+  const user = await storage.getUser(userId);
+  const subscriptionId = user?.paypalSubscriptionId;
 
-  if (!email) {
-    log(`⚠ No PayPal email for ${userId} — wallet credited only, manual transfer needed`);
-    await storage.updatePayout(payoutId, {
-      status: "wallet_credited",
-      paidAt: new Date(),
-    });
+  if (!subscriptionId) {
+    log(`⚠ No PayPal subscription for ${userId} — wallet credited only`);
+    await storage.updatePayout(payoutId, { status: "wallet_credited", paidAt: new Date() });
     return;
   }
 
   try {
-    const batchId = `betfans-${period}-${periodLabel}-${userId.slice(0, 8)}`;
     const note = `BetFans ${period} prize — 10% pool${tiedCount > 1 ? ` split ${tiedCount} ways` : ""} — ${periodLabel}`;
-    const result = await sendPayPalPayout(email, amount, batchId, note);
-
+    const result = await sendPayPalSubscriptionRefund(subscriptionId, amount, note);
     await storage.updatePayout(payoutId, {
-      stripeTransferId: result.batchId,
+      stripeTransferId: result.refundId,
       status: "paypal_sent",
       paidAt: new Date(),
     });
-    log(`✓ PayPal payout sent to ${email} — batch ${result.batchId} (${result.status})`);
+    log(`✓ PayPal refund payout sent to subscription ${subscriptionId} — refund ${result.refundId} (${result.status})`);
   } catch (e: any) {
-    log(`✗ PayPal payout failed for ${userId}: ${e.message} — wallet still credited`);
-    await storage.updatePayout(payoutId, {
-      status: "wallet_credited",
-      paidAt: new Date(),
-    });
+    log(`✗ PayPal refund payout failed for ${userId}: ${e.message} — wallet still credited`);
+    await storage.updatePayout(payoutId, { status: "wallet_credited", paidAt: new Date() });
   }
 }
 
