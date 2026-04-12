@@ -11,10 +11,13 @@ export function PrizePoolQualRule({ compact = false, className }: Props) {
     return (
       <div className={cn("rounded-lg border border-yellow-400/40 bg-yellow-500/10 px-4 py-3 flex items-start gap-3", className)} data-testid="prize-pool-qual-rule-compact">
         <AlertTriangle size={16} className="text-yellow-400 shrink-0 mt-0.5" />
-        <p className="text-xs text-yellow-100/90 leading-relaxed">
-          <span className="font-black text-yellow-300">Prize Pool Rule: </span>
-          You must pick <strong className="text-yellow-200">every MLB game</strong> each day to qualify for payouts. Missing even one game disqualifies you. <strong className="text-yellow-200">MLB picks only</strong> — no other sport counts.
-        </p>
+        <div>
+          <p className="text-xs text-yellow-100/90 leading-relaxed">
+            <span className="font-black text-yellow-300">Prize Pool Rule: </span>
+            You must pick <strong className="text-yellow-200">every MLB game</strong> each day to qualify for payouts. Missing even one game disqualifies you. <strong className="text-yellow-200">MLB picks only</strong> — no other sport counts.
+          </p>
+          <p className="mt-1.5 text-xs text-yellow-300/50">* All members must predict over 2,000 MLB games to qualify for the annual prize pool payout.</p>
+        </div>
       </div>
     );
   }
@@ -43,6 +46,7 @@ export function PrizePoolQualRule({ compact = false, className }: Props) {
             </li>
           </ul>
           <p className="mt-2 text-xs text-yellow-300/70">Applies to daily and annual prize pool payouts.</p>
+          <p className="mt-2 text-xs text-yellow-300/50">* All members must predict over 2,000 MLB games to qualify for the annual prize pool payout.</p>
         </div>
       </div>
     </div>

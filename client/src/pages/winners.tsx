@@ -228,6 +228,7 @@ function AnnualPrizePoolTracker({ annualAmount }: { annualAmount: number }) {
           All remaining prize pool accumulates here after daily payouts. Awarded to the best MLB predictor(s) of the year on Jan 1st.
           Tied annual winners split the pool equally.
         </p>
+        <p className="mt-1.5 text-[10px] text-muted-foreground/50">* All members must predict over 2,000 MLB games to qualify for the annual prize pool payout.</p>
       </CardContent>
     </Card>
   );
