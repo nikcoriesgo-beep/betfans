@@ -142,7 +142,14 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getGames(league?: string): Promise<Game[]> {
-    const cutoff = new Date(Date.now() - 12 * 60 * 60 * 1000);
+    // Use ET midnight today as cutoff so yesterday's finished games never bleed in
+    const etDateStr = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
+    const [y, m, d] = etDateStr.split("-").map(Number);
+    const now = new Date();
+    const dstStart = new Date(Date.UTC(y, 2, 8 + ((7 - new Date(Date.UTC(y, 2, 8)).getUTCDay()) % 7), 7));
+    const dstEnd = new Date(Date.UTC(y, 10, 1 + ((7 - new Date(Date.UTC(y, 10, 1)).getUTCDay()) % 7), 6));
+    const offsetHours = (now >= dstStart && now < dstEnd) ? 4 : 5;
+    const cutoff = new Date(Date.UTC(y, m - 1, d, offsetHours, 0, 0, 0)); // ET midnight in UTC
     if (league && league !== "ALL") {
       return db.select().from(games)
         .where(and(eq(games.league, league), sql`${games.gameTime} >= ${cutoff} AND ${games.status} != 'postponed'`))
@@ -225,7 +232,8 @@ export class DatabaseStorage implements IStorage {
     if (period === "last24h") {
       return new Date(Date.now() - 24 * 60 * 60 * 1000);
     } else if (period === "daily") {
-      return new Date(Date.UTC(year, month - 1, day, offsetHours, 0, 0, 0));
+      // Start from yesterday midnight ET so graded picks from yesterday appear
+      return new Date(Date.UTC(year, month - 1, day - 1, offsetHours, 0, 0, 0));
     } else if (period === "weekly") {
       const etDow = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' })).getDay();
       const daysSinceSunday = etDow;
