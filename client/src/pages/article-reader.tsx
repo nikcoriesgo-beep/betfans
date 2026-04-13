@@ -1,4 +1,5 @@
 import { Navbar } from "@/components/layout/Navbar";
+import { AdBannerTop, AdBannerInline } from "@/components/AdBanner";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, ExternalLink, Loader2 } from "lucide-react";
 import { useState } from "react";
@@ -15,6 +16,7 @@ export default function ArticleReader() {
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <Navbar />
+      <AdBannerTop />
       <div className="pt-16 flex flex-col flex-1">
         <div className="border-b border-white/5 bg-card/30 px-4 py-2 flex items-center gap-3">
           <Button
@@ -69,6 +71,7 @@ export default function ArticleReader() {
           )}
         </div>
       </div>
+      <AdBannerInline />
     </div>
   );
 }

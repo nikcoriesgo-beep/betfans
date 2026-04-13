@@ -1,4 +1,5 @@
 import { Navbar } from "@/components/layout/Navbar";
+import { AdBannerTop, AdBannerInline } from "@/components/AdBanner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -37,6 +38,7 @@ export default function GameDetail() {
     return (
       <div className="min-h-screen bg-background">
         <Navbar />
+      <AdBannerTop />
         <div className="container mx-auto px-4 pt-24 pb-12 flex justify-center">
           <div className="w-12 h-12 border-4 border-primary/30 border-t-primary rounded-full animate-spin" />
         </div>
@@ -48,6 +50,7 @@ export default function GameDetail() {
     return (
       <div className="min-h-screen bg-background">
         <Navbar />
+      <AdBannerTop />
         <div className="container mx-auto px-4 pt-24 pb-12 text-center">
           <h1 className="text-2xl font-bold">Game not found</h1>
           <Link href="/dashboard"><Button variant="outline" className="mt-4">Back to Dashboard</Button></Link>
@@ -59,6 +62,7 @@ export default function GameDetail() {
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
+      <AdBannerTop />
       <div className="container mx-auto px-4 pt-24 pb-12">
         <Link href="/dashboard">
           <Button variant="ghost" className="gap-2 mb-6 text-muted-foreground hover:text-primary pl-0" data-testid="button-back">
@@ -237,6 +241,7 @@ export default function GameDetail() {
           </div>
         </div>
       </div>
+      <AdBannerInline />
     </div>
   );
 }

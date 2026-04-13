@@ -1,4 +1,5 @@
 import { Navbar } from "@/components/layout/Navbar";
+import { AdBannerTop, AdBannerInline } from "@/components/AdBanner";
 import { PrizePoolQualRule } from "@/components/PrizePoolQualRule";
 import { Button } from "@/components/ui/button";
 import { Check, Star, Crown, Clock, Trophy, Calendar, Lock, Users, Gift, DollarSign, X, ArrowRight, Copy, ExternalLink } from "lucide-react";
@@ -179,6 +180,7 @@ export default function Membership() {
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
+      <AdBannerTop />
       <div className="container mx-auto px-4 pt-24 pb-20">
 
         {/* Header */}
@@ -187,7 +189,7 @@ export default function Membership() {
             Unlock Your Full Potential
           </h1>
           <p className="text-xl text-muted-foreground">
-            Join the elite community of sports analysts. Track your stats, compete for daily prize pools, and earn up to $50/month residual income for every Legend member you refer.
+            Join the elite community of sports analysts. Make picks, compete for daily prize pools, and earn instant payouts + residual income for every member you refer — $5 to $50/month per referral.
           </p>
         </div>
 
@@ -207,16 +209,16 @@ export default function Membership() {
               <div className="bg-background/40 backdrop-blur-md border border-white/10 rounded-xl p-6 text-center hover:border-primary/40 transition-colors">
                 <div className="w-12 h-12 rounded-full bg-primary/20 text-primary flex items-center justify-center mx-auto mb-4"><Clock size={24} /></div>
                 <div className="text-xs text-muted-foreground uppercase tracking-widest mb-1">Daily Winner</div>
-                <div className="text-3xl font-bold font-display text-primary mb-1">4% · 5% · 10%</div>
+                <div className="text-3xl font-bold font-display text-primary mb-1">10%</div>
                 <h3 className="font-bold text-base mb-2">One Winner Per Day</h3>
-                <p className="text-xs text-muted-foreground">Each day the top predictor wins. Rookie winners earn 4%, Pro 5%, Legend 10% of the annual prize pool. Ties split the 10% max equally.</p>
+                <p className="text-xs text-muted-foreground">All tiers compete together. The day's best MLB predictor wins 10% of the prize pool. Tied winners split the 10% equally.</p>
               </div>
               <div className="bg-background/40 backdrop-blur-md border border-primary/30 rounded-xl p-6 text-center hover:border-primary/60 transition-colors transform md:-translate-y-4 shadow-xl">
                 <div className="w-14 h-14 rounded-full bg-primary/20 text-primary flex items-center justify-center mx-auto mb-4"><Crown size={28} /></div>
-                <div className="text-xs text-muted-foreground uppercase tracking-widest mb-1">Legend Tier</div>
+                <div className="text-xs text-muted-foreground uppercase tracking-widest mb-1">All Tiers</div>
                 <div className="text-5xl font-bold font-display text-primary mb-1">10%</div>
-                <h3 className="font-bold text-lg mb-2">Max Daily Payout</h3>
-                <p className="text-xs text-muted-foreground">Legend members earn the highest daily payout. 10% of the annual pool — the maximum any single winner can receive in a day.</p>
+                <h3 className="font-bold text-lg mb-2">Daily Prize Payout</h3>
+                <p className="text-xs text-muted-foreground">Every member — Rookie, Pro, and Legend — competes on equal footing for the same daily 10% payout.</p>
               </div>
               <div className="bg-background/40 backdrop-blur-md border border-white/10 rounded-xl p-6 text-center hover:border-primary/40 transition-colors">
                 <div className="w-12 h-12 rounded-full bg-primary/20 text-primary flex items-center justify-center mx-auto mb-4"><Trophy size={24} /></div>
@@ -262,13 +264,17 @@ export default function Membership() {
                 </div>
 
                 {/* Earnings breakdown */}
-                <div className="grid grid-cols-2 gap-3 mb-5">
+                <div className="grid grid-cols-3 gap-3 mb-5">
                   <div className="bg-background/40 rounded-xl p-4 text-center border border-white/5">
-                    <p className="text-2xl font-bold text-primary">$1<span className="text-sm font-normal text-muted-foreground">/mo</span></p>
-                    <p className="text-xs text-muted-foreground mt-1">per Rookie or Pro referral</p>
+                    <p className="text-xl font-bold text-primary">$5<span className="text-xs font-normal text-muted-foreground">/mo</span></p>
+                    <p className="text-xs text-muted-foreground mt-1">per Rookie referral</p>
+                  </div>
+                  <div className="bg-background/40 rounded-xl p-4 text-center border border-primary/20">
+                    <p className="text-xl font-bold text-primary">$10<span className="text-xs font-normal text-muted-foreground">/mo</span></p>
+                    <p className="text-xs text-muted-foreground mt-1">per Pro referral</p>
                   </div>
                   <div className="bg-background/40 rounded-xl p-4 text-center border border-yellow-500/20">
-                    <p className="text-2xl font-bold text-yellow-400">$50<span className="text-sm font-normal text-muted-foreground">/mo</span></p>
+                    <p className="text-xl font-bold text-yellow-400">$50<span className="text-xs font-normal text-muted-foreground">/mo</span></p>
                     <p className="text-xs text-muted-foreground mt-1">per Legend referral</p>
                   </div>
                 </div>
@@ -322,8 +328,7 @@ export default function Membership() {
                         {affiliateCode || "NIKCOX"}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        This code earns <span className="text-primary font-semibold">$1/mo</span> (Rookie/Pro) or{" "}
-                        <span className="text-yellow-400 font-semibold">$50/mo</span> (Legend) for the referrer
+                        Referrer earns <span className="text-primary font-semibold">$5/mo</span> (Rookie) · <span className="text-primary font-semibold">$10/mo</span> (Pro) · <span className="text-yellow-400 font-semibold">$50/mo</span> (Legend) + an instant bonus
                       </p>
                     </div>
 
@@ -357,13 +362,40 @@ export default function Membership() {
                       <a href="/referrals" className="text-primary hover:underline">
                         Get your affiliate link
                       </a>{" "}
-                      and earn $1–$50/month for every member you bring in.
+                      and earn $5–$50/month residual + instant bonuses for every member you bring in.
                     </p>
                   </>
                 )}
               </CardContent>
             </Card>
           )}
+        </div>
+
+        {/* ── Referral Tier Rules ── */}
+        <div className="max-w-6xl mx-auto mb-8">
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <Crown size={16} className="text-yellow-400" />
+              <p className="text-sm font-display font-bold uppercase tracking-widest">Referral Tier Rules</p>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="rounded-xl bg-yellow-500/5 border border-yellow-500/20 p-3 text-center">
+                <Crown size={18} className="text-yellow-400 mx-auto mb-1" />
+                <p className="text-xs font-bold text-yellow-400 mb-1">Legend</p>
+                <p className="text-[11px] text-muted-foreground leading-snug">Can refer <span className="text-white font-medium">Rookie, Pro & Legend</span> members</p>
+              </div>
+              <div className="rounded-xl bg-primary/5 border border-primary/20 p-3 text-center">
+                <Star size={18} className="text-primary mx-auto mb-1" />
+                <p className="text-xs font-bold text-primary mb-1">Pro</p>
+                <p className="text-[11px] text-muted-foreground leading-snug">Can refer <span className="text-white font-medium">Rookie & Pro</span> members only</p>
+              </div>
+              <div className="rounded-xl bg-white/5 border border-white/10 p-3 text-center">
+                <Users size={18} className="text-muted-foreground mx-auto mb-1" />
+                <p className="text-xs font-bold text-muted-foreground mb-1">Rookie</p>
+                <p className="text-[11px] text-muted-foreground leading-snug">Can refer <span className="text-white font-medium">Rookie</span> members only</p>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* ── Pricing Grid ── */}
@@ -376,7 +408,15 @@ export default function Membership() {
               <CardDescription>For casual predictors</CardDescription>
             </CardHeader>
             <CardContent className="flex-1">
-              <div className="text-4xl font-bold mb-6">$19<span className="text-lg text-muted-foreground font-normal">/mo</span></div>
+              <div className="text-4xl font-bold mb-2">$19<span className="text-lg text-muted-foreground font-normal">/mo</span></div>
+              <div className="bg-primary/5 border border-primary/20 rounded-xl p-3 mb-5">
+                <p className="text-primary font-display font-bold text-sm flex items-center gap-2">
+                  <DollarSign size={14} /> $5 Instant + $5/mo Per Referral
+                </p>
+                <p className="text-xs text-primary/70 mt-1">
+                  Get <span className="font-bold text-primary">$5 instantly</span> when someone joins + <span className="font-bold text-primary">$5/month</span> residual income while they stay active
+                </p>
+              </div>
               <ul className="space-y-4">
                 {["Basic Stats Tracking", "Daily Leaderboard Access", "Follow up to 5 Pros", "Community Forum Access"].map((f, i) => (
                   <li key={i} className="flex items-center gap-3 text-sm">
@@ -390,9 +430,30 @@ export default function Membership() {
                 </li>
               </ul>
             </CardContent>
-            <CardFooter>
+            <CardFooter className="flex flex-col gap-2">
               {currentTier === "rookie" ? (
-                <Button variant="outline" className="w-full" disabled data-testid="button-current-plan">Current Plan</Button>
+                <>
+                  <Button variant="outline" className="w-full" disabled data-testid="button-current-plan">Current Plan</Button>
+                  <div className="flex gap-2 w-full">
+                    <Button
+                      size="sm"
+                      className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90 text-xs"
+                      onClick={() => handleUpgrade("pro")}
+                      data-testid="button-rookie-upgrade-pro"
+                    >
+                      Upgrade to Pro — $29/mo
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="flex-1 border-yellow-500/40 text-yellow-400 hover:bg-yellow-500/10 text-xs"
+                      onClick={() => handleUpgrade("legend")}
+                      data-testid="button-rookie-upgrade-legend"
+                    >
+                      Upgrade to Legend — $99/mo
+                    </Button>
+                  </div>
+                </>
               ) : isPro ? (
                 <Button variant="outline" className="w-full" disabled data-testid="button-rookie-tier">Rookie Tier</Button>
               ) : (
@@ -415,7 +476,15 @@ export default function Membership() {
               <CardDescription>For serious handicappers</CardDescription>
             </CardHeader>
             <CardContent className="flex-1">
-              <div className="text-4xl font-bold mb-6">$29<span className="text-lg text-muted-foreground font-normal">/mo</span></div>
+              <div className="text-4xl font-bold mb-2">$29<span className="text-lg text-muted-foreground font-normal">/mo</span></div>
+              <div className="bg-primary/10 border border-primary/30 rounded-xl p-3 mb-5">
+                <p className="text-primary font-display font-bold text-sm flex items-center gap-2">
+                  <DollarSign size={14} /> $10 Instant + $10/mo Per Referral
+                </p>
+                <p className="text-xs text-primary/70 mt-1">
+                  Get <span className="font-bold text-primary">$10 instantly</span> when someone joins + <span className="font-bold text-primary">$10/month</span> residual income while they stay active
+                </p>
+              </div>
               <ul className="space-y-4">
                 {["Eligible for Prize Pools", "Unlock Spider AI Picks", "View Members' Daily Picks", "Advanced ROI Analytics", "Unlimited Following", "Verified 'Pro' Badge", "Ad-Free Experience"].map((f, i) => (
                   <li key={i} className="flex items-center gap-3 text-sm font-medium">
@@ -427,9 +496,20 @@ export default function Membership() {
                 ))}
               </ul>
             </CardContent>
-            <CardFooter>
+            <CardFooter className="flex flex-col gap-2">
               {user?.membershipTier === "pro" ? (
-                <Button className="w-full" disabled>Current Plan</Button>
+                <>
+                  <Button className="w-full" disabled>Current Plan</Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full border-yellow-500/40 text-yellow-400 hover:bg-yellow-500/10 text-xs"
+                    onClick={() => handleUpgrade("legend")}
+                    data-testid="button-pro-upgrade-legend"
+                  >
+                    Upgrade to Legend — $99/mo
+                  </Button>
+                </>
               ) : (
                 <Button
                   className="w-full bg-primary text-primary-foreground hover:bg-primary/90 h-12 text-base shadow-lg shadow-primary/20"
@@ -547,8 +627,8 @@ export default function Membership() {
               {/* What you get */}
               <div className="bg-background/40 rounded-xl p-4 border border-white/5">
                 <p className="text-sm font-semibold mb-2">What you get:</p>
-                {checkoutTier === "rookie" && <p className="text-sm text-muted-foreground">Stats tracking, leaderboard access, community forum + 50% prize pool contributions.</p>}
-                {checkoutTier === "pro" && <p className="text-sm text-muted-foreground">Everything in Rookie + Spider AI picks, prize pool eligibility, Pro badge, and ad-free experience.</p>}
+                {checkoutTier === "rookie" && <p className="text-sm text-muted-foreground">Stats tracking, leaderboard access, community forum + <span className="text-primary font-semibold">$5 instant payout</span> + <span className="text-primary font-semibold">$5/mo residual income</span> per referral.</p>}
+                {checkoutTier === "pro" && <p className="text-sm text-muted-foreground">Everything in Rookie + Spider AI picks, Pro badge, and <span className="text-primary font-semibold">$10 instant payout</span> + <span className="text-primary font-semibold">$10/mo residual income</span> per referral.</p>}
                 {checkoutTier === "legend" && <p className="text-sm text-muted-foreground">Everything in Pro + <span className="text-yellow-400 font-semibold">$50/mo per Legend referral</span>, double prize pool entries, 1-on-1 coaching, and private Discord.</p>}
               </div>
 
@@ -565,6 +645,7 @@ export default function Membership() {
           </div>
         </div>
       )}
+      <AdBannerInline />
     </div>
   );
 }

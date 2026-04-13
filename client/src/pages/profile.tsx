@@ -1,4 +1,5 @@
 import { Navbar } from "@/components/layout/Navbar";
+import { AdBannerTop, AdBannerInline } from "@/components/AdBanner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -510,6 +511,7 @@ export default function Profile() {
     return (
       <div className="min-h-screen bg-background">
         <Navbar />
+      <AdBannerTop />
         <div className="container mx-auto px-4 pt-32 pb-12 flex flex-col items-center justify-center text-center gap-6">
           <div className="w-20 h-20 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center">
             <Lock size={36} className="text-primary" />
@@ -528,6 +530,7 @@ export default function Profile() {
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
+      <AdBannerTop />
       <div className="container mx-auto px-4 pt-24 pb-12">
 
         <div className="flex flex-col md:flex-row gap-8 items-start mb-12">
@@ -830,6 +833,7 @@ export default function Profile() {
           </div>
         )}
       </div>
+      <AdBannerInline />
     </div>
   );
 }

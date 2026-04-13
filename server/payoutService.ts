@@ -56,8 +56,11 @@ async function processDailyPayout(
     return { paid: 0, skipped: 0, detail: `Already processed for daily ${periodLabel}` };
   }
 
-  const poolAmount = (await storage.getPrizePoolTotalByPeriod(periodStart)) || 99;
-  const dailyShare = Math.floor(poolAmount * 0.10 * 100) / 100;
+  // Current pool = total contributions ever - total already paid out (all time)
+  const totalContributions = await storage.getPrizePoolTotal();
+  const totalPaidOut = await storage.getTotalPayoutsByPeriod(new Date(0));
+  const poolAmount = Math.max(0, totalContributions - totalPaidOut);
+  const dailyShare = Math.floor(poolAmount * 0.10); // whole dollars only
 
   const leaderboard = await storage.getMLBLeaderboardForDateRange(periodStart, periodEnd, 500);
   if (leaderboard.length === 0) {
@@ -76,7 +79,7 @@ async function processDailyPayout(
   const topRoi = sorted[0].roi;
   const topWins = sorted[0].wins;
   const tied = sorted.filter((e: any) => e.roi === topRoi && e.wins === topWins);
-  const perWinner = Math.floor((dailyShare / tied.length) * 100) / 100;
+  const perWinner = Math.floor(dailyShare / tied.length); // whole dollars
 
   if (perWinner < 0.01) {
     return { paid: 0, skipped: 0, detail: `Payout amount too small for daily ${periodLabel}` };

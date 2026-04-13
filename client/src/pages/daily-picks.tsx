@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { PrizePoolQualRule } from "@/components/PrizePoolQualRule";
 import { Navbar } from "@/components/layout/Navbar";
+import { AdBannerTop, AdBannerInline } from "@/components/AdBanner";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,17 +15,46 @@ import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
-const LEAGUES = ["All", "MLB", "NBA", "MLS", "NCAAB"];
+const LEAGUES = ["All", "MLB", "NHL", "NBA", "MLS", "NCAAB"];
 
 const LEAGUE_COLORS: Record<string, string> = {
   MLB: "bg-red-500/20 text-red-400 border-red-500/30",
+  NHL: "bg-blue-500/20 text-blue-400 border-blue-500/30",
   NBA: "bg-orange-500/20 text-orange-400 border-orange-500/30",
   MLS: "bg-sky-500/20 text-sky-400 border-sky-500/30",
   NCAAB: "bg-purple-500/20 text-purple-400 border-purple-500/30",
 };
 
+const LEAGUE_ICON: Record<string, string> = {
+  All: "🏆",
+  MLB: "⚾",
+  NHL: "🏒",
+  NBA: "🏀",
+  MLS: "⚽",
+  NCAAB: "🎓",
+};
+
+const LEAGUE_LABEL: Record<string, string> = {
+  All: "All Sports",
+  MLB: "Baseball",
+  NHL: "Hockey",
+  NBA: "Basketball",
+  MLS: "Soccer",
+  NCAAB: "College BB",
+};
+
+const LEAGUE_ACTIVE_STYLE: Record<string, string> = {
+  All: "border-primary bg-primary/10 text-white",
+  MLB: "border-red-500 bg-red-500/10 text-red-300",
+  NHL: "border-blue-500 bg-blue-500/10 text-blue-300",
+  NBA: "border-orange-500 bg-orange-500/10 text-orange-300",
+  MLS: "border-sky-500 bg-sky-500/10 text-sky-300",
+  NCAAB: "border-purple-500 bg-purple-500/10 text-purple-300",
+};
+
 const BET_TYPES: Record<string, string[]> = {
   MLB: ["Moneyline", "Run Line", "Over/Under", "First 5 Innings"],
+  NHL: ["Moneyline", "Puck Line", "Over/Under"],
   NBA: ["Moneyline", "Spread", "Over/Under"],
   MLS: ["Moneyline", "Draw", "Over/Under"],
   NCAAB: ["Moneyline", "Spread", "Over/Under"],
@@ -101,7 +131,7 @@ export default function DailyPicks() {
     onError: (e: any) => toast({ title: "Error submitting picks", description: e.message, variant: "destructive" }),
   });
 
-  const todayGames = useMemo(() => allGames.filter((g) => isToday(g.gameTime)), [allGames]);
+  const todayGames = allGames;
   const filteredGames = useMemo(() =>
     league === "All" ? todayGames : todayGames.filter((g) => g.league === league),
     [todayGames, league]
@@ -109,12 +139,7 @@ export default function DailyPicks() {
 
   const myPicksToday = useMemo(() => {
     const todayGameIds = new Set(todayGames.map((g) => g.id));
-    return myPredictions.filter((p) => {
-      if (!todayGameIds.has(p.gameId)) return false;
-      const d = new Date(p.createdAt);
-      const now = new Date();
-      return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
-    });
+    return myPredictions.filter((p) => todayGameIds.has(p.gameId));
   }, [myPredictions, todayGames]);
 
   const myPickGameIds = new Set(myPicksToday.map((p) => p.gameId));
@@ -140,6 +165,7 @@ export default function DailyPicks() {
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
+      <AdBannerTop />
       <div className={cn("container mx-auto px-4 pt-24 max-w-5xl", draftCount > 0 ? "pb-32" : "pb-16")}>
 
         <div className="relative mb-8 overflow-hidden rounded-2xl bg-gradient-to-br from-primary/10 via-card/60 to-blue-900/20 border border-white/5 p-6 md:p-10">
@@ -217,26 +243,40 @@ export default function DailyPicks() {
 
         <PrizePoolQualRule className="mb-4" data-testid="banner-mlb-prize-pool" />
 
-        <div className="flex items-center gap-2 mb-4 flex-wrap">
-          {activeLeagues.filter((l) => LEAGUES.includes(l) || l === "All").map((l) => (
-            <button
-              key={l}
-              onClick={() => setLeague(l)}
-              className={cn(
-                "px-3 py-1.5 rounded-lg text-xs font-medium transition-all border",
-                league === l
-                  ? "bg-primary text-primary-foreground border-primary"
-                  : "bg-card/30 text-muted-foreground border-white/5 hover:border-white/15"
-              )}
-              data-testid={`filter-${l}`}
-            >
-              {l}
-              {l !== "All" && <span className="ml-1.5 text-[10px] opacity-60">{todayGames.filter((g) => g.league === l).length}</span>}
-            </button>
-          ))}
-          {league === "All" && (
-            <span className="ml-auto text-[10px] text-muted-foreground/50">{filteredGames.length} games today</span>
-          )}
+        <div className="mb-6">
+          <p className="text-[10px] text-muted-foreground/50 uppercase tracking-widest mb-3">Select Sport</p>
+          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+            {LEAGUES.map((l) => {
+              const count = l === "All" ? todayGames.length : todayGames.filter((g) => g.league === l).length;
+              const isActive = league === l;
+              const isEmpty = l !== "All" && count === 0;
+              return (
+                <button
+                  key={l}
+                  onClick={() => setLeague(l)}
+                  data-testid={`filter-${l}`}
+                  className={cn(
+                    "flex flex-col items-center justify-center gap-1.5 rounded-xl border py-3 px-2 transition-all font-medium",
+                    isActive
+                      ? LEAGUE_ACTIVE_STYLE[l] || "border-primary bg-primary/10 text-white"
+                      : isEmpty
+                      ? "bg-card/10 border-white/5 text-muted-foreground/30 cursor-default"
+                      : "bg-card/30 border-white/5 text-muted-foreground hover:border-white/20 hover:bg-card/50"
+                  )}
+                >
+                  <span className="text-2xl leading-none">{LEAGUE_ICON[l]}</span>
+                  <span className="text-[11px] font-bold tracking-wide uppercase leading-none">{l}</span>
+                  <span className="text-[10px] leading-none">{LEAGUE_LABEL[l]}</span>
+                  <span className={cn(
+                    "text-[10px] font-bold rounded-full px-2 py-0.5 leading-none",
+                    isActive ? "bg-white/20" : "bg-white/5"
+                  )}>
+                    {count} {count === 1 ? "game" : "games"}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {gamesLoading ? (
@@ -428,6 +468,7 @@ export default function DailyPicks() {
           </div>
         </div>
       )}
+      <AdBannerInline />
     </div>
   );
 }

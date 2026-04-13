@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Navbar } from "@/components/layout/Navbar";
+import { AdBannerTop, AdBannerInline } from "@/components/AdBanner";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -40,22 +41,31 @@ function StatCard({ icon: Icon, label, value, sub, color }: { icon: any; label: 
   );
 }
 
-const standardMilestones = [
-  { members: 10, monthly: "$10", icon: "🔥" },
-  { members: 100, monthly: "$100", icon: "💰" },
-  { members: 1000, monthly: "$1,000", icon: "🚀" },
-  { members: 10000, monthly: "$10,000", icon: "💎" },
-  { members: 100000, monthly: "$100,000", icon: "👑" },
-  { members: 1000000, monthly: "$1,000,000", icon: "🏆" },
+const rookieMilestones = [
+  { members: 10, monthly: "$50", instant: "$50", icon: "🔥" },
+  { members: 100, monthly: "$500", instant: "$500", icon: "💰" },
+  { members: 1000, monthly: "$5,000", instant: "$5,000", icon: "🚀" },
+  { members: 10000, monthly: "$50,000", instant: "$50,000", icon: "💎" },
+  { members: 100000, monthly: "$500,000", instant: "$500,000", icon: "👑" },
+  { members: 1000000, monthly: "$5,000,000", instant: "$5,000,000", icon: "🏆" },
+];
+
+const proMilestones = [
+  { members: 10, monthly: "$100", instant: "$100", icon: "🔥" },
+  { members: 100, monthly: "$1,000", instant: "$1,000", icon: "💰" },
+  { members: 1000, monthly: "$10,000", instant: "$10,000", icon: "🚀" },
+  { members: 10000, monthly: "$100,000", instant: "$100,000", icon: "💎" },
+  { members: 100000, monthly: "$1,000,000", instant: "$1,000,000", icon: "👑" },
+  { members: 1000000, monthly: "$10,000,000", instant: "$10,000,000", icon: "🏆" },
 ];
 
 const legendMilestones = [
-  { members: 10, monthly: "$500", icon: "🔥" },
-  { members: 100, monthly: "$5,000", icon: "💰" },
-  { members: 1000, monthly: "$50,000", icon: "🚀" },
-  { members: 10000, monthly: "$500,000", icon: "💎" },
-  { members: 100000, monthly: "$5,000,000", icon: "👑" },
-  { members: 1000000, monthly: "$50,000,000", icon: "🏆" },
+  { members: 10, monthly: "$500", instant: "$500", icon: "🔥" },
+  { members: 100, monthly: "$5,000", instant: "$5,000", icon: "💰" },
+  { members: 1000, monthly: "$50,000", instant: "$50,000", icon: "🚀" },
+  { members: 10000, monthly: "$500,000", instant: "$500,000", icon: "💎" },
+  { members: 100000, monthly: "$5,000,000", instant: "$5,000,000", icon: "👑" },
+  { members: 1000000, monthly: "$50,000,000", instant: "$50,000,000", icon: "🏆" },
 ];
 
 const rankColors: Record<number, string> = {
@@ -126,13 +136,14 @@ export default function Referrals() {
   const referralLink = referralCode ? `${window.location.origin}?ref=${referralCode}` : "";
 
   const isLegend = user?.membershipTier === "legend";
+  const isPro = user?.membershipTier === "pro";
   const isFounder = stats?.isFounder || false;
-  const perReferral = (isLegend || isFounder) ? 50 : 1;
+  const perReferral = (isLegend || isFounder) ? 50 : isPro ? 10 : 5;
   const activeReferrals = stats?.completedCount || 0;
   const monthlyIncome = stats?.monthlyIncome ?? (activeReferrals * perReferral);
-  const milestones = (isLegend || isFounder) ? legendMilestones : standardMilestones;
+  const milestones = (isLegend || isFounder) ? legendMilestones : isPro ? proMilestones : rookieMilestones;
 
-  const totalMonthlyPayout = leaderboard.reduce((sum: number, e: any) => sum + (e.activeReferrals * 1), 0);
+  const totalMonthlyPayout = leaderboard.reduce((sum: number, e: any) => sum + (e.monthlyIncome ?? e.activeReferrals * 5), 0);
   const totalReferrals = leaderboard.reduce((sum: number, e: any) => sum + e.activeReferrals, 0);
 
   const copyToClipboard = (text: string) => {
@@ -145,6 +156,7 @@ export default function Referrals() {
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
+      <AdBannerTop />
       <div className="container mx-auto px-4 pt-24 pb-12">
 
         <div className="relative mb-8 overflow-hidden rounded-2xl bg-gradient-to-br from-primary/10 via-card/60 to-violet-900/20 border border-white/5 p-6 md:p-10">
@@ -182,13 +194,18 @@ export default function Referrals() {
                 <div className="inline-flex items-center gap-2 bg-primary/10 border border-primary/30 rounded-xl px-4 py-2">
                   <Crown size={16} className="text-primary" />
                   <span className="text-sm font-display font-bold">
-                    1,000,000 affiliate members = <span className="text-primary">$1,000,000/month</span>
+                    {isPro
+                      ? <>1,000,000 affiliates = <span className="text-primary">$10,000,000/month</span> at $10/mo</>
+                      : <>1,000,000 affiliates = <span className="text-primary">$5,000,000/month</span> at $5/mo</>
+                    }
                   </span>
                 </div>
                 <div className="inline-flex items-center gap-2 bg-yellow-500/5 border border-yellow-500/20 rounded-xl px-4 py-2">
                   <Crown size={14} className="text-yellow-400" />
                   <span className="text-xs font-display font-bold text-yellow-400/80">
-                    Upgrade to Legend for $50/month per referral — 50x more!
+                    {isPro
+                      ? "Upgrade to Legend for $50/month per referral — 5x more!"
+                      : "Upgrade to Pro for $10/mo or Legend for $50/mo per referral!"}
                   </span>
                 </div>
               </div>
@@ -244,8 +261,8 @@ export default function Referrals() {
                 <div className="w-12 h-12 rounded-full bg-green-500/20 flex items-center justify-center mx-auto mb-3">
                   <Repeat size={20} className="text-green-400" />
                 </div>
-                <h3 className="font-display font-bold mb-1">3. Earn $1/Month Each</h3>
-                <p className="text-xs text-muted-foreground">You earn $1 every month for each active affiliate member — forever</p>
+                <h3 className="font-display font-bold mb-1">3. Earn $5–$50/Month Each</h3>
+                <p className="text-xs text-muted-foreground">Rookie: $5/mo · Pro: $10/mo · Legend: $50/mo — plus an instant bonus on every signup</p>
               </Card>
             </div>
 
@@ -255,7 +272,7 @@ export default function Referrals() {
                   <UserPlus size={40} className="text-primary mx-auto mb-4" />
                   <h2 className="font-display font-bold text-xl mb-2">Sign In to Start Earning</h2>
                   <p className="text-sm text-muted-foreground mb-6 max-w-md mx-auto">
-                    Sign in to get your unique affiliate link, track your referrals, and start earning $1/month for every member you bring in.
+                    Sign in to get your unique affiliate link, track your referrals, and start earning $5–$50/month for every member you bring in.
                   </p>
                   <a href="/auth">
                     <Button className="gap-2" size="lg" data-testid="button-signin-affiliate">
@@ -301,7 +318,7 @@ export default function Referrals() {
                     size="sm"
                     variant="outline"
                     className="gap-1.5 border-white/10 hover:bg-blue-500/20 hover:text-blue-400 hover:border-blue-500/30 h-8"
-                    onClick={() => window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent("Join me on BetFans! Predict sports, compete for prizes, and earn $1/month for every member you refer. Use my code: " + referralCode)}&url=${encodeURIComponent(referralLink)}`, "_blank")}
+                    onClick={() => window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent("Join me on BetFans! Predict sports, compete for prizes, and earn $5–$50/month for every member you refer. Use my code: " + referralCode)}&url=${encodeURIComponent(referralLink)}`, "_blank")}
                     disabled={!referralLink}
                     data-testid="button-share-twitter"
                   >
@@ -322,7 +339,7 @@ export default function Referrals() {
                     variant="outline"
                     className="gap-1.5 border-white/10 hover:bg-pink-500/20 hover:text-pink-400 hover:border-pink-500/30 h-8"
                     onClick={() => {
-                      navigator.clipboard.writeText(`Join me on BetFans! Predict sports, compete for prizes, and earn $1/month for every member you refer. Use my code: ${referralCode}\n${referralLink}`);
+                      navigator.clipboard.writeText(`Join me on BetFans! Predict sports, compete for prizes, and earn $5–$50/month for every member you refer. Use my code: ${referralCode}\n${referralLink}`);
                       toast({ title: "Caption copied! Opening Instagram...", description: "Paste the caption into your Instagram post or story." });
                       window.open("https://www.instagram.com/", "_blank");
                     }}
@@ -336,7 +353,7 @@ export default function Referrals() {
                     variant="outline"
                     className="gap-1.5 border-white/10 hover:bg-cyan-500/20 hover:text-cyan-400 hover:border-cyan-500/30 h-8"
                     onClick={() => {
-                      navigator.clipboard.writeText(`Join me on BetFans! Predict sports, compete for prizes, and earn $1/month for every member you refer. Use my code: ${referralCode}\n${referralLink}`);
+                      navigator.clipboard.writeText(`Join me on BetFans! Predict sports, compete for prizes, and earn $5–$50/month for every member you refer. Use my code: ${referralCode}\n${referralLink}`);
                       toast({ title: "Caption copied! Opening TikTok...", description: "Paste the caption into your TikTok post." });
                       window.open("https://www.tiktok.com/upload", "_blank");
                     }}
@@ -350,7 +367,7 @@ export default function Referrals() {
                     variant="outline"
                     className="gap-1.5 border-white/10 hover:bg-yellow-500/20 hover:text-yellow-400 hover:border-yellow-500/30 h-8"
                     onClick={() => {
-                      const smsText = `Hey! Check out BetFans 🏆 Predict sports, compete for prizes, and earn $1/month for every member you refer. Use my code: ${referralCode}\n\n${referralLink}\n\n#BetFans #SportsPicks #WinningPicks #FreeMoney #ResidualIncome #SportsBetting #AIpicks #SpiderAI`;
+                      const smsText = `Hey! Check out BetFans 🏆 Predict sports, compete for prizes, and earn $5–$50/month for every member you refer. Use my code: ${referralCode}\n\n${referralLink}\n\n#BetFans #SportsPicks #WinningPicks #FreeMoney #ResidualIncome #SportsBetting #AIpicks #SpiderAI`;
                       navigator.clipboard.writeText(smsText);
                       toast({ title: "Text message copied!", description: "Paste into your text messages, WhatsApp, or any messaging app." });
                     }}
@@ -397,7 +414,7 @@ export default function Referrals() {
                     ${stats.instantBonus.toFixed(2)} Instant Referral Bonus Earned
                   </p>
                   <p className="text-[11px] text-yellow-400/60">
-                    50% instant payout from your first Legend payment
+                    Instant payout credited when your referred member signs up
                   </p>
                 </div>
               </div>
@@ -424,13 +441,16 @@ export default function Referrals() {
                       >
                         <span className="text-2xl">{m.icon}</span>
                         <p className="text-xs text-muted-foreground mt-1">
-                          {m.members.toLocaleString()} affiliates
+                          {m.members.toLocaleString()} referrals
                         </p>
                         <p className={cn(
                           "font-display font-bold text-sm",
                           reached ? "text-primary" : "text-white/50"
                         )}>
                           {m.monthly}/mo
+                        </p>
+                        <p className="text-[10px] text-muted-foreground">
+                          +{m.instant} instant
                         </p>
                       </div>
                     );
@@ -574,6 +594,43 @@ export default function Referrals() {
                   </CardContent>
                 </Card>
 
+                <Card className="bg-card/30 border-white/10">
+                  <CardContent className="p-5">
+                    <h3 className="font-display font-bold text-sm mb-3 flex items-center gap-2">
+                      <Crown size={14} className="text-yellow-400" />
+                      Referral Tier Rules
+                    </h3>
+                    <div className="space-y-2 text-xs">
+                      <div className="flex items-start gap-3 bg-yellow-500/5 border border-yellow-500/15 rounded-xl p-3">
+                        <Crown size={14} className="text-yellow-400 shrink-0 mt-0.5" />
+                        <div>
+                          <span className="text-yellow-400 font-bold">Legend</span>
+                          <span className="text-muted-foreground"> — can refer </span>
+                          <span className="text-white font-medium">Rookie, Pro & Legend</span>
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-3 bg-primary/5 border border-primary/15 rounded-xl p-3">
+                        <Trophy size={14} className="text-primary shrink-0 mt-0.5" />
+                        <div>
+                          <span className="text-primary font-bold">Pro</span>
+                          <span className="text-muted-foreground"> — can refer </span>
+                          <span className="text-white font-medium">Rookie & Pro</span>
+                          <span className="text-muted-foreground"> only</span>
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-3 bg-white/5 border border-white/10 rounded-xl p-3">
+                        <Users size={14} className="text-muted-foreground shrink-0 mt-0.5" />
+                        <div>
+                          <span className="text-muted-foreground font-bold">Rookie</span>
+                          <span className="text-muted-foreground"> — can refer </span>
+                          <span className="text-white font-medium">Rookie</span>
+                          <span className="text-muted-foreground"> only</span>
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
                 <Card className="bg-card/30 border-white/5">
                   <CardContent className="p-6">
                     <h3 className="font-display font-bold text-sm mb-3 flex items-center gap-2">
@@ -583,9 +640,9 @@ export default function Referrals() {
                     <div className="space-y-3 text-xs text-muted-foreground">
                       <div className="flex gap-2">
                         <div className="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center shrink-0 mt-0.5">
-                          <span className="text-[10px] text-primary font-bold">$1</span>
+                          <DollarSign size={10} className="text-primary" />
                         </div>
-                        <p>Every BetFans member is an affiliate. You earn <span className="text-white font-medium">$1 every month</span> for each active member you bring in — as long as they stay a member.</p>
+                        <p>Every BetFans member is an affiliate. You earn an <span className="text-white font-medium">instant payout</span> the moment someone signs up with your code, plus <span className="text-white font-medium">monthly residual income</span> as long as they stay active — $5/$10/$50 depending on your tier.</p>
                       </div>
                       <div className="flex gap-2">
                         <div className="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center shrink-0 mt-0.5">
@@ -597,7 +654,7 @@ export default function Referrals() {
                         <div className="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center shrink-0 mt-0.5">
                           <TrendingUp size={10} className="text-primary" />
                         </div>
-                        <p><span className="text-white font-medium">No limits or caps</span>. 10, 1,000, or 1,000,000 affiliate members — every single one earns you $1/month.</p>
+                        <p><span className="text-white font-medium">No limits or caps</span>. 10, 1,000, or 1,000,000 referrals — every single one pays you an instant bonus plus monthly residual income.</p>
                       </div>
                     </div>
                   </CardContent>
@@ -615,7 +672,7 @@ export default function Referrals() {
               <StatCard icon={Trophy} label="Top Earners" value={leaderboard.length} color="bg-primary/20 text-primary" />
               <StatCard icon={DollarSign} label="Monthly Payouts" value={`$${totalMonthlyPayout.toLocaleString()}`} color="bg-green-500/20 text-green-400" />
               <StatCard icon={Users} label="Total Affiliates" value={totalReferrals.toLocaleString()} color="bg-blue-500/20 text-blue-400" />
-              <StatCard icon={Crown} label="#1 Monthly Income" value={leaderboard.length > 0 ? `$${(leaderboard[0].activeReferrals * 1).toLocaleString()}` : "$0"} color="bg-yellow-500/20 text-yellow-400" />
+              <StatCard icon={Crown} label="#1 Monthly Income" value={leaderboard.length > 0 ? `$${(leaderboard[0].monthlyIncome ?? leaderboard[0].activeReferrals * 5).toLocaleString()}` : "$0"} color="bg-yellow-500/20 text-yellow-400" />
             </div>
 
             <Card className="bg-gradient-to-r from-yellow-500/5 via-card/30 to-primary/5 border-yellow-500/20 mb-8">
@@ -626,8 +683,7 @@ export default function Referrals() {
                 <div>
                   <p className="text-sm font-display font-bold text-yellow-400">Affiliates vs. Founder</p>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Every uncoded signup earns the Founder $1/month in residual income.
-                    As an affiliate, every member you bring in with your code takes that $1/month away from the Founder and puts it in your pocket.
+                    Every uncoded signup earns the Founder the residual income instead of you. As an affiliate, every member you bring in with your code takes that income away from the Founder and puts it in your pocket — plus you get the instant payout too.
                     The more you share, the higher you climb — can you beat the Founder?
                   </p>
                 </div>
@@ -656,7 +712,7 @@ export default function Referrals() {
               <div className="space-y-3">
                 {leaderboard.map((entry: any, index: number) => {
                   const rank = index + 1;
-                  const entryMonthlyIncome = entry.activeReferrals * 1;
+                  const entryMonthlyIncome = entry.monthlyIncome ?? entry.activeReferrals * 5;
                   const yearlyIncome = entryMonthlyIncome * 12;
                   const isTop3 = rank <= 3;
                   const name = entry.firstName && entry.lastName
@@ -736,6 +792,7 @@ export default function Referrals() {
           </>
         )}
       </div>
+      <AdBannerInline />
     </div>
   );
 }

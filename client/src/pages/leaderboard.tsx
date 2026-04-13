@@ -2,20 +2,20 @@ import { useState } from "react";
 import { PrizePoolQualRule } from "@/components/PrizePoolQualRule";
 import { useRoute } from "wouter";
 import { Navbar } from "@/components/layout/Navbar";
+import { AdBannerTop, AdBannerInline } from "@/components/AdBanner";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
-  Trophy, TrendingUp, Medal, Crown, Star,
-  ArrowUp, ArrowDown, Target, Calendar, Clock,
+  Trophy, Medal, Crown, Star, Clock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 
-type Period = "daily" | "weekly" | "monthly" | "annual";
+type Period = "daily" | "annual";
 type LeagueFilter = "ALL" | "NFL" | "NBA" | "WNBA" | "NHL" | "MLB" | "MLS" | "NWSL" | "NCAAB";
 
 const leagueFilters: { value: LeagueFilter; label: string }[] = [
@@ -33,25 +33,13 @@ const leagueFilters: { value: LeagueFilter; label: string }[] = [
 const periodConfig: Record<Period, { title: string; subtitle: string; icon: any; accent: string }> = {
   daily: {
     title: "Daily Leaderboard",
-    subtitle: "Today's picks — every win adds to your weekly & annual total",
+    subtitle: "Today's top MLB predictors — all tiers compete equally for the daily 10% prize pool payout",
     icon: Clock,
     accent: "from-blue-500/20 to-cyan-500/20",
   },
-  weekly: {
-    title: "Weekly Leaderboard",
-    subtitle: "Running total from this week — accumulates into monthly & annual",
-    icon: Calendar,
-    accent: "from-emerald-500/20 to-green-500/20",
-  },
-  monthly: {
-    title: "Monthly Leaderboard",
-    subtitle: "Running total for the month — every graded pick counted",
-    icon: Target,
-    accent: "from-purple-500/20 to-violet-500/20",
-  },
   annual: {
     title: "Annual Leaderboard",
-    subtitle: "Full-year running total — every pick since Jan 1st, building to the championship",
+    subtitle: "Full-year MLB standings — year's best predictor wins the entire remaining prize pool on Jan 1st",
     icon: Trophy,
     accent: "from-yellow-500/20 to-orange-500/20",
   },
@@ -158,18 +146,14 @@ function TopThreePodium({ entries }: { entries: any[] }) {
 export default function LeaderboardPage() {
   const [, navigate] = useLocation();
   const [, dailyMatch] = useRoute("/leaderboard/daily");
-  const [, weeklyMatch] = useRoute("/leaderboard/weekly");
-  const [, monthlyMatch] = useRoute("/leaderboard/monthly");
   const [, annualMatch] = useRoute("/leaderboard/annual");
   const [leagueFilter, setLeagueFilter] = useState<LeagueFilter>("ALL");
 
   const [currentLocation] = useLocation();
   let period: Period = "annual";
   if (dailyMatch) period = "daily";
-  else if (weeklyMatch) period = "weekly";
-  else if (monthlyMatch) period = "monthly";
   else if (annualMatch) period = "annual";
-  else if (currentLocation === "/leaderboard") {
+  else {
     navigate("/leaderboard/annual", { replace: true });
   }
 
@@ -190,6 +174,7 @@ export default function LeaderboardPage() {
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
+      <AdBannerTop />
       <div className="container mx-auto px-4 pt-24 pb-20">
         <div className="text-center mb-6">
           <div className="flex items-center justify-center gap-3 mb-3">
@@ -208,15 +193,9 @@ export default function LeaderboardPage() {
 
         <div className="max-w-4xl mx-auto mb-6">
           <Tabs value={period} onValueChange={(v) => navigate(`/leaderboard/${v}`)} className="w-full">
-            <TabsList className="grid w-full grid-cols-4 bg-card/50 border border-white/10 h-12">
+            <TabsList className="grid w-full grid-cols-2 bg-card/50 border border-white/10 h-12">
               <TabsTrigger value="daily" className="gap-1.5 data-[state=active]:bg-primary/20" data-testid="tab-daily">
                 <Clock size={14} /> Daily
-              </TabsTrigger>
-              <TabsTrigger value="weekly" className="gap-1.5 data-[state=active]:bg-primary/20" data-testid="tab-weekly">
-                <Calendar size={14} /> Weekly
-              </TabsTrigger>
-              <TabsTrigger value="monthly" className="gap-1.5 data-[state=active]:bg-primary/20" data-testid="tab-monthly">
-                <Target size={14} /> Monthly
               </TabsTrigger>
               <TabsTrigger value="annual" className="gap-1.5 data-[state=active]:bg-primary/20" data-testid="tab-annual">
                 <Trophy size={14} /> Annual
@@ -409,6 +388,7 @@ export default function LeaderboardPage() {
           </div>
         </div>
       </div>
+      <AdBannerInline />
     </div>
   );
 }

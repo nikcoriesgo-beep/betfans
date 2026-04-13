@@ -1,5 +1,6 @@
 import { Link } from "wouter";
 import { Navbar } from "@/components/layout/Navbar";
+import { AdBannerTop, AdBannerInline } from "@/components/AdBanner";
 import { Button } from "@/components/ui/button";
 import {
   Trophy, Target, DollarSign, Users, Zap, Star, Crown, Flame,
@@ -108,6 +109,7 @@ export default function HowToPlay() {
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
+      <AdBannerTop />
 
       <div className="pt-24 pb-20">
 
@@ -484,6 +486,7 @@ export default function HowToPlay() {
 
         </div>
       </div>
+      <AdBannerInline />
     </div>
   );
 }

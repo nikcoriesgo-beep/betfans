@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { Navbar } from "@/components/layout/Navbar";
+import { AdBannerTop, AdBannerInline } from "@/components/AdBanner";
 import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -623,6 +624,7 @@ export default function Winners() {
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
+      <AdBannerTop />
       <div className="container mx-auto px-4 pt-24 pb-12">
 
         <div className="text-center mb-10">
@@ -742,6 +744,7 @@ export default function Winners() {
 
         <PayoutHistory />
       </div>
+      <AdBannerInline />
     </div>
   );
 }

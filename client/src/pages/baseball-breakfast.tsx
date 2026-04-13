@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { Navbar } from "@/components/layout/Navbar";
+import { AdBannerTop, AdBannerInline } from "@/components/AdBanner";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -94,27 +95,17 @@ export default function BaseballBreakfast() {
   const [drafts, setDrafts] = useState<Record<number, DraftPick>>({});
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [audioReady, setAudioReady] = useState(false);
+  const [audioBlocked, setAudioBlocked] = useState(false);
 
   useEffect(() => {
     const audio = new Audio("/audio/baseball-for-breakfast.mp3");
     audio.loop = true;
     audio.volume = 0.4;
     audioRef.current = audio;
-    audio.addEventListener("canplaythrough", () => setAudioReady(true));
-    audio.addEventListener("play", () => setIsPlaying(true));
+    audio.addEventListener("play", () => { setIsPlaying(true); setAudioBlocked(false); });
     audio.addEventListener("pause", () => setIsPlaying(false));
     audio.load();
-    const tryAutoplay = () => {
-      audio.play().then(() => {
-        document.removeEventListener("click", tryAutoplay);
-        document.removeEventListener("touchstart", tryAutoplay);
-      }).catch(() => {});
-    };
-    audio.play().catch(() => {
-      document.addEventListener("click", tryAutoplay, { once: true });
-      document.addEventListener("touchstart", tryAutoplay, { once: true });
-    });
+    audio.play().catch(() => setAudioBlocked(true));
     return () => {
       audio.pause();
       audio.src = "";
@@ -127,7 +118,7 @@ export default function BaseballBreakfast() {
     if (isPlaying) {
       audio.pause();
     } else {
-      audio.play().catch(() => {});
+      audio.play().catch(() => setAudioBlocked(true));
     }
   }
 
@@ -173,10 +164,10 @@ export default function BaseballBreakfast() {
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
+      <AdBannerTop />
 
       <div
         className={cn("container mx-auto px-4 pt-24 max-w-5xl", draftCount > 0 ? "pb-32" : "pb-16")}
-        onClick={() => { if (!isPlaying && audioRef.current) audioRef.current.play().catch(() => {}); }}
       >
 
         {/* Hero banner */}
@@ -189,17 +180,19 @@ export default function BaseballBreakfast() {
                 <span className="text-xs text-yellow-400/80 font-medium tracking-widest uppercase">Daily MLB Picks · Live Leaderboard</span>
               </div>
               <button
-                onClick={(e) => { e.stopPropagation(); toggleMusic(); }}
+                onClick={toggleMusic}
                 data-testid="button-music-toggle"
                 className={cn(
                   "flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-bold font-display transition-all duration-200 shrink-0",
                   isPlaying
                     ? "bg-primary/20 text-primary border-primary/40 shadow-[0_0_10px_rgba(34,197,94,0.3)]"
-                    : "bg-white/5 text-muted-foreground border-white/10 hover:border-primary/30 hover:text-primary"
+                    : audioBlocked
+                      ? "bg-yellow-500/10 text-yellow-400 border-yellow-500/30 hover:bg-yellow-500/20 animate-pulse"
+                      : "bg-white/5 text-muted-foreground border-white/10 hover:border-primary/30 hover:text-primary"
                 )}
               >
                 {isPlaying ? <Volume2 size={12} /> : <VolumeX size={12} />}
-                {isPlaying ? "♪ On" : "Music"}
+                {isPlaying ? "♪ On" : audioBlocked ? "▶ Tap for Music" : "Music Off"}
               </button>
             </div>
             <h1 className="text-3xl md:text-4xl font-display font-bold mb-2" data-testid="text-bb-title">
@@ -295,12 +288,12 @@ export default function BaseballBreakfast() {
           </div>
         )}
 
-        {/* Login prompt for non-users when no founder data */}
-        {!user && !founder && (
+        {/* Login prompt for any non-logged-in visitor */}
+        {!user && (
           <div className="mb-6 rounded-xl border border-primary/20 bg-primary/5 p-4 flex items-center justify-between gap-4">
             <div>
-              <p className="font-display font-bold text-sm">Already a member?</p>
-              <p className="text-xs text-muted-foreground">Log in to post your picks and appear on the leaderboard.</p>
+              <p className="font-display font-bold text-sm">Log in to submit picks</p>
+              <p className="text-xs text-muted-foreground">Members post picks and appear on the leaderboard.</p>
             </div>
             <a href="/auth">
               <Button size="sm" className="bg-primary text-primary-foreground shrink-0" data-testid="button-login-bb">
@@ -317,9 +310,30 @@ export default function BaseballBreakfast() {
             <Badge className="bg-blue-600/20 text-blue-400 border-blue-500/30 text-[10px]">{games.length} GAMES</Badge>
           </h2>
           {isFounder && (
-            <Badge className="bg-primary/20 text-primary border-primary/30 text-[10px]">
-              <Zap size={9} className="mr-1" />FOUNDER MODE
-            </Badge>
+            <div className="flex items-center gap-2">
+              <Badge className="bg-primary/20 text-primary border-primary/30 text-[10px]">
+                <Zap size={9} className="mr-1" />FOUNDER MODE
+              </Badge>
+              {games.filter(g => g.status !== "Final" && !g.founderPick).length > 0 && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-primary/30 text-primary hover:bg-primary/10 text-[11px] h-7 px-2 gap-1"
+                  data-testid="button-pick-all-spider"
+                  onClick={() => {
+                    const newDrafts: Record<number, DraftPick> = {};
+                    for (const g of games) {
+                      if (g.status !== "Final" && !g.founderPick && g.spider?.pick) {
+                        newDrafts[g.gameId] = { gameId: g.gameId, pick: g.spider.pick, predictionType: g.spider.type || "Moneyline" };
+                      }
+                    }
+                    setDrafts(newDrafts);
+                  }}
+                >
+                  <Zap size={10} />Pick All (Spider AI)
+                </Button>
+              )}
+            </div>
           )}
         </div>
 
@@ -531,6 +545,7 @@ export default function BaseballBreakfast() {
           </div>
         </div>
       )}
+      <AdBannerInline />
     </div>
   );
 }

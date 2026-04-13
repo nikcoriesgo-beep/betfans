@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { Navbar } from "@/components/layout/Navbar";
+import { AdBannerTop, AdBannerInline } from "@/components/AdBanner";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -250,6 +251,7 @@ export default function WinnersProbability() {
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
+      <AdBannerTop />
       <div className="container mx-auto px-4 pt-24 pb-12">
 
         <div className="text-center mb-10">
@@ -360,6 +362,7 @@ export default function WinnersProbability() {
           </CardContent>
         </Card>
       </div>
+      <AdBannerInline />
     </div>
   );
 }

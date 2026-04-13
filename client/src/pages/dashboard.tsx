@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Plus, Users, Trophy, TrendingUp } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
-import { AdSidebar } from "@/components/AdBanner";
+import { AdBannerTop, AdBannerInline, AdSidebar } from "@/components/AdBanner";
 import { SharePicksCard } from "@/components/SharePicksCard";
 import { Share2 } from "lucide-react";
 import { useState, useEffect } from "react";
@@ -116,6 +116,7 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
+      <AdBannerTop />
       <div className="container mx-auto px-4 pt-24 pb-12">
         {/* Live Community Stats */}
         <div className="mb-8 grid grid-cols-2 lg:grid-cols-3 gap-4" data-testid="live-community-stats">

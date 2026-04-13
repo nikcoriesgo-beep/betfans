@@ -1,4 +1,5 @@
 import { Navbar } from "@/components/layout/Navbar";
+import { AdBannerTop, AdBannerInline } from "@/components/AdBanner";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -347,6 +348,7 @@ export default function MembersMap() {
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
+      <AdBannerTop />
       <div className="container mx-auto px-4 pt-24 pb-20">
         <div className="text-center mb-8">
           <div className="flex items-center justify-center gap-3 mb-3">
@@ -470,6 +472,7 @@ export default function MembersMap() {
           </Card>
         )}
       </div>
+      <AdBannerInline />
     </div>
   );
 }
