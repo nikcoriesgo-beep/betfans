@@ -215,10 +215,16 @@ export function Navbar() {
               id="betfans-leaderboard-ad"
               className="w-full bg-black/40 border-b border-white/5 flex justify-center items-center min-h-[50px] overflow-hidden"
             />
+            <div className="w-full bg-primary/10 border-b border-primary/30 px-4 py-1.5 flex items-center justify-center gap-2" data-testid="notice-april18-rule">
+              <span className="text-primary font-bold text-[11px] shrink-0">*</span>
+              <p className="text-[11px] text-primary/90 text-center leading-tight">
+                <span className="font-semibold">Starting Sat Apr 18:</span> Members must predict ALL NBA &amp; NHL playoff games + every MLB game to qualify for the daily prize pool.
+              </p>
+            </div>
           </div>
         </div>
       </nav>
-      <div className="h-[100px]" />
+      <div className="h-[132px]" />
     </>
   );
 }
