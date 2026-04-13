@@ -142,14 +142,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getGames(league?: string): Promise<Game[]> {
-    // Use ET midnight today as cutoff so yesterday's finished games never bleed in
-    const etDateStr = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
-    const [y, m, d] = etDateStr.split("-").map(Number);
-    const now = new Date();
-    const dstStart = new Date(Date.UTC(y, 2, 8 + ((7 - new Date(Date.UTC(y, 2, 8)).getUTCDay()) % 7), 7));
-    const dstEnd = new Date(Date.UTC(y, 10, 1 + ((7 - new Date(Date.UTC(y, 10, 1)).getUTCDay()) % 7), 6));
-    const offsetHours = (now >= dstStart && now < dstEnd) ? 4 : 5;
-    const cutoff = new Date(Date.UTC(y, m - 1, d, offsetHours, 0, 0, 0)); // ET midnight in UTC
+    // Use PST midnight (UTC-8) as the daily cutoff — midnight PST = 08:00 UTC
+    const pstDateStr = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(new Date());
+    const [y, m, d] = pstDateStr.split("-").map(Number);
+    const cutoff = new Date(Date.UTC(y, m - 1, d, 8, 0, 0, 0)); // 00:00 PST = 08:00 UTC
     if (league && league !== "ALL") {
       return db.select().from(games)
         .where(and(eq(games.league, league), sql`${games.gameTime} >= ${cutoff} AND ${games.status} != 'postponed'`))
