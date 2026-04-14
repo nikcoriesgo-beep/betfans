@@ -117,6 +117,8 @@ export const payouts = pgTable("payouts", {
   status: text("status").default("pending"),
   paidAt: timestamp("paid_at"),
   createdAt: timestamp("created_at").defaultNow(),
+  wins: integer("wins"),
+  losses: integer("losses"),
 });
 
 export type Payout = typeof payouts.$inferSelect;

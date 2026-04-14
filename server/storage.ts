@@ -80,7 +80,7 @@ export interface IStorage {
   getPrizePoolTotalByPeriod(periodStart: Date): Promise<number>;
   getTotalPayoutsByPeriod(periodStart: Date): Promise<number>;
 
-  createPayout(data: { userId: string; amount: number; period: string; periodLabel: string; rank: number; sharePercent: number }): Promise<Payout>;
+  createPayout(data: { userId: string; amount: number; period: string; periodLabel: string; rank: number; sharePercent: number; wins?: number; losses?: number }): Promise<Payout>;
   updatePayout(id: number, data: Partial<Payout>): Promise<Payout | null>;
   getPayoutsByPeriod(period: string, periodLabel: string): Promise<(Payout & { user: User | null })[]>;
   getUserPayouts(userId: string): Promise<Payout[]>;

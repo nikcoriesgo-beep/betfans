@@ -580,7 +580,16 @@ function PayoutHistory() {
                     <span className="text-sm font-medium truncate">{name}</span>
                     <Badge variant="outline" className="text-[10px] px-1.5 py-0 capitalize">{p.period}</Badge>
                   </div>
-                  <span className="text-[10px] text-muted-foreground capitalize">{p.period} · {p.periodLabel}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-muted-foreground capitalize">{p.period} · {p.periodLabel}</span>
+                    {p.wins != null && (
+                      <span className="text-[10px] font-mono font-bold">
+                        <span className="text-green-400">{p.wins}W</span>
+                        <span className="text-muted-foreground/40">-</span>
+                        <span className="text-red-400">{p.losses}L</span>
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div className="text-right shrink-0">
                   <div className="text-sm font-mono font-bold text-primary">

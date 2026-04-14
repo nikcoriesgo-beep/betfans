@@ -103,6 +103,8 @@ async function processDailyPayout(
       periodLabel,
       rank: 1,
       sharePercent: (0.10 / tied.length) * 100,
+      wins: entry.wins ?? 0,
+      losses: entry.losses ?? 0,
     });
 
     const updatedUser = await storage.getUser(entry.userId);
@@ -180,6 +182,8 @@ async function processAnnualPayout(
       period: "annual",
       periodLabel,
       rank: 1,
+      wins: entry.wins ?? 0,
+      losses: entry.losses ?? 0,
       sharePercent: 100 / tied.length,
     });
 
