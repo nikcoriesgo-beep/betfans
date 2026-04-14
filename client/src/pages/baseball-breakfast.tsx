@@ -36,6 +36,7 @@ interface MLBGame {
   total: string | null;
   spider: { pick: string; confidence: number; type: string };
   founderPick: any | null;
+  myPick: any | null;
 }
 
 interface BBData {
@@ -425,17 +426,33 @@ export default function BaseballBreakfast() {
                     </div>
 
                     {game.founderPick ? (
+                      /* Founder sees their own pick */
                       <div className="bg-yellow-500/5 border border-yellow-500/20 rounded-lg p-3 space-y-2">
                         <div className="flex items-center justify-between">
                           <div>
                             <div className="flex items-center gap-1.5 mb-1">
                               <Coffee size={10} className="text-yellow-400" />
-                              <span className="text-[10px] text-yellow-400 uppercase tracking-wider">Founder's Pick</span>
+                              <span className="text-[10px] text-yellow-400 uppercase tracking-wider">My Pick</span>
                             </div>
                             <p className="text-[10px] text-muted-foreground">{game.founderPick.predictionType}</p>
                             <p className="font-display font-bold text-sm">{game.founderPick.pick}</p>
                           </div>
                           <PickResultBadge result={game.founderPick.result} />
+                        </div>
+                      </div>
+                    ) : game.myPick ? (
+                      /* Non-founder member sees only their own pick */
+                      <div className="bg-blue-500/5 border border-blue-500/20 rounded-lg p-3">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="flex items-center gap-1.5 mb-1">
+                              <Target size={10} className="text-blue-400" />
+                              <span className="text-[10px] text-blue-400 uppercase tracking-wider">My Pick</span>
+                            </div>
+                            <p className="text-[10px] text-muted-foreground">{game.myPick.predictionType}</p>
+                            <p className="font-display font-bold text-sm">{game.myPick.pick}</p>
+                          </div>
+                          <PickResultBadge result={game.myPick.result} />
                         </div>
                       </div>
                     ) : isFounder && !isFinished ? (

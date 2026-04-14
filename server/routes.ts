@@ -141,9 +141,11 @@ export async function registerRoutes(
     return { pick, confidence, type };
   }
 
-  app.get("/api/baseball-breakfast", async (req, res) => {
+  app.get("/api/baseball-breakfast", async (req: any, res) => {
     try {
       const FOUNDER_ID = "29b670b7-5296-44dc-a0a0-aec0d878ef9b";
+      const callerId: string | null = (req.session as any)?.userId || null;
+      const callerIsFounder = callerId === FOUNDER_ID;
       const [founderRow] = await db.select().from(users).where(eq(users.id, FOUNDER_ID)).limit(1);
       const founder = founderRow || null;
 
@@ -215,10 +217,17 @@ export async function registerRoutes(
         stats = { wins, losses, profit: Math.round(profit*100)/100, roi: Math.round(roi*100)/100, streak, totalPicks: total };
       }
 
-      // --- Today's founder picks ---
-      const todayPredictions = founder
+      // --- Today's picks: founder sees their own picks; members see only their own picks ---
+      const founderPredictions = callerIsFounder && founder
         ? await db.select().from(predictions).where(
             sql`${predictions.userId} = ${founder.id} AND ${predictions.createdAt} >= ${todayStart} AND ${predictions.createdAt} <= ${todayEnd}`
+          )
+        : [];
+
+      // For non-founder logged-in members, load their own today's picks
+      const callerPredictions = !callerIsFounder && callerId
+        ? await db.select().from(predictions).where(
+            sql`${predictions.userId} = ${callerId} AND ${predictions.createdAt} >= ${todayStart} AND ${predictions.createdAt} <= ${todayEnd}`
           )
         : [];
 
@@ -230,7 +239,9 @@ export async function registerRoutes(
         const liveHomeScore = liveESPN?.homeScore ?? g.homeScore;
         const liveAwayScore = liveESPN?.awayScore ?? g.awayScore;
         const spider = { pick: g.spiderPick || "", confidence: g.spiderConfidence || 60, type: "Moneyline" };
-        const founderPick = todayPredictions.find((p) => p.gameId === g.id) || null;
+        // founderPick only returned to the founder; myPick returned to the logged-in member
+        const founderPick = callerIsFounder ? (founderPredictions.find((p) => p.gameId === g.id) || null) : null;
+        const myPick = !callerIsFounder ? (callerPredictions.find((p) => p.gameId === g.id) || null) : null;
         return {
           gameId: g.id,
           mlbGamePk: apiGame?.mlbGamePk || g.id,
@@ -245,7 +256,7 @@ export async function registerRoutes(
           venue: apiGame?.venue || "",
           homePitcher: apiGame?.homePitcher || null, awayPitcher: apiGame?.awayPitcher || null,
           spread: g.spread, total: g.total,
-          spider, founderPick,
+          spider, founderPick, myPick,
         };
       });
 
