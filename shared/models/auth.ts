@@ -10,6 +10,7 @@ export const users = pgTable("users", {
   stripeCustomerId: text("stripe_customer_id"),
   stripeSubscriptionId: text("stripe_subscription_id"),
   paypalSubscriptionId: text("paypal_subscription_id"),
+  paypalPayoutEmail: text("paypal_payout_email"),
   membershipTier: text("membership_tier").default("rookie"),
   walletBalance: text("wallet_balance").default("0"),
   city: text("city"),

@@ -1,5 +1,5 @@
 import { storage } from "./storage";
-import { sendPayPalSubscriptionRefund } from "./paypalService";
+import { sendPayPalSubscriptionRefund, sendPayPalPayout } from "./paypalService";
 
 function getETMidnight(date: Date): Date {
   const etStr = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(date);
@@ -22,16 +22,33 @@ async function sendAndRecordPayout(
   log: (msg: string) => void,
 ): Promise<void> {
   const user = await storage.getUser(userId);
-  const subscriptionId = user?.paypalSubscriptionId;
+  const note = `BetFans ${period} prize — 10% pool${tiedCount > 1 ? ` split ${tiedCount} ways` : ""} — ${periodLabel}`;
 
+  if (user?.paypalPayoutEmail) {
+    try {
+      const senderItemId = `betfans-payout-${payoutId}-${Date.now()}`;
+      const result = await sendPayPalPayout(user.paypalPayoutEmail, amount, senderItemId, note);
+      await storage.updatePayout(payoutId, {
+        stripeTransferId: result.batchId,
+        status: "paypal_sent",
+        paidAt: new Date(),
+      });
+      log(`✓ PayPal payout sent to ${user.paypalPayoutEmail} — batch ${result.batchId} (${result.status})`);
+    } catch (e: any) {
+      log(`✗ PayPal payout failed for ${userId}: ${e.message} — wallet still credited`);
+      await storage.updatePayout(payoutId, { status: "wallet_credited", paidAt: new Date() });
+    }
+    return;
+  }
+
+  const subscriptionId = user?.paypalSubscriptionId;
   if (!subscriptionId) {
-    log(`⚠ No PayPal subscription for ${userId} — wallet credited only`);
+    log(`⚠ No PayPal payout method for ${userId} — wallet credited only`);
     await storage.updatePayout(payoutId, { status: "wallet_credited", paidAt: new Date() });
     return;
   }
 
   try {
-    const note = `BetFans ${period} prize — 10% pool${tiedCount > 1 ? ` split ${tiedCount} ways` : ""} — ${periodLabel}`;
     const result = await sendPayPalSubscriptionRefund(subscriptionId, amount, note);
     await storage.updatePayout(payoutId, {
       stripeTransferId: result.refundId,
