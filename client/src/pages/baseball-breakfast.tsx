@@ -485,32 +485,6 @@ export default function BaseballBreakfast() {
                             <p className="font-display font-bold text-xs">{game.homeAbbr || game.homeTeam.split(" ").slice(-1)[0]}</p>
                           </button>
                         </div>
-                        <div className="grid grid-cols-2 gap-2">
-                          <button
-                            onClick={() => selectPick(game, "Over", "Over/Under")}
-                            className={cn(
-                              "rounded-lg px-3 py-2 text-center transition-all border text-xs font-medium",
-                              draft?.pick === "Over"
-                                ? "bg-primary text-primary-foreground border-primary"
-                                : "bg-white/5 border-white/10 text-muted-foreground hover:border-white/20 hover:text-white"
-                            )}
-                            data-testid={`button-pick-over-${game.gameId}`}
-                          >
-                            Over (O/U)
-                          </button>
-                          <button
-                            onClick={() => selectPick(game, "Under", "Over/Under")}
-                            className={cn(
-                              "rounded-lg px-3 py-2 text-center transition-all border text-xs font-medium",
-                              draft?.pick === "Under"
-                                ? "bg-primary text-primary-foreground border-primary"
-                                : "bg-white/5 border-white/10 text-muted-foreground hover:border-white/20 hover:text-white"
-                            )}
-                            data-testid={`button-pick-under-${game.gameId}`}
-                          >
-                            Under (O/U)
-                          </button>
-                        </div>
                         {draft && (
                           <p className="text-center text-[10px] text-primary/70 font-medium">
                             ✓ {draft.pick} selected — tap again to deselect

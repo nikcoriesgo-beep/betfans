@@ -52,13 +52,6 @@ const LEAGUE_ACTIVE_STYLE: Record<string, string> = {
   NCAAB: "border-purple-500 bg-purple-500/10 text-purple-300",
 };
 
-const BET_TYPES: Record<string, string[]> = {
-  MLB: ["Moneyline", "Run Line", "Over/Under", "First 5 Innings"],
-  NHL: ["Moneyline", "Puck Line", "Over/Under"],
-  NBA: ["Moneyline", "Spread", "Over/Under"],
-  MLS: ["Moneyline", "Draw", "Over/Under"],
-  NCAAB: ["Moneyline", "Spread", "Over/Under"],
-};
 
 function isToday(dateStr: string) {
   const d = new Date(dateStr);
@@ -297,7 +290,7 @@ export default function DailyPicks() {
               const alreadyPicked = myPickGameIds.has(game.id);
               const myPick = myPicksToday.find((p) => p.gameId === game.id);
               const draft = drafts[game.id];
-              const betTypes = BET_TYPES[game.league] || ["Moneyline", "Spread", "Over/Under"];
+
               const isFinished = game.status === "finished";
 
               return (
@@ -327,7 +320,7 @@ export default function DailyPicks() {
                       <p className="text-xs text-muted-foreground leading-tight">@ {game.homeTeam}</p>
                     </div>
 
-                    {game.spiderPick && (
+                    {game.spiderPick && !game.spiderPick.toLowerCase().startsWith("over") && !game.spiderPick.toLowerCase().startsWith("under") && (
                       <div className="bg-primary/5 border border-primary/10 rounded-lg px-3 py-1.5 mb-3 flex items-center justify-between">
                         <div className="flex items-center gap-1.5">
                           <Zap size={10} className="text-primary" />
@@ -389,34 +382,6 @@ export default function DailyPicks() {
                             {game.moneylineHome && <p className="text-[10px] mt-0.5 opacity-70">{parseInt(game.moneylineHome) > 0 ? "+" : ""}{game.moneylineHome}</p>}
                           </button>
                         </div>
-                        {game.total && (
-                          <div className="grid grid-cols-2 gap-2">
-                            <button
-                              onClick={() => selectPick(game, "Over", "Over/Under")}
-                              className={cn(
-                                "rounded-lg px-3 py-2 text-center transition-all border text-xs font-medium",
-                                draft?.pick === "Over"
-                                  ? "bg-primary text-primary-foreground border-primary"
-                                  : "bg-white/5 border-white/10 text-muted-foreground hover:border-white/20 hover:text-white"
-                              )}
-                              data-testid={`button-pick-over-${game.id}`}
-                            >
-                              Over {game.total}
-                            </button>
-                            <button
-                              onClick={() => selectPick(game, "Under", "Over/Under")}
-                              className={cn(
-                                "rounded-lg px-3 py-2 text-center transition-all border text-xs font-medium",
-                                draft?.pick === "Under"
-                                  ? "bg-primary text-primary-foreground border-primary"
-                                  : "bg-white/5 border-white/10 text-muted-foreground hover:border-white/20 hover:text-white"
-                              )}
-                              data-testid={`button-pick-under-${game.id}`}
-                            >
-                              Under {game.total}
-                            </button>
-                          </div>
-                        )}
                         {draft && (
                           <p className="text-center text-[10px] text-primary/70 font-medium">
                             ✓ {draft.pick} selected — tap again to deselect
