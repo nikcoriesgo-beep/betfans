@@ -142,17 +142,18 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getGames(league?: string): Promise<Game[]> {
-    // Use PST midnight (UTC-8) as the daily cutoff — midnight PST = 08:00 UTC
+    // Show only games within today's PST window: midnight PST to midnight PST next day
     const pstDateStr = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(new Date());
     const [y, m, d] = pstDateStr.split("-").map(Number);
-    const cutoff = new Date(Date.UTC(y, m - 1, d, 8, 0, 0, 0)); // 00:00 PST = 08:00 UTC
+    const cutoff = new Date(Date.UTC(y, m - 1, d, 8, 0, 0, 0));     // today 00:00 PST = 08:00 UTC
+    const nextCutoff = new Date(Date.UTC(y, m - 1, d + 1, 8, 0, 0, 0)); // tomorrow 00:00 PST = 08:00 UTC
     if (league && league !== "ALL") {
       return db.select().from(games)
-        .where(and(eq(games.league, league), sql`${games.gameTime} >= ${cutoff} AND ${games.status} != 'postponed'`))
+        .where(and(eq(games.league, league), sql`${games.gameTime} >= ${cutoff} AND ${games.gameTime} < ${nextCutoff} AND ${games.status} != 'postponed'`))
         .orderBy(asc(games.gameTime));
     }
     return db.select().from(games)
-      .where(sql`${games.gameTime} >= ${cutoff} AND ${games.status} != 'postponed'`)
+      .where(sql`${games.gameTime} >= ${cutoff} AND ${games.gameTime} < ${nextCutoff} AND ${games.status} != 'postponed'`)
       .orderBy(asc(games.gameTime));
   }
 
