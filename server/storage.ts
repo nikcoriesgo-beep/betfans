@@ -42,6 +42,7 @@ export interface IStorage {
   getLeaderboard(period: string, limit?: number): Promise<(LeaderboardEntry & { user: User | null })[]>;
   getLeaderboardByLeague(period: string, league: string, limit?: number): Promise<any[]>;
   getMLBLeaderboardForDateRange(startDate: Date, endDate: Date, limit?: number): Promise<any[]>;
+  getMLBGameCountForPeriod(startDate: Date, endDate: Date): Promise<number>;
   getUserStats(userId: string): Promise<{ wins: number; losses: number; profit: number; roi: number; streak: number }>;
   getUserSportStats(userId: string, period?: string): Promise<{
     overall: { wins: number; losses: number; total: number; winRate: number; streak: number; profit: number };
@@ -373,9 +374,10 @@ export class DatabaseStorage implements IStorage {
       const wins = preds.filter((p) => p.result === "win").length;
       const losses = preds.filter((p) => p.result === "loss").length;
       const total = wins + losses;
+      const totalPicks = preds.length; // includes pending picks
       const profit = preds.reduce((acc, p) => acc + (p.payout || 0), 0);
       const roi = total > 0 ? (profit / total) * 100 : 0;
-      return { userId, wins, losses, total, profit: Math.round(profit * 100) / 100, roi: Math.round(roi * 100) / 100 };
+      return { userId, wins, losses, total, totalPicks, profit: Math.round(profit * 100) / 100, roi: Math.round(roi * 100) / 100 };
     });
 
     entries.sort((a, b) => b.roi - a.roi || b.wins - a.wins);
@@ -390,10 +392,27 @@ export class DatabaseStorage implements IStorage {
       rank: i + 1,
       wins: e.wins,
       losses: e.losses,
+      totalPicks: e.totalPicks,
       roi: e.roi,
       profit: e.profit,
       user: userMap.get(e.userId) || null,
     }));
+  }
+
+  async getMLBGameCountForPeriod(startDate: Date, endDate: Date): Promise<number> {
+    // Count distinct MLB games that were actually picked by any member in the period.
+    // This aligns exactly with what was shown on the picks page that day.
+    const [result] = await db
+      .select({ count: sql<number>`COUNT(DISTINCT ${predictions.gameId})` })
+      .from(predictions)
+      .innerJoin(games, eq(predictions.gameId, games.id))
+      .where(
+        and(
+          eq(games.league, "MLB"),
+          sql`${predictions.createdAt} >= ${startDate} AND ${predictions.createdAt} < ${endDate}`
+        )
+      );
+    return Number(result?.count || 0);
   }
 
   async getUserStats(userId: string): Promise<{ wins: number; losses: number; profit: number; roi: number; streak: number }> {
