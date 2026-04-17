@@ -92,10 +92,11 @@ async function processDailyPayout(
     return { paid: 0, skipped: 0, detail: `No qualifying members for daily ${periodLabel}` };
   }
 
-  const sorted = [...eligible].sort((a: any, b: any) => b.roi - a.roi || b.wins - a.wins);
-  const topRoi = sorted[0].roi;
+  // Rank by most wins first; ROI (win rate) only breaks ties among equal wins
+  const sorted = [...eligible].sort((a: any, b: any) => b.wins - a.wins || b.roi - a.roi);
   const topWins = sorted[0].wins;
-  const tied = sorted.filter((e: any) => e.roi === topRoi && e.wins === topWins);
+  const topRoi = sorted[0].roi;
+  const tied = sorted.filter((e: any) => e.wins === topWins && e.roi === topRoi);
   const perWinner = Math.floor(dailyShare / tied.length); // whole dollars
 
   if (perWinner < 0.01) {
@@ -177,9 +178,11 @@ async function processAnnualPayout(
     return { paid: 0, skipped: 0, detail: `No MLB picks for annual ${periodLabel}` };
   }
 
-  const topRoi = leaderboard[0].roi;
-  const topWins = leaderboard[0].wins;
-  const tied = leaderboard.filter((e: any) => e.roi === topRoi && e.wins === topWins);
+  // Rank by most wins first; ROI only breaks ties among equal wins
+  const sortedAnnual = [...leaderboard].sort((a: any, b: any) => b.wins - a.wins || b.roi - a.roi);
+  const topWins = sortedAnnual[0].wins;
+  const topRoi = sortedAnnual[0].roi;
+  const tied = sortedAnnual.filter((e: any) => e.wins === topWins && e.roi === topRoi);
   const perWinnerAmount = Math.floor((remainingPool / tied.length) * 100) / 100;
 
   let paid = 0;

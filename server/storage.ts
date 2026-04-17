@@ -722,6 +722,7 @@ export class DatabaseStorage implements IStorage {
   async getAllPayouts(limit = 50): Promise<(Payout & { user: User | null })[]> {
     const results = await db.select().from(payouts)
       .leftJoin(users, eq(payouts.userId, users.id))
+      .where(sql`${payouts.status} != 'reversed'`)
       .orderBy(desc(payouts.createdAt))
       .limit(limit);
     return results.map(r => ({ ...r.payouts, user: r.users }));
