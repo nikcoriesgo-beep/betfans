@@ -1,5 +1,6 @@
 import { storage } from "./storage";
 import { sendPayPalSubscriptionRefund, sendPayPalPayout } from "./paypalService";
+import { gradeStuckGames } from "./sportsDataService";
 
 function getETMidnight(date: Date): Date {
   const etStr = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(date);
@@ -71,6 +72,14 @@ async function processDailyPayout(
   const existing = await storage.getPayoutsByPeriod("daily", periodLabel);
   if (existing.length > 0) {
     return { paid: 0, skipped: 0, detail: `Already processed for daily ${periodLabel}` };
+  }
+
+  // Sync game results before calculating — ensures late-finishing games are graded
+  try {
+    const graded = await gradeStuckGames();
+    log(`Pre-payout grade sync: ${graded} picks graded`);
+  } catch (e: any) {
+    log(`⚠ Pre-payout grade sync failed (continuing anyway): ${e.message}`);
   }
 
   // Current pool = total contributions ever - total already paid out (all time)
