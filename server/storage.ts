@@ -43,6 +43,7 @@ export interface IStorage {
   getLeaderboardByLeague(period: string, league: string, limit?: number): Promise<any[]>;
   getMLBLeaderboardForDateRange(startDate: Date, endDate: Date, limit?: number): Promise<any[]>;
   getMLBGameCountForPeriod(startDate: Date, endDate: Date): Promise<number>;
+  getAllSportsGameCountForPeriod(startDate: Date, endDate: Date): Promise<number>;
   getUserStats(userId: string): Promise<{ wins: number; losses: number; profit: number; roi: number; streak: number }>;
   getUserSportStats(userId: string, period?: string): Promise<{
     overall: { wins: number; losses: number; total: number; winRate: number; streak: number; profit: number };
@@ -353,19 +354,37 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getMLBLeaderboardForDateRange(startDate: Date, endDate: Date, limit = 50): Promise<any[]> {
-    const mlbGames = await db.select().from(games).where(eq(games.league, "MLB"));
-    const mlbGameIds = new Set(mlbGames.map((g) => g.id));
+    const allSportsGames = await db.select().from(games).where(
+      sql`${games.league} IN ('MLB', 'NBA', 'NHL')`
+    );
+    const mlbGameIds = new Set(allSportsGames.filter(g => g.league === "MLB").map(g => g.id));
+    const allSportsGameIds = new Set(allSportsGames.map(g => g.id));
     if (mlbGameIds.size === 0) return [];
 
     const allPreds = await db.select().from(predictions);
-    const filtered = allPreds.filter((p) =>
+
+    // MLB picks in period — used for wins/losses/ROI ranking
+    const mlbFiltered = allPreds.filter((p) =>
       mlbGameIds.has(p.gameId) &&
       new Date(p.createdAt!) >= startDate &&
       new Date(p.createdAt!) < endDate
     );
 
-    const byUser: Record<string, typeof filtered> = {};
-    for (const p of filtered) {
+    // ALL sports picks in period — used for qualification check
+    const allSportsFiltered = allPreds.filter((p) =>
+      allSportsGameIds.has(p.gameId) &&
+      new Date(p.createdAt!) >= startDate &&
+      new Date(p.createdAt!) < endDate
+    );
+
+    // Build all-sports picks map per user
+    const allSportsByUser: Record<string, number> = {};
+    for (const p of allSportsFiltered) {
+      allSportsByUser[p.userId] = (allSportsByUser[p.userId] || 0) + 1;
+    }
+
+    const byUser: Record<string, typeof mlbFiltered> = {};
+    for (const p of mlbFiltered) {
       if (!byUser[p.userId]) byUser[p.userId] = [];
       byUser[p.userId].push(p);
     }
@@ -374,13 +393,13 @@ export class DatabaseStorage implements IStorage {
       const wins = preds.filter((p) => p.result === "win").length;
       const losses = preds.filter((p) => p.result === "loss").length;
       const total = wins + losses;
-      const totalPicks = preds.length; // includes pending picks
+      const totalPicks = allSportsByUser[userId] || preds.length; // all-sports picks for qualification
       const profit = preds.reduce((acc, p) => acc + (p.payout || 0), 0);
       const roi = total > 0 ? (profit / total) * 100 : 0;
       return { userId, wins, losses, total, totalPicks, profit: Math.round(profit * 100) / 100, roi: Math.round(roi * 100) / 100 };
     });
 
-    entries.sort((a, b) => b.roi - a.roi || b.wins - a.wins);
+    entries.sort((a, b) => b.wins - a.wins || b.roi - a.roi);
     const topEntries = entries.filter((e) => e.wins > 0).slice(0, limit);
 
     const allUsers = await db.select().from(users);
@@ -409,6 +428,21 @@ export class DatabaseStorage implements IStorage {
       .where(
         and(
           eq(games.league, "MLB"),
+          sql`${predictions.createdAt} >= ${startDate} AND ${predictions.createdAt} < ${endDate}`
+        )
+      );
+    return Number(result?.count || 0);
+  }
+
+  async getAllSportsGameCountForPeriod(startDate: Date, endDate: Date): Promise<number> {
+    // Count distinct games (MLB + NBA + NHL) picked by any member in the period.
+    const [result] = await db
+      .select({ count: sql<number>`COUNT(DISTINCT ${predictions.gameId})` })
+      .from(predictions)
+      .innerJoin(games, eq(predictions.gameId, games.id))
+      .where(
+        and(
+          sql`${games.league} IN ('MLB', 'NBA', 'NHL')`,
           sql`${predictions.createdAt} >= ${startDate} AND ${predictions.createdAt} < ${endDate}`
         )
       );

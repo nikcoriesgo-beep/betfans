@@ -93,19 +93,19 @@ async function processDailyPayout(
     return { paid: 0, skipped: 0, detail: `No MLB picks for daily ${periodLabel}` };
   }
 
-  // Total MLB games available to pick that day (based on what was actually picked by anyone)
-  const requiredPickCount = await storage.getMLBGameCountForPeriod(periodStart, periodEnd);
-  log(`Daily MLB games to qualify: ${requiredPickCount}`);
+  // Total MLB + NBA + NHL games available to pick that day (based on what was actually picked by anyone)
+  const requiredPickCount = await storage.getAllSportsGameCountForPeriod(periodStart, periodEnd);
+  log(`Daily MLB+NBA+NHL games required to qualify: ${requiredPickCount}`);
 
   const eligible = leaderboard.filter((e: any) => {
     const tier = e.user?.membershipTier;
     const validTier = tier === "legend" || tier === "pro" || tier === "rookie";
     const pickedAll = requiredPickCount === 0 || (e.totalPicks ?? 0) >= requiredPickCount;
-    if (!pickedAll) log(`~ ${e.user?.firstName} ${e.user?.lastName} ineligible: picked ${e.totalPicks ?? 0}/${requiredPickCount} MLB games`);
+    if (!pickedAll) log(`~ ${e.user?.firstName} ${e.user?.lastName} ineligible: picked ${e.totalPicks ?? 0}/${requiredPickCount} MLB+NBA+NHL games`);
     return validTier && pickedAll;
   });
   if (eligible.length === 0) {
-    return { paid: 0, skipped: 0, detail: `No members picked all ${requiredPickCount} MLB games for daily ${periodLabel}` };
+    return { paid: 0, skipped: 0, detail: `No members picked all ${requiredPickCount} MLB+NBA+NHL games for daily ${periodLabel}` };
   }
 
   // Rank by most wins first; ROI (win rate) only breaks ties among equal wins
