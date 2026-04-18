@@ -276,8 +276,9 @@ async function fetchAndGradeForLeagueDate(league: string, dateStr: string): Prom
       if (homeScore === 0 && awayScore === 0) continue;
 
       // Match by team name + date string (ET date of game start)
+      // Also re-sync finished games that have 0-0 scores (placeholder/bad data)
       const allLeagueGames = await db.select().from(games)
-        .where(sql`${games.league} = ${league} AND ${games.status} != 'finished'`);
+        .where(sql`${games.league} = ${league} AND (${games.status} != 'finished' OR (${games.homeScore} = 0 AND ${games.awayScore} = 0))`);
 
       for (const g of allLeagueGames) {
         if (g.homeTeam !== homeTeam || g.awayTeam !== awayTeam) continue;
@@ -369,7 +370,24 @@ export async function gradeStuckGames(): Promise<number> {
     }
   }
 
-  if (liveGames.length === 0 && stuckUpcoming.length === 0 && finishedWithPending.length === 0) {
+  // ── Pass 4: re-fetch finished games with 0-0 scores (bad/placeholder data) ──
+  const zeroScoreFinished = await db.select().from(games)
+    .where(sql`${games.status} = 'finished' AND ${games.homeScore} = 0 AND ${games.awayScore} = 0 AND ${games.league} IN ('MLB','NBA','NHL','MLS','NCAAB') AND ${games.gameTime} > ${oldCutoff}`);
+
+  if (zeroScoreFinished.length > 0) {
+    console.log(`[spider] gradeStuckGames: found ${zeroScoreFinished.length} finished game(s) with 0-0 score — re-fetching`);
+    const byLeagueDate: Record<string, { league: string; dateStr: string }> = {};
+    for (const g of zeroScoreFinished) {
+      const dateStr = getETDateStr(new Date(g.gameTime!));
+      const key = `${g.league}-${dateStr}`;
+      byLeagueDate[key] = { league: g.league, dateStr };
+    }
+    for (const { league, dateStr } of Object.values(byLeagueDate)) {
+      totalGraded += await fetchAndGradeForLeagueDate(league, dateStr);
+    }
+  }
+
+  if (liveGames.length === 0 && stuckUpcoming.length === 0 && finishedWithPending.length === 0 && zeroScoreFinished.length === 0) {
     console.log("[spider] gradeStuckGames: all games up to date");
   }
 
