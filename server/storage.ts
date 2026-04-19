@@ -272,6 +272,7 @@ export class DatabaseStorage implements IStorage {
       })
       .filter((e) => e.total > 0)
       .sort((a, b) => {
+        if (period === "annual") return b.wins - a.wins || a.losses - b.losses;
         const aWinRate = a.total > 0 ? a.wins / a.total : 0;
         const bWinRate = b.total > 0 ? b.wins / b.total : 0;
         return bWinRate - aWinRate || b.wins - a.wins;
@@ -331,7 +332,11 @@ export class DatabaseStorage implements IStorage {
       return { userId, wins, losses, profit: Math.round(profit * 100) / 100, roi: Math.round(roi * 100) / 100, streak };
     });
 
-    entries.sort((a, b) => b.roi - a.roi);
+    if (period === "annual") {
+      entries.sort((a, b) => b.wins - a.wins || a.losses - b.losses);
+    } else {
+      entries.sort((a, b) => b.roi - a.roi);
+    }
     const topEntries = entries.slice(0, limit);
 
     const allUsers = await db.select().from(users);
