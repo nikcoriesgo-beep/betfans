@@ -427,6 +427,20 @@ export async function runStartupMigration() {
     );
     console.log("[migration] Cleaned up any fake prize pool contributions");
 
+    // RESTORE: Real prize pool balance from PayPal payments lost during DB migration
+    // $83 confirmed by founder — real PayPal subscription fees paid by real members
+    // This is a one-time restoration marker so webhooks don't double-count going forward
+    const ppRestoreCheck = await client.query(
+      `SELECT 1 FROM prize_pool_contributions WHERE source = 'migration_restore'`
+    );
+    if (ppRestoreCheck.rowCount === 0) {
+      await client.query(`
+        INSERT INTO prize_pool_contributions (amount, source, user_id, created_at)
+        VALUES (83, 'migration_restore', '29b670b7-5296-44dc-a0a0-aec0d878ef9b', '2026-04-19T00:00:00Z')
+      `);
+      console.log("[migration] Restored $83 prize pool balance from real PayPal payments");
+    }
+
   } catch (err: any) {
     console.error("[migration] Startup migration error:", err.message);
     throw err;
