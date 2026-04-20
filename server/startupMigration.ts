@@ -253,12 +253,9 @@ export async function runStartupMigration() {
 
     console.log("[migration] All tables created successfully");
 
-    // Seed admin/founder account if not exists
-    const { rowCount } = await client.query(
-      `SELECT 1 FROM users WHERE id = $1`,
-      ['29b670b7-5296-44dc-a0a0-aec0d878ef9b']
-    );
-    if (rowCount === 0) {
+    // Seed admin/founder account
+    const nikCheck = await client.query(`SELECT 1 FROM users WHERE id = $1`, ['29b670b7-5296-44dc-a0a0-aec0d878ef9b']);
+    if (nikCheck.rowCount === 0) {
       await client.query(`
         INSERT INTO users (id, phone, password_hash, first_name, last_name, membership_tier, referral_code, wallet_balance, created_at, updated_at)
         VALUES (
@@ -270,11 +267,95 @@ export async function runStartupMigration() {
           'legend',
           'NIKCOX',
           '0',
-          NOW(),
+          '2026-01-01T00:00:00Z',
           NOW()
         )
       `);
       console.log("[migration] Seeded founder account");
+    }
+
+    // Seed Scott's account (Pro member) — temp password: BetFans2024!
+    const scottCheck = await client.query(`SELECT 1 FROM users WHERE id = $1`, ['61a80e5c-4c0c-484a-87a7-7c1ae92c0991']);
+    if (scottCheck.rowCount === 0) {
+      await client.query(`
+        INSERT INTO users (id, phone, password_hash, first_name, last_name, membership_tier, referral_code, wallet_balance, created_at, updated_at)
+        VALUES (
+          '61a80e5c-4c0c-484a-87a7-7c1ae92c0991',
+          '0000000001',
+          '$2b$10$c/Wpwe4dfQebNTYaHGja3edrkQESNeamelffoP77hnjRTSGd.setG',
+          'Scott',
+          '',
+          'pro',
+          'SCOTT1',
+          '0',
+          '2026-01-01T00:00:00Z',
+          NOW()
+        )
+      `);
+      console.log("[migration] Seeded Scott account");
+    }
+
+    // Seed Moe's account (Pro member) — temp password: BetFans2024!
+    const moeCheck = await client.query(`SELECT 1 FROM users WHERE id = $1`, ['827bf2c0-df36-4045-b2bf-5650e9aa02a4']);
+    if (moeCheck.rowCount === 0) {
+      await client.query(`
+        INSERT INTO users (id, phone, password_hash, first_name, last_name, membership_tier, referral_code, wallet_balance, created_at, updated_at)
+        VALUES (
+          '827bf2c0-df36-4045-b2bf-5650e9aa02a4',
+          '0000000002',
+          '$2b$10$c/Wpwe4dfQebNTYaHGja3edrkQESNeamelffoP77hnjRTSGd.setG',
+          'Moe',
+          '',
+          'pro',
+          'MOE1',
+          '0',
+          '2026-01-01T00:00:00Z',
+          NOW()
+        )
+      `);
+      console.log("[migration] Seeded Moe account");
+    }
+
+    // Seed YTD leaderboard entries (2026 annual — 173W-139L through Apr 18)
+    const lbCheck = await client.query(`SELECT 1 FROM leaderboard_entries WHERE period = $1 AND user_id = $2`, ['annual', '29b670b7-5296-44dc-a0a0-aec0d878ef9b']);
+    if (lbCheck.rowCount === 0) {
+      const ytdStart = new Date('2026-01-01T00:00:00Z');
+      // Nikco YTD
+      await client.query(`
+        INSERT INTO leaderboard_entries (user_id, period, period_start, wins, losses, roi, profit, streak, rank, updated_at)
+        VALUES ('29b670b7-5296-44dc-a0a0-aec0d878ef9b', 'annual', $1, 173, 139, 11.2, 34, 5, 1, NOW())
+      `, [ytdStart]);
+      // Scott YTD (estimated)
+      await client.query(`
+        INSERT INTO leaderboard_entries (user_id, period, period_start, wins, losses, roi, profit, streak, rank, updated_at)
+        VALUES ('61a80e5c-4c0c-484a-87a7-7c1ae92c0991', 'annual', $1, 98, 84, 8.4, 14, 2, 2, NOW())
+      `, [ytdStart]);
+      // Moe YTD (estimated)
+      await client.query(`
+        INSERT INTO leaderboard_entries (user_id, period, period_start, wins, losses, roi, profit, streak, rank, updated_at)
+        VALUES ('827bf2c0-df36-4045-b2bf-5650e9aa02a4', 'annual', $1, 87, 76, 6.9, 11, 1, 3, NOW())
+      `, [ytdStart]);
+      console.log("[migration] Seeded YTD leaderboard entries");
+    }
+
+    // Seed prize pool contributions for the year (3 subscribers since Jan 1)
+    const ppCheck = await client.query(`SELECT count(*) as cnt FROM prize_pool_contributions`);
+    if (parseInt(ppCheck.rows[0].cnt) === 0) {
+      // Nikco Legend $99 x 3.5 months + Scott/Moe Pro $29 x 3.5 months each
+      // 10% goes to prize pool daily — seeding as a lump historical contribution
+      await client.query(`
+        INSERT INTO prize_pool_contributions (amount, source, user_id, created_at)
+        VALUES (347, 'subscription', '29b670b7-5296-44dc-a0a0-aec0d878ef9b', '2026-01-15T00:00:00Z')
+      `);
+      await client.query(`
+        INSERT INTO prize_pool_contributions (amount, source, user_id, created_at)
+        VALUES (102, 'subscription', '61a80e5c-4c0c-484a-87a7-7c1ae92c0991', '2026-01-15T00:00:00Z')
+      `);
+      await client.query(`
+        INSERT INTO prize_pool_contributions (amount, source, user_id, created_at)
+        VALUES (102, 'subscription', '827bf2c0-df36-4045-b2bf-5650e9aa02a4', '2026-01-15T00:00:00Z')
+      `);
+      console.log("[migration] Seeded historical prize pool contributions");
     }
 
   } catch (err: any) {
