@@ -208,15 +208,15 @@ export async function registerRoutes(
             .from(leaderboardEntries)
             .where(and(eq(leaderboardEntries.userId, founder.id), eq(leaderboardEntries.period, "annual")))
             .limit(1);
-          if (lbEntry && (lbEntry.wins > 0 || lbEntry.losses > 0)) {
+          if (lbEntry && ((lbEntry.wins ?? 0) > 0 || (lbEntry.losses ?? 0) > 0)) {
             // Use DB values only if they have real data
             stats = {
-              wins: lbEntry.wins,
-              losses: lbEntry.losses,
+              wins: lbEntry.wins ?? 0,
+              losses: lbEntry.losses ?? 0,
               profit: Number(lbEntry.profit) || 0,
               roi: Number(lbEntry.roi) || 0,
               streak: lbEntry.streak || 0,
-              totalPicks: (lbEntry.wins + lbEntry.losses),
+              totalPicks: ((lbEntry.wins ?? 0) + (lbEntry.losses ?? 0)),
             };
           } else if (lbEntry) {
             // Entry exists but has 0-0 data — update it to current YTD
