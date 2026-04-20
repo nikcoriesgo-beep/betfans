@@ -111,6 +111,30 @@ async function seedHistoricalGamesAndPredictions(client: PoolClient) {
   console.log(`[migration] Seeded 66 historical MLB game records`);
 }
 
+// Run AFTER server starts — seeds historical game/prediction data in background
+export async function runHistoricalDataSeed() {
+  const client = await pool.connect();
+  try {
+    const nikPickCount = await client.query(
+      `SELECT count(*) as cnt FROM predictions WHERE user_id = $1 AND result IN ('win','loss')`,
+      [NIK_ID]
+    );
+    const nikPicks = parseInt(nikPickCount.rows[0].cnt);
+    if (nikPicks !== 312) {
+      console.log(`[migration] Nik has ${nikPicks} picks (need 312), clearing and reseeding...`);
+      await client.query(`DELETE FROM predictions WHERE created_at < '2026-04-19'`);
+      await client.query(`DELETE FROM games WHERE game_time < '2026-04-19' AND status = 'final'`);
+      await seedHistoricalGamesAndPredictions(client);
+    } else {
+      console.log("[migration] Historical data already seeded correctly (312 picks)");
+    }
+  } catch (err: any) {
+    console.error("[migration] Historical seed error:", err.message);
+  } finally {
+    client.release();
+  }
+}
+
 export async function runStartupMigration() {
   const client = await pool.connect();
   try {
@@ -467,23 +491,6 @@ export async function runStartupMigration() {
         VALUES (102, 'subscription', '827bf2c0-df36-4045-b2bf-5650e9aa02a4', '2026-01-15T00:00:00Z')
       `);
       console.log("[migration] Seeded historical prize pool contributions");
-    }
-
-    // Seed historical games + predictions (restores leaderboard 173W-139L YTD)
-    // Check if Nik has exactly 312 picks (173+139) — if not, clear and reseed
-    const nikPickCount = await client.query(
-      `SELECT count(*) as cnt FROM predictions WHERE user_id = $1 AND result IN ('win','loss')`,
-      [NIK_ID]
-    );
-    const nikPicks = parseInt(nikPickCount.rows[0].cnt);
-    if (nikPicks !== 312) {
-      console.log(`[migration] Nik has ${nikPicks} picks (need 312), clearing and reseeding...`);
-      // Clear existing historical data
-      await client.query(`DELETE FROM predictions WHERE created_at < '2026-04-19'`);
-      await client.query(`DELETE FROM games WHERE game_time < '2026-04-19' AND status = 'final'`);
-      await seedHistoricalGamesAndPredictions(client);
-    } else {
-      console.log("[migration] Historical data already seeded correctly (312 picks)");
     }
 
   } catch (err: any) {
