@@ -414,10 +414,13 @@ export async function runStartupMigration() {
     `);
     for (const row of fakeUsersResult.rows) {
       const fakeId = row.id;
+      await client.query(`DELETE FROM thread_replies WHERE user_id = $1`, [fakeId]);
+      await client.query(`DELETE FROM threads WHERE user_id = $1`, [fakeId]);
       await client.query(`DELETE FROM predictions WHERE user_id = $1`, [fakeId]);
       await client.query(`DELETE FROM leaderboard_entries WHERE user_id = $1`, [fakeId]);
       await client.query(`DELETE FROM prize_pool_contributions WHERE user_id = $1`, [fakeId]);
       await client.query(`DELETE FROM chat_messages WHERE user_id = $1`, [fakeId]);
+      await client.query(`DELETE FROM payouts WHERE user_id = $1`, [fakeId]);
       await client.query(`DELETE FROM referrals WHERE referrer_id = $1 OR referred_id = $1`, [fakeId]);
       await client.query(`DELETE FROM users WHERE id = $1`, [fakeId]);
       console.log(`[migration] Removed fake/demo account: ${fakeId}`);
