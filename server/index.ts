@@ -7,7 +7,7 @@ import { getStripeSync } from "./stripeClient";
 import { startSportsDataSync } from "./sportsDataService";
 import { startMorningSweep } from "./morningCheck";
 import { storage } from "./storage";
-import { runStartupMigration } from "./startupMigration";
+import { runStartupMigration, runHistoricalDataSeed } from "./startupMigration";
 
 const app = express();
 const httpServer = createServer(app);
@@ -93,7 +93,13 @@ async function initStripe() {
 }
 
 (async () => {
-  await runStartupMigration();
+  // Run migration first so routes have DB available, but don't block server start
+  // Heavy data seeding runs in background after server is listening
+  try {
+    await runStartupMigration();
+  } catch (migErr: any) {
+    console.error("[startup] Migration error (non-fatal):", migErr.message);
+  }
   await registerRoutes(httpServer, app);
 
   // Error handler — log the error but never re-throw (that crashes the process)
@@ -127,6 +133,9 @@ async function initStripe() {
 
   await initStripe();
   startSportsDataSync();
+
+  // Seed historical leaderboard data in background (non-blocking)
+  runHistoricalDataSeed().catch((e: any) => console.error("[startup] Historical seed error:", e.message));
 
   if (process.env.NODE_ENV === "production") {
     startMorningSweep();
