@@ -393,8 +393,8 @@ export async function runStartupMigration() {
           '29b670b7-5296-44dc-a0a0-aec0d878ef9b',
           '2482757932',
           '$2b$10$lvK7ApWKudqKz8ThTrdUJe726Q2qsQap7stfIcFqMuY3O2AUzdFyu',
-          'Nik',
-          'Cox',
+          'Nikco',
+          'X',
           'legend',
           'NIKCOX',
           '0',
@@ -403,6 +403,13 @@ export async function runStartupMigration() {
         )
       `);
       console.log("[migration] Seeded founder account");
+    } else {
+      // Fix name if it was seeded incorrectly in a previous version
+      await client.query(`
+        UPDATE users SET first_name = 'Nikco', last_name = 'X'
+        WHERE id = '29b670b7-5296-44dc-a0a0-aec0d878ef9b'
+          AND (first_name != 'Nikco' OR last_name != 'X')
+      `);
     }
 
     // CLEANUP: Remove any fake/demo accounts — placeholder phones OR demo names seeded earlier
