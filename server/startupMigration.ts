@@ -412,6 +412,93 @@ export async function runStartupMigration() {
       `);
     }
 
+    // Seed Scott's real account (Legend)
+    const scottPhone = '8182314634';
+    const scottCheck = await client.query(`SELECT 1 FROM users WHERE phone = $1`, [scottPhone]);
+    if (scottCheck.rowCount === 0) {
+      await client.query(`
+        INSERT INTO users (id, phone, password_hash, first_name, last_name, membership_tier, referral_code, wallet_balance, created_at, updated_at)
+        VALUES (
+          '550e8400-e29b-41d4-a716-446655440001',
+          '8182314634',
+          '$2b$10$c/Wpwe4dfQebNTYaHGja3edrkQESNeamelffoP77hnjRTSGd.setG',
+          'Scott',
+          '',
+          'legend',
+          'SCOTT818',
+          '0',
+          '2026-01-01T00:00:00Z',
+          NOW()
+        )
+      `);
+      console.log("[migration] Seeded Scott account");
+    }
+
+    // Seed Moe's real account (Legend)
+    const moePhone = '2138724448';
+    const moeCheck = await client.query(`SELECT 1 FROM users WHERE phone = $1`, [moePhone]);
+    if (moeCheck.rowCount === 0) {
+      await client.query(`
+        INSERT INTO users (id, phone, password_hash, first_name, last_name, membership_tier, referral_code, wallet_balance, created_at, updated_at)
+        VALUES (
+          '550e8400-e29b-41d4-a716-446655440002',
+          '2138724448',
+          '$2b$10$c/Wpwe4dfQebNTYaHGja3edrkQESNeamelffoP77hnjRTSGd.setG',
+          'Moe',
+          '',
+          'legend',
+          'MOE213',
+          '0',
+          '2026-01-01T00:00:00Z',
+          NOW()
+        )
+      `);
+      console.log("[migration] Seeded Moe account");
+    }
+
+    // Seed Ian's real account (Legend)
+    const ianPhone = '3107367905';
+    const ianCheck = await client.query(`SELECT 1 FROM users WHERE phone = $1`, [ianPhone]);
+    if (ianCheck.rowCount === 0) {
+      await client.query(`
+        INSERT INTO users (id, phone, password_hash, first_name, last_name, membership_tier, referral_code, wallet_balance, created_at, updated_at)
+        VALUES (
+          '550e8400-e29b-41d4-a716-446655440003',
+          '3107367905',
+          '$2b$10$c/Wpwe4dfQebNTYaHGja3edrkQESNeamelffoP77hnjRTSGd.setG',
+          'Ian',
+          '',
+          'legend',
+          'IAN310',
+          '0',
+          '2026-04-20T00:00:00Z',
+          NOW()
+        )
+      `);
+      console.log("[migration] Seeded Ian account");
+    }
+
+    // Seed historical leaderboard for Scott and Moe (real YTD stats)
+    const scottId = '550e8400-e29b-41d4-a716-446655440001';
+    const moeId   = '550e8400-e29b-41d4-a716-446655440002';
+    const ytdStart = new Date('2026-01-01T00:00:00Z');
+    const scottLbCheck = await client.query(`SELECT 1 FROM leaderboard_entries WHERE user_id = $1 AND period = 'annual'`, [scottId]);
+    if (scottLbCheck.rowCount === 0) {
+      await client.query(`
+        INSERT INTO leaderboard_entries (user_id, period, period_start, wins, losses, roi, profit, streak, rank, updated_at)
+        VALUES ($1, 'annual', $2, 98, 84, 8.4, 14, 2, 2, NOW())
+      `, [scottId, ytdStart]);
+      console.log("[migration] Seeded Scott leaderboard entry");
+    }
+    const moeLbCheck = await client.query(`SELECT 1 FROM leaderboard_entries WHERE user_id = $1 AND period = 'annual'`, [moeId]);
+    if (moeLbCheck.rowCount === 0) {
+      await client.query(`
+        INSERT INTO leaderboard_entries (user_id, period, period_start, wins, losses, roi, profit, streak, rank, updated_at)
+        VALUES ($1, 'annual', $2, 87, 76, 6.9, 11, 1, 3, NOW())
+      `, [moeId, ytdStart]);
+      console.log("[migration] Seeded Moe leaderboard entry");
+    }
+
     // CLEANUP: Remove any fake/demo accounts — placeholder phones OR demo names seeded earlier
     const fakeUsersResult = await client.query(`
       SELECT id FROM users WHERE
