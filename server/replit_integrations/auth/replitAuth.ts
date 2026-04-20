@@ -26,7 +26,6 @@ export function setupAuth(app: Express) {
     cookie: {
       httpOnly: true,
       secure: true,
-      maxAge: 7 * 24 * 60 * 60 * 1000,
       sameSite: "lax",
     },
   };
@@ -161,6 +160,42 @@ export function setupAuth(app: Express) {
       res.json(safeUser);
     } catch {
       res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.post("/api/auth/change-password", async (req, res) => {
+    const userId = (req.session as any)?.userId;
+    if (!userId) return res.status(401).json({ message: "Not authenticated" });
+
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ message: "Current and new password are required" });
+    }
+    if (newPassword.length < 6) {
+      return res.status(400).json({ message: "New password must be at least 6 characters" });
+    }
+
+    try {
+      const user = await authStorage.getUser(userId);
+      if (!user || !user.passwordHash) {
+        return res.status(400).json({ message: "Account not found" });
+      }
+
+      const valid = await bcrypt.compare(currentPassword, user.passwordHash);
+      if (!valid) {
+        return res.status(401).json({ message: "Current password is incorrect" });
+      }
+
+      const newHash = await bcrypt.hash(newPassword, 10);
+      const { db: dbConn } = await import("../../db");
+      const { users: usersTable } = await import("@shared/schema");
+      const { eq: eqFn } = await import("drizzle-orm");
+      await dbConn.update(usersTable).set({ passwordHash: newHash } as any).where(eqFn(usersTable.id, userId));
+
+      res.json({ message: "Password updated successfully" });
+    } catch (error: any) {
+      console.error("Change password error:", error.message);
+      res.status(500).json({ message: "Failed to update password" });
     }
   });
 
