@@ -30,116 +30,85 @@ const MLB_MATCHUPS = [
 async function seedHistoricalGamesAndPredictions(client: PoolClient) {
   console.log("[migration] Seeding historical games and predictions...");
 
-  // Build result sequence: 173W + 139L for Nik, spread over 312 picks
-  // Results: W=win, L=loss — distribute evenly so it looks realistic
+  // Build exact W/L result sequence
   function makeResults(wins: number, losses: number): string[] {
     const results: string[] = [];
+    let w = wins, l = losses;
     const total = wins + losses;
     for (let i = 0; i < total; i++) {
-      // Distribute wins/losses proportionally — not pure sequential
-      const winsRemaining = wins - results.filter(r => r === 'win').length;
-      const remaining = total - i;
-      results.push(winsRemaining / remaining > 0.5 ? 'win' : 'loss');
+      // Proportional distribution — guarantees exact W and L totals
+      if (w === 0) { results.push('loss'); l--; }
+      else if (l === 0) { results.push('win'); w--; }
+      else if (w / (w + l) > 0.5) { results.push('win'); w--; }
+      else { results.push('loss'); l--; }
     }
     return results;
   }
 
-  const nikResults = makeResults(173, 139);   // 312 picks
-  const scottResults = makeResults(98, 84);    // 182 picks
-  const moeResults = makeResults(87, 76);      // 163 picks
+  // Each user gets their own dedicated game per pick — no sharing, no duplicate results
+  async function seedUserPicks(
+    userId: string,
+    league: string,
+    wins: number,
+    losses: number,
+    startDate: Date,
+    matchups: string[][]
+  ) {
+    const results = makeResults(wins, losses);
+    const total = results.length;
+    for (let i = 0; i < total; i++) {
+      const matchup = matchups[i % matchups.length];
+      const date = new Date(startDate.getTime() + i * 82800000); // spread ~23h apart
+      const isWin = results[i] === 'win';
+      const isNba = league === 'NBA';
+      const homeScore = isWin
+        ? (isNba ? 108 + (i % 15) : 5 + (i % 4))
+        : (isNba ? 95 + (i % 10) : 2 + (i % 3));
+      const awayScore = isWin
+        ? (isNba ? 95 + (i % 10) : 2 + (i % 3))
+        : (isNba ? 108 + (i % 12) : 5 + (i % 4));
 
-  // Generate game dates: Jan 1 - Apr 18, 2026 (~108 days)
-  // NBA: Jan 1 – Apr 18 (use all 312 games, ~3 per day)
-  // MLB: Mar 28 – Apr 18 (~22 days)
-  const gameRows: { home: string; away: string; league: string; date: Date; spiderPick: string; nikResult: string; scottResult: string | null; moeResult: string | null; homeScore: number; awayScore: number }[] = [];
+      const gameResult = await client.query(`
+        INSERT INTO games (league, home_team, away_team, game_time, status, home_score, away_score, spider_pick, spider_confidence, is_pro_locked, created_at)
+        VALUES ($1, $2, $3, $4, 'final', $5, $6, $7, 75, false, $4)
+        RETURNING id
+      `, [league, matchup[0], matchup[1], date, homeScore, awayScore, matchup[0]]);
 
-  let nikIdx = 0, scottIdx = 0, moeIdx = 0;
-
-  // Generate NBA games Jan 1 - Apr 13 (104 days × 3 games = 312)
-  const nbaStart = new Date('2026-01-01T22:30:00Z');
-  for (let day = 0; day < 104 && nikIdx < nikResults.length; day++) {
-    const gamesPerDay = day < 100 ? 3 : (nikResults.length - nikIdx >= 2 ? 2 : 1);
-    for (let g = 0; g < gamesPerDay && nikIdx < nikResults.length; g++) {
-      const matchup = NBA_MATCHUPS[(day * 3 + g) % NBA_MATCHUPS.length];
-      const date = new Date(nbaStart.getTime() + day * 86400000 + g * 3600000);
-      const nikWin = nikResults[nikIdx] === 'win';
-      const homePick = matchup[0]; // always pick home
-      gameRows.push({
-        home: matchup[0], away: matchup[1], league: 'NBA', date,
-        spiderPick: homePick,
-        nikResult: nikResults[nikIdx] || 'win',
-        scottResult: scottIdx < scottResults.length ? scottResults[scottIdx] : null,
-        moeResult: moeIdx < moeResults.length ? moeResults[moeIdx] : null,
-        homeScore: nikWin ? 108 + Math.floor(Math.random() * 20) : 95 + Math.floor(Math.random() * 10),
-        awayScore: nikWin ? 95 + Math.floor(Math.random() * 10) : 108 + Math.floor(Math.random() * 15),
-      });
-      nikIdx++;
-      if (g % 2 === 0 && scottIdx < scottResults.length) scottIdx++;
-      if (g % 2 === 1 && moeIdx < moeResults.length) moeIdx++;
+      const gameId = gameResult.rows[0].id;
+      await client.query(`
+        INSERT INTO predictions (user_id, game_id, prediction_type, pick, units, result, payout, created_at)
+        VALUES ($1, $2, 'moneyline', $3, 1, $4, $5, $6)
+      `, [userId, gameId, matchup[0], results[i], isWin ? 1 : -1, date]);
     }
+    console.log(`[migration] ${userId.slice(0,8)}: seeded ${total} picks (${wins}W-${losses}L) in ${league}`);
   }
 
-  // Generate MLB games Mar 28 - Apr 18 (22 days × 3 games = 66)
-  // Nik's 173-139 is already covered in NBA above — MLB games are historical game data only
+  // Nik: 173W-139L YTD (NBA Jan 1 - Apr 18)
+  await seedUserPicks(NIK_ID, 'NBA', 173, 139, new Date('2026-01-01T22:30:00Z'), NBA_MATCHUPS);
+
+  // Scott: 98W-84L YTD (NBA Jan 1 - Mar 15)
+  await seedUserPicks(SCOTT_ID, 'NBA', 98, 84, new Date('2026-01-01T21:00:00Z'), NBA_MATCHUPS);
+
+  // Moe: 87W-76L YTD (NBA Jan 1 - Mar 10)
+  await seedUserPicks(MOE_ID, 'NBA', 87, 76, new Date('2026-01-01T20:00:00Z'), NBA_MATCHUPS);
+
+  // Historical MLB games (no user predictions — just game data for the feed)
   const mlbStart = new Date('2026-03-28T18:10:00Z');
-  const mlbNikResults = makeResults(7, 8); // 7W-8L MLB from v49 notes
-  let mlbNikIdx = 0;
   for (let day = 0; day < 22; day++) {
     for (let g = 0; g < 3; g++) {
       const matchup = MLB_MATCHUPS[(day * 3 + g) % MLB_MATCHUPS.length];
       const date = new Date(mlbStart.getTime() + day * 86400000 + g * 3600000);
-      const isRecent = day >= 18; // Only last 4 days (Apr 14-18) have Nik's picks tracked
-      const mlbNikResult = isRecent && mlbNikIdx < mlbNikResults.length ? mlbNikResults[mlbNikIdx] : null;
-      if (isRecent && mlbNikIdx < mlbNikResults.length) mlbNikIdx++;
-      const homeWins = (mlbNikResult === 'win') || (!mlbNikResult && Math.random() > 0.5);
-      gameRows.push({
-        home: matchup[0], away: matchup[1], league: 'MLB', date,
-        spiderPick: matchup[0],
-        nikResult: mlbNikResult,
-        scottResult: null,
-        moeResult: null,
-        homeScore: homeWins ? 5 + Math.floor(Math.random() * 5) : 2 + Math.floor(Math.random() * 3),
-        awayScore: homeWins ? 2 + Math.floor(Math.random() * 3) : 5 + Math.floor(Math.random() * 4),
-      });
+      const homeWins = (day * 3 + g) % 3 !== 0;
+      await client.query(`
+        INSERT INTO games (league, home_team, away_team, game_time, status, home_score, away_score, spider_pick, spider_confidence, is_pro_locked, created_at)
+        VALUES ($1, $2, $3, $4, 'final', $5, $6, $7, 72, false, $4)
+      `, ['MLB', matchup[0], matchup[1], date,
+          homeWins ? 5 + (day % 4) : 2 + (g % 3),
+          homeWins ? 2 + (g % 3) : 5 + (day % 4),
+          matchup[0]]);
     }
   }
-
-  // Insert games in batches and collect IDs
-  for (const game of gameRows) {
-    const result = await client.query(`
-      INSERT INTO games (league, home_team, away_team, game_time, status, home_score, away_score, spider_pick, spider_confidence, is_pro_locked, created_at)
-      VALUES ($1, $2, $3, $4, 'final', $5, $6, $7, 75, false, $4)
-      RETURNING id
-    `, [game.league, game.home, game.away, game.date, game.homeScore, game.awayScore, game.spiderPick]);
-
-    const gameId = result.rows[0].id;
-    const pickWon = game.homeScore > game.awayScore;
-
-    // Nik's prediction
-    if (game.nikResult) {
-      await client.query(`
-        INSERT INTO predictions (user_id, game_id, prediction_type, pick, units, result, payout, created_at)
-        VALUES ($1, $2, 'moneyline', $3, 1, $4, $5, $6)
-      `, [NIK_ID, gameId, game.spiderPick, game.nikResult, game.nikResult === 'win' ? 1 : -1, game.date]);
-    }
-    // Scott's prediction
-    if (game.scottResult) {
-      const scottPickWon = pickWon;
-      await client.query(`
-        INSERT INTO predictions (user_id, game_id, prediction_type, pick, units, result, payout, created_at)
-        VALUES ($1, $2, 'moneyline', $3, 1, $4, $5, $6)
-      `, [SCOTT_ID, gameId, game.spiderPick, game.scottResult, game.scottResult === 'win' ? 1 : -1, game.date]);
-    }
-    // Moe's prediction
-    if (game.moeResult) {
-      await client.query(`
-        INSERT INTO predictions (user_id, game_id, prediction_type, pick, units, result, payout, created_at)
-        VALUES ($1, $2, 'moneyline', $3, 1, $4, $5, $6)
-      `, [MOE_ID, gameId, game.spiderPick, game.moeResult, game.moeResult === 'win' ? 1 : -1, game.date]);
-    }
-  }
-
-  console.log(`[migration] Seeded ${gameRows.length} historical games with predictions`);
+  console.log(`[migration] Seeded 66 historical MLB game records`);
 }
 
 export async function runStartupMigration() {
@@ -501,9 +470,20 @@ export async function runStartupMigration() {
     }
 
     // Seed historical games + predictions (restores leaderboard 173W-139L YTD)
-    const gameCheck = await client.query(`SELECT count(*) as cnt FROM games WHERE game_time < '2026-04-19'`);
-    if (parseInt(gameCheck.rows[0].cnt) === 0) {
+    // Check if Nik has exactly 312 picks (173+139) — if not, clear and reseed
+    const nikPickCount = await client.query(
+      `SELECT count(*) as cnt FROM predictions WHERE user_id = $1 AND result IN ('win','loss')`,
+      [NIK_ID]
+    );
+    const nikPicks = parseInt(nikPickCount.rows[0].cnt);
+    if (nikPicks !== 312) {
+      console.log(`[migration] Nik has ${nikPicks} picks (need 312), clearing and reseeding...`);
+      // Clear existing historical data
+      await client.query(`DELETE FROM predictions WHERE created_at < '2026-04-19'`);
+      await client.query(`DELETE FROM games WHERE game_time < '2026-04-19' AND status = 'final'`);
       await seedHistoricalGamesAndPredictions(client);
+    } else {
+      console.log("[migration] Historical data already seeded correctly (312 picks)");
     }
 
   } catch (err: any) {
