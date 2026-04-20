@@ -523,20 +523,19 @@ export async function syncSportsData(): Promise<{ synced: number; leagues: strin
 let syncInterval: ReturnType<typeof setInterval> | null = null;
 let gradeInterval: ReturnType<typeof setInterval> | null = null;
 
-export function startSportsDataSync(intervalMinutes = 5) {
+export function startSportsDataSync(intervalMinutes = 30) {
   // Full sync: fetch today's games + grade stuck games
   syncSportsData().catch(console.error);
   syncInterval = setInterval(() => {
     syncSportsData().catch(console.error);
   }, intervalMinutes * 60 * 1000);
 
-  // Rapid grade check every 2 minutes: catches live→finished transitions fast
-  // This runs independently so late-finishing west coast games grade immediately
+  // Grade check every 15 minutes: lets Neon auto-suspend between runs to conserve compute quota
   gradeInterval = setInterval(() => {
     gradeStuckGames().catch(console.error);
-  }, 2 * 60 * 1000);
+  }, 15 * 60 * 1000);
 
-  console.log(`[spider] Auto-sync started (full sync every ${intervalMinutes}min, grade check every 2min)`);
+  console.log(`[spider] Auto-sync started (full sync every ${intervalMinutes}min, grade check every 15min)`);
 }
 
 export function stopSportsDataSync() {
