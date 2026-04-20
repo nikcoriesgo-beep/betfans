@@ -499,6 +499,58 @@ export async function runStartupMigration() {
       console.log("[migration] Seeded Moe leaderboard entry");
     }
 
+    // Update Nikco's annual leaderboard to current YTD (178W-149L as of Apr 20)
+    const nikLbCheck = await client.query(`SELECT 1 FROM leaderboard_entries WHERE user_id = $1 AND period = 'annual'`, [NIK_ID]);
+    if (nikLbCheck.rowCount === 0) {
+      await client.query(`
+        INSERT INTO leaderboard_entries (user_id, period, period_start, wins, losses, roi, profit, streak, rank, updated_at)
+        VALUES ($1, 'annual', $2, 178, 149, 54.4, 29, 5, 1, NOW())
+      `, [NIK_ID, ytdStart]);
+    } else {
+      await client.query(`
+        UPDATE leaderboard_entries SET wins = 178, losses = 149, roi = 54.4, profit = 29, streak = 5, rank = 1, updated_at = NOW()
+        WHERE user_id = $1 AND period = 'annual'
+      `, [NIK_ID]);
+    }
+    console.log("[migration] Nikco annual leaderboard = 178W-149L");
+
+    // Update Nikco's daily leaderboard to yesterday's results (12W-11L: 4-0 NHL + 3-1 NBA + 5-10 MLB)
+    const dailyStart = new Date('2026-04-19T04:00:00Z');
+    const nikDailyCheck = await client.query(`SELECT 1 FROM leaderboard_entries WHERE user_id = $1 AND period = 'daily'`, [NIK_ID]);
+    if (nikDailyCheck.rowCount === 0) {
+      await client.query(`
+        INSERT INTO leaderboard_entries (user_id, period, period_start, wins, losses, roi, profit, streak, rank, updated_at)
+        VALUES ($1, 'daily', $2, 12, 11, 52.2, 1, 5, 1, NOW())
+      `, [NIK_ID, dailyStart]);
+    } else {
+      await client.query(`
+        UPDATE leaderboard_entries SET wins = 12, losses = 11, roi = 52.2, period_start = $2, rank = 1, updated_at = NOW()
+        WHERE user_id = $1 AND period = 'daily'
+      `, [NIK_ID, dailyStart]);
+    }
+    console.log("[migration] Nikco daily leaderboard = 12W-11L");
+
+    // Seed referrals: Nikco referred Scott, Moe, Ian (all active Legend members)
+    // Look up by phone so we get the real production UUID regardless of insert order
+    const refCheck = await client.query(`SELECT 1 FROM referrals WHERE referrer_id = $1 LIMIT 1`, [NIK_ID]);
+    if (refCheck.rowCount === 0) {
+      const memberPhones = ['8182314634', '2138724448', '3107367905'];
+      for (const phone of memberPhones) {
+        const userRow = await client.query(`SELECT id FROM users WHERE phone = $1 LIMIT 1`, [phone]);
+        if (userRow.rowCount === 0) continue;
+        const referredId = userRow.rows[0].id;
+        await client.query(`
+          INSERT INTO referrals (referrer_id, referred_id, status, signup_bonus, prediction_bonus, created_at)
+          VALUES ($1, $2, 'active', 0, 0, '2026-01-01T00:00:00Z')
+          ON CONFLICT DO NOTHING
+        `, [NIK_ID, referredId]);
+        await client.query(`
+          UPDATE users SET referred_by = 'NIKCOX' WHERE id = $1 AND (referred_by IS NULL OR referred_by = '')
+        `, [referredId]);
+      }
+      console.log("[migration] Seeded 3 referrals (Scott, Moe, Ian → Nikco)");
+    }
+
     // CLEANUP: Remove any fake/demo accounts — placeholder phones OR demo names seeded earlier
     const fakeUsersResult = await client.query(`
       SELECT id FROM users WHERE
