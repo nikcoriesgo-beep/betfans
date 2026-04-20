@@ -6,7 +6,7 @@ BetFans is a membership-based sports prediction platform (Rookie $19/mo, Pro $29
 ## Tech Stack
 - **Frontend**: React + TypeScript, Vite, TanStack Query, Wouter, shadcn/ui, Tailwind CSS, Recharts
 - **Backend**: Express.js + TypeScript
-- **Database**: PostgreSQL with Drizzle ORM (Neon)
+- **Database**: PostgreSQL with Drizzle ORM (Render PostgreSQL — free tier, Oregon region, DB ID: dpg-d7inoo1kh4rs73b42b10-a)
 - **Auth**: Phone number + password (bcryptjs, express-session with PostgreSQL store)
 - **Payments**: PayPal Subscriptions — Client ID + Secret + 3 plan IDs all configured
 - **Real-time**: WebSocket for community chat
