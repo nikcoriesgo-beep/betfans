@@ -4,7 +4,7 @@ import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integra
 import { storage } from "./storage";
 import { db } from "./db";
 import { users, referrals, games, predictions } from "@shared/schema";
-import { eq, sql, and } from "drizzle-orm";
+import { eq, sql, and, desc } from "drizzle-orm";
 import { insertPredictionSchema, insertChatMessageSchema, insertThreadSchema, insertThreadReplySchema, insertAdvertiserSchema } from "@shared/schema";
 import { stripeService } from "./stripeService";
 import { WebhookHandlers } from "./webhookHandlers";
@@ -963,6 +963,32 @@ export async function registerRoutes(
       next();
     }).catch(() => res.status(500).json({ message: "Admin check failed" }));
   }
+
+  // Admin: full user list with phone, tier, join date, PayPal info
+  app.get("/api/admin/members", isAuthenticated, isAdmin, async (_req, res) => {
+    try {
+      const allUsers = await db
+        .select({
+          id: users.id,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          phone: users.phone,
+          email: users.email,
+          membershipTier: users.membershipTier,
+          paypalSubscriptionId: users.paypalSubscriptionId,
+          paypalPayoutEmail: users.paypalPayoutEmail,
+          referralCode: users.referralCode,
+          referredBy: users.referredBy,
+          createdAt: users.createdAt,
+          walletBalance: users.walletBalance,
+        })
+        .from(users)
+        .orderBy(desc(users.createdAt));
+      res.json(allUsers);
+    } catch (err: any) {
+      res.status(500).json({ message: "Failed to fetch members" });
+    }
+  });
 
   app.get("/api/members/locations", async (_req, res) => {
     try {
