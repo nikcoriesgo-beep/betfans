@@ -405,12 +405,14 @@ export async function runStartupMigration() {
       console.log("[migration] Seeded founder account");
     }
 
-    // CLEANUP: Remove any fake placeholder accounts created by earlier migration versions
-    // These used phone numbers 0000000001/0000000002 and were never real members
-    const fakePhonesResult = await client.query(
-      `SELECT id FROM users WHERE phone IN ('0000000001', '0000000002')`
-    );
-    for (const row of fakePhonesResult.rows) {
+    // CLEANUP: Remove any fake/demo accounts — placeholder phones OR demo names seeded earlier
+    const fakeUsersResult = await client.query(`
+      SELECT id FROM users WHERE
+        phone IN ('0000000001', '0000000002')
+        OR first_name IN ('OverUnder','Spread','Parlay','MoneyLine','Net','Gridiron','CourtSide','Sniper','BetKing','ProPicks')
+        OR (DATE(created_at) = '2026-03-15' AND id != '29b670b7-5296-44dc-a0a0-aec0d878ef9b')
+    `);
+    for (const row of fakeUsersResult.rows) {
       const fakeId = row.id;
       await client.query(`DELETE FROM predictions WHERE user_id = $1`, [fakeId]);
       await client.query(`DELETE FROM leaderboard_entries WHERE user_id = $1`, [fakeId]);
@@ -418,7 +420,10 @@ export async function runStartupMigration() {
       await client.query(`DELETE FROM chat_messages WHERE user_id = $1`, [fakeId]);
       await client.query(`DELETE FROM referrals WHERE referrer_id = $1 OR referred_id = $1`, [fakeId]);
       await client.query(`DELETE FROM users WHERE id = $1`, [fakeId]);
-      console.log(`[migration] Removed fake placeholder account: ${fakeId}`);
+      console.log(`[migration] Removed fake/demo account: ${fakeId}`);
+    }
+    if (fakeUsersResult.rows.length > 0) {
+      console.log(`[migration] Removed ${fakeUsersResult.rows.length} fake/demo account(s)`);
     }
 
     // CLEANUP: Remove fake prize pool contributions (the estimated $347/$102 amounts we fabricated)
