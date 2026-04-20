@@ -58,7 +58,10 @@ async function seedHistoricalGamesAndPredictions(client: PoolClient) {
     const total = results.length;
     for (let i = 0; i < total; i++) {
       const matchup = matchups[i % matchups.length];
-      const date = new Date(startDate.getTime() + i * 82800000); // spread ~23h apart
+      let date = new Date(startDate.getTime() + i * 28800000); // spread 8h apart (~3 picks/day)
+      // Hard cap: never create seeded games in the future
+      const cap = new Date(Date.now() - 3 * 3600000); // at least 3h in the past
+      if (date > cap) date = new Date(cap.getTime() - (total - i) * 3600000);
       const isWin = results[i] === 'win';
       const isNba = league === 'NBA';
       const homeScore = isWin
