@@ -7,6 +7,7 @@ import { getStripeSync } from "./stripeClient";
 import { startSportsDataSync } from "./sportsDataService";
 import { startMorningSweep } from "./morningCheck";
 import { storage } from "./storage";
+import { runStartupMigration } from "./startupMigration";
 
 const app = express();
 const httpServer = createServer(app);
@@ -92,6 +93,7 @@ async function initStripe() {
 }
 
 (async () => {
+  await runStartupMigration();
   await registerRoutes(httpServer, app);
 
   // Error handler — log the error but never re-throw (that crashes the process)
@@ -124,7 +126,7 @@ async function initStripe() {
   );
 
   await initStripe();
-  startSportsDataSync(5);
+  startSportsDataSync();
 
   if (process.env.NODE_ENV === "production") {
     startMorningSweep();
