@@ -11,7 +11,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Trophy, Calendar, Target, TrendingUp, Settings, CreditCard, Shield, Wallet,
   ArrowUpRight, ArrowDownLeft, LogOut, Camera, Loader2, MessageSquare,
-  Send, Plus, Clock, MessageCircle, ArrowLeft, Crown, Star, Pin, Lock,
+  Send, Plus, Clock, MessageCircle, ArrowLeft, Crown, Star, Pin, Lock, KeyRound,
 } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
@@ -402,6 +402,111 @@ function ProfileThreads({ userId, isOwn, profileName }: { userId: string; isOwn:
   );
 }
 
+function ChangePasswordDialog() {
+  const { toast } = useToast();
+  const [open, setOpen] = useState(false);
+  const [currentPw, setCurrentPw] = useState("");
+  const [newPw, setNewPw] = useState("");
+  const [confirmPw, setConfirmPw] = useState("");
+
+  const changePw = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/auth/change-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ currentPassword: currentPw, newPassword: newPw }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Failed to update password");
+      return data;
+    },
+    onSuccess: () => {
+      toast({ title: "Password updated!", description: "Your password has been changed." });
+      setOpen(false);
+      setCurrentPw(""); setNewPw(""); setConfirmPw("");
+    },
+    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newPw !== confirmPw) {
+      toast({ title: "Passwords don't match", description: "New password and confirm password must match.", variant: "destructive" });
+      return;
+    }
+    if (newPw.length < 6) {
+      toast({ title: "Password too short", description: "Password must be at least 6 characters.", variant: "destructive" });
+      return;
+    }
+    changePw.mutate();
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" className="gap-2" data-testid="button-change-password">
+          <KeyRound size={16} /> Change Password
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="bg-card border-white/10 max-w-md">
+        <DialogHeader>
+          <DialogTitle className="font-display text-xl flex items-center gap-2">
+            <KeyRound size={18} className="text-primary" /> Change Password
+          </DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4 mt-2">
+          <div>
+            <label className="text-sm text-muted-foreground mb-1 block">Current Password</label>
+            <Input
+              type="password"
+              placeholder="Enter current password"
+              value={currentPw}
+              onChange={(e) => setCurrentPw(e.target.value)}
+              className="bg-background/50 border-white/10"
+              required
+              data-testid="input-current-password"
+            />
+          </div>
+          <div>
+            <label className="text-sm text-muted-foreground mb-1 block">New Password</label>
+            <Input
+              type="password"
+              placeholder="New password (6+ characters)"
+              value={newPw}
+              onChange={(e) => setNewPw(e.target.value)}
+              className="bg-background/50 border-white/10"
+              required
+              minLength={6}
+              data-testid="input-new-password"
+            />
+          </div>
+          <div>
+            <label className="text-sm text-muted-foreground mb-1 block">Confirm New Password</label>
+            <Input
+              type="password"
+              placeholder="Confirm new password"
+              value={confirmPw}
+              onChange={(e) => setConfirmPw(e.target.value)}
+              className="bg-background/50 border-white/10"
+              required
+              data-testid="input-confirm-password"
+            />
+          </div>
+          <Button
+            type="submit"
+            disabled={changePw.isPending || !currentPw || !newPw || !confirmPw}
+            className="w-full font-display"
+            data-testid="button-submit-change-password"
+          >
+            {changePw.isPending ? "Updating..." : "Update Password"}
+          </Button>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function Profile() {
   const { user, isAuthenticated, isLoading } = useAuth();
   const [, navigate] = useLocation();
@@ -567,7 +672,8 @@ export default function Profile() {
                 </div>
               </div>
               {isOwnProfile && (
-                <div className="flex gap-3">
+                <div className="flex flex-wrap gap-3">
+                  <ChangePasswordDialog />
                   <Button variant="outline" className="gap-2" data-testid="button-logout" onClick={async () => {
                     await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
                     window.location.href = "/";
