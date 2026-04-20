@@ -350,21 +350,25 @@ ${t.timestamp}`}),ie(`\u2713 Push notification sent to ntfy.sh/${yq}`)}catch(a){
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW()
       )
-    `),console.log("[migration] All tables created successfully"),(await t.query("SELECT 1 FROM users WHERE id = $1",["29b670b7-5296-44dc-a0a0-aec0d878ef9b"])).rowCount===0&&(await t.query(`
+    `),console.log("[migration] All tables created successfully"),(await t.query("SELECT 1 FROM users WHERE id = $1",["29b670b7-5296-44dc-a0a0-aec0d878ef9b"])).rowCount===0?(await t.query(`
         INSERT INTO users (id, phone, password_hash, first_name, last_name, membership_tier, referral_code, wallet_balance, created_at, updated_at)
         VALUES (
           '29b670b7-5296-44dc-a0a0-aec0d878ef9b',
           '2482757932',
           '$2b$10$lvK7ApWKudqKz8ThTrdUJe726Q2qsQap7stfIcFqMuY3O2AUzdFyu',
-          'Nik',
-          'Cox',
+          'Nikco',
+          'X',
           'legend',
           'NIKCOX',
           '0',
           '2026-01-01T00:00:00Z',
           NOW()
         )
-      `),console.log("[migration] Seeded founder account"));let r=await t.query(`
+      `),console.log("[migration] Seeded founder account")):await t.query(`
+        UPDATE users SET first_name = 'Nikco', last_name = 'X'
+        WHERE id = '29b670b7-5296-44dc-a0a0-aec0d878ef9b'
+          AND (first_name != 'Nikco' OR last_name != 'X')
+      `);let r=await t.query(`
       SELECT id FROM users WHERE
         phone IN ('0000000001', '0000000002')
         OR first_name IN ('OverUnder','Spread','Parlay','MoneyLine','Net','Gridiron','CourtSide','Sniper','BetKing','ProPicks')
