@@ -184,18 +184,6 @@ export default function Home() {
       <section className="py-6 border-y border-primary/20 bg-gradient-to-r from-primary/5 via-primary/10 to-primary/5">
         <div className="container mx-auto px-4">
           <div className="flex flex-wrap justify-center items-center gap-8 md:gap-16">
-            <div className="flex items-center gap-3" data-testid="stat-member-count">
-              <div className="w-12 h-12 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
-                <Users size={22} className="text-primary" />
-              </div>
-              <div>
-                <div className="text-2xl md:text-3xl font-display font-bold text-primary">
-                  <AnimatedCounter value={memberCount} />
-                </div>
-                <div className="text-xs text-muted-foreground uppercase tracking-wider">Active Members</div>
-              </div>
-            </div>
-            <div className="w-px h-12 bg-white/10 hidden md:block" />
             <div className="flex items-center gap-3" data-testid="stat-prize-pool">
               <div className="w-12 h-12 rounded-xl bg-yellow-500/10 border border-yellow-500/20 flex items-center justify-center">
                 <Trophy size={22} className="text-yellow-500" />
