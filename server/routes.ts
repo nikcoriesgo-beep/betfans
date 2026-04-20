@@ -208,7 +208,8 @@ export async function registerRoutes(
             .from(leaderboardEntries)
             .where(and(eq(leaderboardEntries.userId, founder.id), eq(leaderboardEntries.period, "annual")))
             .limit(1);
-          if (lbEntry) {
+          if (lbEntry && (lbEntry.wins > 0 || lbEntry.losses > 0)) {
+            // Use DB values only if they have real data
             stats = {
               wins: lbEntry.wins,
               losses: lbEntry.losses,
@@ -217,6 +218,11 @@ export async function registerRoutes(
               streak: lbEntry.streak || 0,
               totalPicks: (lbEntry.wins + lbEntry.losses),
             };
+          } else if (lbEntry) {
+            // Entry exists but has 0-0 data — update it to current YTD
+            await db.update(leaderboardEntries)
+              .set({ wins: YTD_WINS, losses: YTD_LOSSES, roi: 54.4, profit: 29, streak: 5, rank: 1 })
+              .where(and(eq(leaderboardEntries.userId, founder.id), eq(leaderboardEntries.period, "annual")));
           } else {
             // Self-heal: insert the annual entry if it's missing
             await db.insert(leaderboardEntries).values({
