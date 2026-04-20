@@ -248,12 +248,24 @@ export default function Home() {
       {/* Pricing Teaser */}
       <section className="py-20 border-t border-white/5">
         <div className="container mx-auto px-4 text-center">
-          <h2 className="text-3xl md:text-4xl font-display font-bold mb-12">Choose Your Edge</h2>
+          <h2 className="text-3xl md:text-4xl font-display font-bold mb-6">Choose Your Edge</h2>
+
+          {/* Instant Payout Highlight Banner */}
+          <div className="max-w-3xl mx-auto mb-10 rounded-2xl border border-primary/40 bg-gradient-to-r from-primary/15 via-primary/10 to-primary/15 p-4 flex items-center justify-center gap-3 shadow-[0_0_30px_rgba(34,197,94,0.2)]" data-testid="banner-instant-payout">
+            <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center shrink-0 shadow-[0_0_15px_rgba(34,197,94,0.5)]">
+              <Zap size={20} className="text-black" />
+            </div>
+            <div className="text-left">
+              <p className="font-display font-black text-primary text-lg leading-tight">INSTANT PAYOUTS on Every Referral</p>
+              <p className="text-sm text-muted-foreground">Get paid the moment someone joins with your code — plus monthly residual income forever</p>
+            </div>
+          </div>
+
           <div className="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
             {[
-              { name: "Rookie", price: "$19/mo", earn: "$5 instant + $5/mo residual", features: ["Basic Stats", "Daily Leaderboard", "Follow 5 Pros"] },
-              { name: "Pro", price: "$29/mo", earn: "$10 instant + $10/mo residual", features: ["Advanced Analytics", "Unlimited Following", "API Access", "Pro Badge"] },
-              { name: "Legend", price: "$99/mo", earn: "$50 instant + $50/mo residual", features: ["Spider AI Picks", "Private Discord", "White-label Reports", "Legend Badge"], highlight: true },
+              { name: "Rookie", price: "$19/mo", instant: "$5 Instant", residual: "+ $5/mo Per Referral", features: ["Basic Stats", "Daily Leaderboard", "Follow 5 Pros"] },
+              { name: "Pro", price: "$29/mo", instant: "$10 Instant", residual: "+ $10/mo Per Referral", features: ["Advanced Analytics", "Unlimited Following", "API Access", "Pro Badge"] },
+              { name: "Legend", price: "$99/mo", instant: "$50 Instant", residual: "+ $50/mo Per Referral", features: ["Spider AI Picks", "Private Discord", "White-label Reports", "Legend Badge"], highlight: true },
             ].map((plan, i) => (
               <div key={i} className={`p-8 rounded-2xl border ${plan.highlight ? 'bg-yellow-500/5 border-yellow-500/50 relative overflow-hidden transform md:-translate-y-4 transition-transform shadow-[0_0_30px_rgba(234,179,8,0.15)]' : 'bg-card/30 border-white/5'} flex flex-col`}>
                 {plan.highlight && (
@@ -263,9 +275,15 @@ export default function Home() {
                 )}
                 <h3 className="text-xl font-bold font-display mb-2">{plan.name}</h3>
                 <div className="text-4xl font-bold mb-4">{plan.price}</div>
-                <div className={`rounded-xl px-3 py-2 mb-5 border text-xs font-bold flex items-center gap-2 ${plan.highlight ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-300' : 'bg-primary/10 border-primary/20 text-primary'}`}>
-                  <Check size={12} className="shrink-0" />
-                  {plan.earn} per referral
+                <div className={`rounded-xl px-3 py-2.5 mb-5 border flex flex-col gap-1 ${plan.highlight ? 'bg-yellow-500/10 border-yellow-500/30' : 'bg-primary/10 border-primary/20'}`}>
+                  <div className={`flex items-center gap-2 text-sm font-black ${plan.highlight ? 'text-yellow-300' : 'text-primary'}`}>
+                    <Zap size={13} className="shrink-0" />
+                    {plan.instant} — paid immediately
+                  </div>
+                  <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
+                    <Check size={11} className="shrink-0" />
+                    {plan.residual}
+                  </div>
                 </div>
                 <ul className="space-y-4 mb-8 flex-1 text-left">
                   {plan.features.map((f, j) => (
