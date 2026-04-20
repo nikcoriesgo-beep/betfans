@@ -414,6 +414,9 @@ export async function runStartupMigration() {
     `);
     for (const row of fakeUsersResult.rows) {
       const fakeId = row.id;
+      // Delete all replies to threads owned by this fake user (FK: thread_replies.thread_id → threads.id)
+      await client.query(`DELETE FROM thread_replies WHERE thread_id IN (SELECT id FROM threads WHERE user_id = $1)`, [fakeId]);
+      // Delete replies posted by this fake user on other threads
       await client.query(`DELETE FROM thread_replies WHERE user_id = $1`, [fakeId]);
       await client.query(`DELETE FROM threads WHERE user_id = $1`, [fakeId]);
       await client.query(`DELETE FROM predictions WHERE user_id = $1`, [fakeId]);
