@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integrations/auth";
 import { storage } from "./storage";
 import { db } from "./db";
-import { users, referrals, games, predictions } from "@shared/schema";
+import { users, referrals, games, predictions, leaderboardEntries } from "@shared/schema";
 import { eq, sql, and, desc } from "drizzle-orm";
 import { insertPredictionSchema, insertChatMessageSchema, insertThreadSchema, insertThreadReplySchema, insertAdvertiserSchema } from "@shared/schema";
 import { stripeService } from "./stripeService";
@@ -197,24 +197,24 @@ export async function registerRoutes(
       // --- MLB Stats API for pitcher names ---
       const mlbApiGames = await fetchMLBSchedule(dateStr);
 
-      // --- Founder stats (join predictions with games to get all-time MLB record) ---
+      // --- Founder YTD stats — read from annual leaderboard entry (tracks all sports) ---
       let stats = { wins: 0, losses: 0, profit: 0, roi: 0, streak: 0, totalPicks: 0 };
       if (founder) {
-        const mlbRows = await db
-          .select({ result: predictions.result, payout: predictions.payout, createdAt: predictions.createdAt })
-          .from(predictions)
-          .innerJoin(games, eq(predictions.gameId, games.id))
-          .where(and(eq(predictions.userId, founder.id), eq(games.league, "MLB")));
-        const wins = mlbRows.filter((p) => p.result === "win").length;
-        const losses = mlbRows.filter((p) => p.result === "loss").length;
-        const profit = mlbRows.reduce((acc, p) => acc + (p.payout || 0), 0);
-        const total = wins + losses;
-        const roi = total > 0 ? (profit / total) * 100 : 0;
-        let streak = 0;
-        for (const p of [...mlbRows].sort((a,b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime())) {
-          if (p.result === "win") streak++; else if (p.result === "loss") break;
+        const [lbEntry] = await db
+          .select()
+          .from(leaderboardEntries)
+          .where(and(eq(leaderboardEntries.userId, founder.id), eq(leaderboardEntries.period, "annual")))
+          .limit(1);
+        if (lbEntry) {
+          stats = {
+            wins: lbEntry.wins,
+            losses: lbEntry.losses,
+            profit: Number(lbEntry.profit) || 0,
+            roi: Number(lbEntry.roi) || 0,
+            streak: lbEntry.streak || 0,
+            totalPicks: (lbEntry.wins + lbEntry.losses),
+          };
         }
-        stats = { wins, losses, profit: Math.round(profit*100)/100, roi: Math.round(roi*100)/100, streak, totalPicks: total };
       }
 
       // --- Today's picks: founder sees their own picks; members see only their own picks ---
