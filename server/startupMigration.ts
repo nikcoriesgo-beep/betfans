@@ -136,6 +136,30 @@ export async function runStartupMigration() {
   try {
     console.log("[migration] Running startup migration...");
 
+    // Self-heal: reset any seeded predictions for future/unplayed games back to 'pending'
+    // and reset those games from 'final' back to 'scheduled'
+    try {
+      const fixedPreds = await client.query(`
+        UPDATE predictions SET result = 'pending'
+        WHERE game_id IN (
+          SELECT id FROM games WHERE league = 'NBA' AND game_time > NOW() - INTERVAL '4 hours'
+        )
+        AND result != 'pending'
+      `);
+      if (fixedPreds.rowCount && fixedPreds.rowCount > 0) {
+        console.log(`[migration] Self-heal: reset ${fixedPreds.rowCount} future NBA predictions to pending`);
+      }
+      const fixedGames = await client.query(`
+        UPDATE games SET status = 'scheduled'
+        WHERE league = 'NBA' AND game_time > NOW() - INTERVAL '4 hours' AND status = 'final'
+      `);
+      if (fixedGames.rowCount && fixedGames.rowCount > 0) {
+        console.log(`[migration] Self-heal: reset ${fixedGames.rowCount} future NBA games to scheduled`);
+      }
+    } catch (e: any) {
+      console.log("[migration] Self-heal skipped (tables not yet created):", e.message);
+    }
+
     await client.query(`
       CREATE TABLE IF NOT EXISTS users (
         id TEXT PRIMARY KEY NOT NULL,
