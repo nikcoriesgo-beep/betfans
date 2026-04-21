@@ -245,9 +245,26 @@ function DailyWinners({ poolAmount }: { poolAmount: number }) {
     },
   });
 
+  const { data: gameCountData } = useQuery<{ count: number; mlbCount: number; nbaCount: number; nhlCount: number }>({
+    queryKey: ["/api/mlb-game-count"],
+    queryFn: async () => {
+      const res = await fetch(`/api/mlb-game-count`);
+      if (!res.ok) return { count: 0, mlbCount: 0, nbaCount: 0, nhlCount: 0 };
+      return res.json();
+    },
+  });
+  const totalMLBGames = gameCountData?.mlbCount ?? 0;
+  const totalNBAGames = gameCountData?.nbaCount ?? 0;
+  const totalNHLGames = gameCountData?.nhlCount ?? 0;
+
   const eligible = entries.filter((e) => {
     const tier = e.user?.membershipTier;
-    return tier === "legend" || tier === "pro" || tier === "rookie";
+    if (tier !== "legend" && tier !== "pro" && tier !== "rookie") return false;
+    // Must have picked EVERY available MLB, NBA, and NHL game to qualify
+    if (totalMLBGames > 0 && (e.mlbPicks ?? 0) < totalMLBGames) return false;
+    if (totalNBAGames > 0 && (e.nbaPicks ?? 0) < totalNBAGames) return false;
+    if (totalNHLGames > 0 && (e.nhlPicks ?? 0) < totalNHLGames) return false;
+    return true;
   });
   const sorted = [...eligible].sort((a, b) => b.roi - a.roi || b.wins - a.wins);
   const topRoi = sorted[0]?.roi;
@@ -281,7 +298,7 @@ function DailyWinners({ poolAmount }: { poolAmount: number }) {
           <CardContent className="p-5 text-center">
             <Trophy size={28} className="text-muted-foreground/20 mx-auto mb-2" />
             <p className="text-muted-foreground text-sm">No qualifying picks today</p>
-            <p className="text-xs text-muted-foreground/50 mt-1">Pick every MLB game to qualify</p>
+            <p className="text-xs text-muted-foreground/50 mt-1">Pick every MLB, NBA & NHL game to qualify</p>
           </CardContent>
         </Card>
       ) : (
@@ -722,8 +739,7 @@ export default function Winners() {
             </div>
             <div className="mt-4 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/25">
               <p className="text-xs text-yellow-300 leading-relaxed">
-                <strong className="text-yellow-200">Qualification Rule:</strong> Only <strong>MLB picks</strong> count toward prize pool eligibility.
-                You must predict <strong>every MLB game daily</strong> to qualify for any payout. Missing even one game that day disqualifies you from that day's pool.
+                <strong className="text-yellow-200">Qualification Rule:</strong> You must predict <strong>every MLB, NBA, and NHL game daily</strong> to qualify for any payout. Missing even one game in any sport that day disqualifies you from that day's pool.
               </p>
             </div>
             <div className="mt-3 p-3 rounded-lg bg-white/5 border border-white/5">
