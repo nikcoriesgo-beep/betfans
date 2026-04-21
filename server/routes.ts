@@ -199,8 +199,8 @@ export async function registerRoutes(
 
       // --- Founder YTD stats — read from annual leaderboard entry (tracks all sports) ---
       // If no entry exists, self-heal by creating one with current YTD numbers
-      const YTD_WINS = 178, YTD_LOSSES = 149;
-      let stats = { wins: YTD_WINS, losses: YTD_LOSSES, profit: 29, roi: 54.4, streak: 5, totalPicks: YTD_WINS + YTD_LOSSES };
+      const YTD_WINS = 184, YTD_LOSSES = 153;
+      let stats = { wins: YTD_WINS, losses: YTD_LOSSES, profit: 31, roi: 54.6, streak: 5, totalPicks: YTD_WINS + YTD_LOSSES };
       if (founder) {
         try {
           const [lbEntry] = await db
@@ -439,10 +439,15 @@ export async function registerRoutes(
       const [y, m, d] = pstDateStr.split("-").map(Number);
       const start = new Date(Date.UTC(y, m - 1, d, 8, 0, 0, 0));     // today midnight PST
       const end   = new Date(Date.UTC(y, m - 1, d + 1, 8, 0, 0, 0)); // tomorrow midnight PST
-      const mlbGames = await db.select({ id: games.id })
-        .from(games)
-        .where(sql`${games.league} = 'MLB' AND ${games.gameTime} >= ${start} AND ${games.gameTime} < ${end} AND ${games.status} != 'postponed'`);
-      res.json({ count: mlbGames.length, periodStart: start, periodEnd: end });
+      const [mlbGames, nbaGames, nhlGames] = await Promise.all([
+        db.select({ id: games.id }).from(games).where(sql`${games.league} = 'MLB' AND ${games.gameTime} >= ${start} AND ${games.gameTime} < ${end} AND ${games.status} != 'postponed'`),
+        db.select({ id: games.id }).from(games).where(sql`${games.league} = 'NBA' AND ${games.gameTime} >= ${start} AND ${games.gameTime} < ${end} AND ${games.status} != 'postponed'`),
+        db.select({ id: games.id }).from(games).where(sql`${games.league} = 'NHL' AND ${games.gameTime} >= ${start} AND ${games.gameTime} < ${end} AND ${games.status} != 'postponed'`),
+      ]);
+      const mlbCount = mlbGames.length;
+      const nbaCount = nbaGames.length;
+      const nhlCount = nhlGames.length;
+      res.json({ count: mlbCount + nbaCount + nhlCount, mlbCount, nbaCount, nhlCount, periodStart: start, periodEnd: end });
     } catch (e) {
       res.json({ count: 0 });
     }
