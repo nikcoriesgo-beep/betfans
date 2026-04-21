@@ -431,6 +431,23 @@ export async function registerRoutes(
     }
   });
 
+  // Returns how many unique MLB games are scheduled/available in today's daily window
+  // Used by the prize pool winner display to enforce the "pick every MLB game" qualification rule
+  app.get("/api/mlb-game-count", async (_req, res) => {
+    try {
+      const pstDateStr = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(new Date());
+      const [y, m, d] = pstDateStr.split("-").map(Number);
+      const start = new Date(Date.UTC(y, m - 1, d, 8, 0, 0, 0));     // today midnight PST
+      const end   = new Date(Date.UTC(y, m - 1, d + 1, 8, 0, 0, 0)); // tomorrow midnight PST
+      const mlbGames = await db.select({ id: games.id })
+        .from(games)
+        .where(sql`${games.league} = 'MLB' AND ${games.gameTime} >= ${start} AND ${games.gameTime} < ${end} AND ${games.status} != 'postponed'`);
+      res.json({ count: mlbGames.length, periodStart: start, periodEnd: end });
+    } catch (e) {
+      res.json({ count: 0 });
+    }
+  });
+
   app.get("/api/leaderboard", async (req, res) => {
     try {
       const period = (req.query.period as string) || "weekly";
