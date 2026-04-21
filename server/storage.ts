@@ -252,9 +252,11 @@ export class DatabaseStorage implements IStorage {
     const allUsers = await db.select().from(users);
     const userMap = new Map(allUsers.map((u) => [u.id, u]));
 
-    // Get MLB game IDs to track per-user MLB pick counts for qualification
+    // Get game IDs per sport to track per-user pick counts for qualification
     const allGames = await db.select({ id: games.id, league: games.league }).from(games);
     const mlbGameIds = new Set(allGames.filter(g => g.league === "MLB").map(g => g.id));
+    const nbaGameIds = new Set(allGames.filter(g => g.league === "NBA").map(g => g.id));
+    const nhlGameIds = new Set(allGames.filter(g => g.league === "NHL").map(g => g.id));
 
     const byUser: Record<string, typeof allPreds> = {};
     for (const p of allPreds) {
@@ -270,10 +272,12 @@ export class DatabaseStorage implements IStorage {
         const total = wins + losses;
         const roi = total > 0 ? (profit / total) * 100 : 0;
         const mlbPicks = preds.filter((p) => mlbGameIds.has(p.gameId)).length;
+        const nbaPicks = preds.filter((p) => nbaGameIds.has(p.gameId)).length;
+        const nhlPicks = preds.filter((p) => nhlGameIds.has(p.gameId)).length;
         let streak = 0;
         const sorted = [...preds].sort((a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime());
         for (const p of sorted) { if (p.result === "pending") continue; if (p.result === "win") streak++; else break; }
-        return { userId, wins, losses, profit: Math.round(profit * 100) / 100, roi: Math.round(roi * 100) / 100, streak, total, mlbPicks };
+        return { userId, wins, losses, profit: Math.round(profit * 100) / 100, roi: Math.round(roi * 100) / 100, streak, total, mlbPicks, nbaPicks, nhlPicks };
       })
       .filter((e) => e.total > 0)
       .sort((a, b) => {
@@ -294,6 +298,8 @@ export class DatabaseStorage implements IStorage {
       losses: e.losses,
       totalPicks: e.total,
       mlbPicks: e.mlbPicks,
+      nbaPicks: e.nbaPicks,
+      nhlPicks: e.nhlPicks,
       roi: e.roi,
       profit: e.profit,
       streak: e.streak,
