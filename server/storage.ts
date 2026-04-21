@@ -264,8 +264,14 @@ export class DatabaseStorage implements IStorage {
       byUser[p.userId].push(p);
     }
 
-    const computed = Object.entries(byUser)
-      .map(([userId, preds]) => {
+    // Include ALL paid members even those with 0 picks
+    const paidMemberIds = new Set(
+      allUsers.filter(u => u.membershipTier && u.membershipTier !== "free").map(u => u.id)
+    );
+
+    const computed = [...new Set([...Object.keys(byUser), ...paidMemberIds])]
+      .map((userId) => {
+        const preds = byUser[userId] || [];
         const wins = preds.filter((p) => p.result === "win").length;
         const losses = preds.filter((p) => p.result === "loss").length;
         const profit = preds.reduce((acc, p) => acc + (p.payout || 0), 0);
@@ -279,7 +285,6 @@ export class DatabaseStorage implements IStorage {
         for (const p of sorted) { if (p.result === "pending") continue; if (p.result === "win") streak++; else break; }
         return { userId, wins, losses, profit: Math.round(profit * 100) / 100, roi: Math.round(roi * 100) / 100, streak, total, mlbPicks, nbaPicks, nhlPicks };
       })
-      .filter((e) => e.total > 0)
       .sort((a, b) => {
         if (period === "annual") return b.wins - a.wins || a.losses - b.losses;
         const aWinRate = a.total > 0 ? a.wins / a.total : 0;
