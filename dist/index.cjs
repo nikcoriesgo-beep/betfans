@@ -135,15 +135,19 @@ ${t.timestamp}`}),ie(`\u2713 Push notification sent to ntfy.sh/${wq}`)}catch(a){
         INSERT INTO games (league, home_team, away_team, game_time, status, home_score, away_score, spider_pick, spider_confidence, is_pro_locked, created_at)
         VALUES ($1, $2, $3, $4, 'final', $5, $6, $7, 72, false, $4)
       `,["MLB",a[0],a[1],o,u?5+i%4:2+s%3,u?2+s%3:5+i%4,a[0]])}console.log("[migration] Seeded 66 historical MLB game records")}async function Iq(){let t=await su.connect();try{let e=await t.query("SELECT count(*) as cnt FROM predictions WHERE user_id = $1 AND result IN ('win','loss')",[on]),r=parseInt(e.rows[0].cnt);r!==312?(console.log(`[migration] Nik has ${r} picks (need 312), clearing and reseeding...`),await t.query("DELETE FROM predictions WHERE created_at < '2026-04-19'"),await t.query("DELETE FROM games WHERE game_time < '2026-04-19' AND status = 'final'"),await tie(t)):console.log("[migration] Historical picks already seeded correctly (312 picks for Nik)")}catch(e){console.error("[migration] Historical seed error:",e.message)}finally{t.release()}}async function Rq(){let t=await su.connect();try{console.log("[migration] Running startup migration...");try{let x=await t.query(`
-        UPDATE predictions SET result = 'pending'
+        DELETE FROM predictions
         WHERE game_id IN (
-          SELECT id FROM games WHERE league = 'NBA' AND game_time > NOW() - INTERVAL '4 hours'
+          SELECT id FROM games
+          WHERE league = 'NBA'
+            AND game_time > NOW() - INTERVAL '6 hours'
+            AND ABS(EXTRACT(EPOCH FROM (created_at - game_time))) < 60
         )
-        AND result != 'pending'
-      `);x.rowCount&&x.rowCount>0&&console.log(`[migration] Self-heal: reset ${x.rowCount} future NBA predictions to pending`);let T=await t.query(`
-        UPDATE games SET status = 'scheduled'
-        WHERE league = 'NBA' AND game_time > NOW() - INTERVAL '4 hours' AND status = 'final'
-      `);T.rowCount&&T.rowCount>0&&console.log(`[migration] Self-heal: reset ${T.rowCount} future NBA games to scheduled`)}catch(x){console.log("[migration] Self-heal skipped (tables not yet created):",x.message)}await t.query(`
+      `);x.rowCount&&x.rowCount>0&&console.log(`[migration] Self-heal: deleted ${x.rowCount} predictions for fake seeded NBA games`);let T=await t.query(`
+        DELETE FROM games
+        WHERE league = 'NBA'
+          AND game_time > NOW() - INTERVAL '6 hours'
+          AND ABS(EXTRACT(EPOCH FROM (created_at - game_time))) < 60
+      `);T.rowCount&&T.rowCount>0&&console.log(`[migration] Self-heal: deleted ${T.rowCount} fake seeded NBA games`)}catch(x){console.log("[migration] Self-heal skipped (tables not yet created):",x.message)}await t.query(`
       CREATE TABLE IF NOT EXISTS users (
         id TEXT PRIMARY KEY NOT NULL,
         email TEXT,
