@@ -45,7 +45,7 @@ export function Leaderboard() {
             <div className="col-span-4">Predictor</div>
             <div className="col-span-2 text-right">Win %</div>
             <div className="col-span-2 text-right">Record</div>
-            <div className="col-span-2 text-right">Profit</div>
+            <div className="col-span-2 text-right">Prizes</div>
             <div className="col-span-1 text-center">Streak</div>
           </div>
 
@@ -101,7 +101,20 @@ export function Leaderboard() {
                     <div className="min-w-0 flex-1">
                       <div className="font-bold text-foreground flex items-center gap-1.5">
                         <span className="truncate text-sm md:text-base">{username}</span>
-                        {index < 3 && <Badge variant="secondary" className="text-[10px] h-4 px-1 shrink-0">PRO</Badge>}
+                        {entry.user?.membershipTier && entry.user.membershipTier !== "free" && (
+                          <Badge
+                            variant="secondary"
+                            className={`text-[10px] h-4 px-1 shrink-0 capitalize ${
+                              entry.user.membershipTier === "legend"
+                                ? "bg-yellow-500/10 text-yellow-400 border-yellow-400/40"
+                                : entry.user.membershipTier === "pro"
+                                ? "bg-purple-400/10 text-purple-400 border-purple-400/40"
+                                : "bg-primary/10 text-primary border-primary/40"
+                            }`}
+                          >
+                            {entry.user.membershipTier}
+                          </Badge>
+                        )}
                       </div>
                       <div className="text-xs text-muted-foreground">
                         {winRate}% win rate
@@ -120,7 +133,7 @@ export function Leaderboard() {
                   </div>
 
                   <div className="hidden md:block col-span-2 text-right font-mono text-green-400">
-                    ${Math.round(entry.profit || 0).toLocaleString()}
+                    ${(entry.totalPrizes || 0).toFixed(2)}
                   </div>
 
                   <div className="hidden md:flex col-span-1 justify-center">
@@ -146,12 +159,9 @@ export function Leaderboard() {
                       <span className="font-mono font-bold text-[11px] text-foreground">{entry.wins}-{entry.losses}</span>
                     </div>
                     <div className="text-center">
-                      <div className="text-[8px] text-muted-foreground/60 uppercase tracking-wider mb-0.5">Profit</div>
-                      <span className={cn(
-                        "font-mono text-[11px] font-bold",
-                        (entry.profit || 0) >= 0 ? "text-green-400" : "text-red-400"
-                      )}>
-                        ${Math.round(entry.profit || 0).toLocaleString()}
+                      <div className="text-[8px] text-muted-foreground/60 uppercase tracking-wider mb-0.5">Prizes</div>
+                      <span className="font-mono text-[11px] font-bold text-green-400">
+                        ${(entry.totalPrizes || 0).toFixed(2)}
                       </span>
                     </div>
                     <div className="text-center">
