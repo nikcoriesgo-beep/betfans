@@ -118,8 +118,8 @@ export async function runHistoricalDataSeed() {
       [NIK_ID]
     );
     const nikPicks = parseInt(nikPickCount.rows[0].cnt);
-    if (nikPicks !== 312) {
-      console.log(`[migration] Nik has ${nikPicks} picks (need 312), clearing and reseeding...`);
+    if (nikPicks < 312) {
+      console.log(`[migration] Nik has ${nikPicks} picks (need ≥312), clearing and reseeding...`);
       // Only delete historical data — keep any games/predictions from today onwards
       await client.query(`DELETE FROM predictions WHERE created_at < '2026-04-19'`);
       await client.query(`DELETE FROM games WHERE game_time < '2026-04-19' AND status = 'final'`);
