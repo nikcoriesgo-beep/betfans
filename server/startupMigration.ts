@@ -479,6 +479,8 @@ export async function runStartupMigration() {
         )
       `);
       console.log("[migration] Seeded Scott account");
+    } else {
+      await client.query(`UPDATE users SET membership_tier = 'legend', first_name = 'Scott' WHERE phone = $1 AND membership_tier != 'legend'`, [scottPhone]);
     }
 
     // Seed Moe's real account (Legend)
@@ -501,6 +503,8 @@ export async function runStartupMigration() {
         )
       `);
       console.log("[migration] Seeded Moe account");
+    } else {
+      await client.query(`UPDATE users SET membership_tier = 'legend', first_name = 'Moe' WHERE phone = $1 AND membership_tier != 'legend'`, [moePhone]);
     }
 
     // Seed Ian's real account (Legend)
@@ -523,6 +527,8 @@ export async function runStartupMigration() {
         )
       `);
       console.log("[migration] Seeded Ian account");
+    } else {
+      await client.query(`UPDATE users SET membership_tier = 'legend', first_name = 'Ian' WHERE phone = $1 AND membership_tier != 'legend'`, [ianPhone]);
     }
 
     // Seed historical leaderboard for Scott and Moe (real YTD stats)
