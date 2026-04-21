@@ -165,6 +165,20 @@ export async function runStartupMigration() {
       if (delGames.rowCount && delGames.rowCount > 0) {
         console.log(`[migration] Self-heal: deleted ${delGames.rowCount} fake seeded NBA games`);
       }
+
+      // Self-heal: delete ALL seeded picks for Scott & Moe — they should have zero seeded predictions.
+      // Seeded picks reference games where created_at = game_time (ts_diff < 60s fingerprint).
+      const delScottMoe = await client.query(`
+        DELETE FROM predictions
+        WHERE user_id IN ($1, $2)
+          AND game_id IN (
+            SELECT id FROM games
+            WHERE ABS(EXTRACT(EPOCH FROM (created_at - game_time))) < 60
+          )
+      `, [SCOTT_ID, MOE_ID]);
+      if (delScottMoe.rowCount && delScottMoe.rowCount > 0) {
+        console.log(`[migration] Self-heal: deleted ${delScottMoe.rowCount} fake seeded picks for Scott/Moe`);
+      }
     } catch (e: any) {
       console.log("[migration] Self-heal skipped (tables not yet created):", e.message);
     }
@@ -532,20 +546,20 @@ export async function runStartupMigration() {
       console.log("[migration] Seeded Moe leaderboard entry");
     }
 
-    // Update Nikco's annual leaderboard to current YTD (178W-149L as of Apr 20)
+    // Update Nikco's annual leaderboard to current YTD (184W-153L as of Apr 21)
     const nikLbCheck = await client.query(`SELECT 1 FROM leaderboard_entries WHERE user_id = $1 AND period = 'annual'`, [NIK_ID]);
     if (nikLbCheck.rowCount === 0) {
       await client.query(`
         INSERT INTO leaderboard_entries (user_id, period, period_start, wins, losses, roi, profit, streak, rank, updated_at)
-        VALUES ($1, 'annual', $2, 178, 149, 54.4, 29, 5, 1, NOW())
+        VALUES ($1, 'annual', $2, 184, 153, 54.6, 31, 5, 1, NOW())
       `, [NIK_ID, ytdStart]);
     } else {
       await client.query(`
-        UPDATE leaderboard_entries SET wins = 178, losses = 149, roi = 54.4, profit = 29, streak = 5, rank = 1, updated_at = NOW()
+        UPDATE leaderboard_entries SET wins = 184, losses = 153, roi = 54.6, profit = 31, streak = 5, rank = 1, updated_at = NOW()
         WHERE user_id = $1 AND period = 'annual'
       `, [NIK_ID]);
     }
-    console.log("[migration] Nikco annual leaderboard = 178W-149L");
+    console.log("[migration] Nikco annual leaderboard = 184W-153L");
 
     // Update Nikco's daily leaderboard to yesterday's results (12W-11L: 4-0 NHL + 3-1 NBA + 5-10 MLB)
     const dailyStart = new Date('2026-04-19T04:00:00Z');
