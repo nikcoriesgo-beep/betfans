@@ -139,25 +139,31 @@ export async function runStartupMigration() {
   try {
     console.log("[migration] Running startup migration...");
 
-    // Self-heal: reset any seeded predictions for future/unplayed games back to 'pending'
-    // and reset those games from 'final' back to 'scheduled'
+    // Self-heal: delete fake seeded NBA games that are still in the future.
+    // Seeded games have created_at = game_time (same timestamp). Real ESPN games
+    // have created_at = recent fetch time (very different from game_time).
+    // We delete any future NBA game where |created_at - game_time| < 60 seconds.
     try {
-      const fixedPreds = await client.query(`
-        UPDATE predictions SET result = 'pending'
+      const delPreds = await client.query(`
+        DELETE FROM predictions
         WHERE game_id IN (
-          SELECT id FROM games WHERE league = 'NBA' AND game_time > NOW() - INTERVAL '4 hours'
+          SELECT id FROM games
+          WHERE league = 'NBA'
+            AND game_time > NOW() - INTERVAL '6 hours'
+            AND ABS(EXTRACT(EPOCH FROM (created_at - game_time))) < 60
         )
-        AND result != 'pending'
       `);
-      if (fixedPreds.rowCount && fixedPreds.rowCount > 0) {
-        console.log(`[migration] Self-heal: reset ${fixedPreds.rowCount} future NBA predictions to pending`);
+      if (delPreds.rowCount && delPreds.rowCount > 0) {
+        console.log(`[migration] Self-heal: deleted ${delPreds.rowCount} predictions for fake seeded NBA games`);
       }
-      const fixedGames = await client.query(`
-        UPDATE games SET status = 'scheduled'
-        WHERE league = 'NBA' AND game_time > NOW() - INTERVAL '4 hours' AND status = 'final'
+      const delGames = await client.query(`
+        DELETE FROM games
+        WHERE league = 'NBA'
+          AND game_time > NOW() - INTERVAL '6 hours'
+          AND ABS(EXTRACT(EPOCH FROM (created_at - game_time))) < 60
       `);
-      if (fixedGames.rowCount && fixedGames.rowCount > 0) {
-        console.log(`[migration] Self-heal: reset ${fixedGames.rowCount} future NBA games to scheduled`);
+      if (delGames.rowCount && delGames.rowCount > 0) {
+        console.log(`[migration] Self-heal: deleted ${delGames.rowCount} fake seeded NBA games`);
       }
     } catch (e: any) {
       console.log("[migration] Self-heal skipped (tables not yet created):", e.message);
