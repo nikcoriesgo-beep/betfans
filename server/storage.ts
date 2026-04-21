@@ -244,13 +244,17 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  async getLeaderboard(period: string, limit = 50): Promise<(LeaderboardEntry & { user: User | null })[]> {
+  async getLeaderboard(period: string, limit = 50): Promise<(LeaderboardEntry & { user: User | null; mlbPicks?: number })[]> {
     const now = new Date();
     const periodStart = this.getPeriodStart(period);
 
     const allPreds = await db.select().from(predictions).where(sql`${predictions.createdAt} >= ${periodStart}`);
     const allUsers = await db.select().from(users);
     const userMap = new Map(allUsers.map((u) => [u.id, u]));
+
+    // Get MLB game IDs to track per-user MLB pick counts for qualification
+    const allGames = await db.select({ id: games.id, league: games.league }).from(games);
+    const mlbGameIds = new Set(allGames.filter(g => g.league === "MLB").map(g => g.id));
 
     const byUser: Record<string, typeof allPreds> = {};
     for (const p of allPreds) {
@@ -265,10 +269,11 @@ export class DatabaseStorage implements IStorage {
         const profit = preds.reduce((acc, p) => acc + (p.payout || 0), 0);
         const total = wins + losses;
         const roi = total > 0 ? (profit / total) * 100 : 0;
+        const mlbPicks = preds.filter((p) => mlbGameIds.has(p.gameId)).length;
         let streak = 0;
         const sorted = [...preds].sort((a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime());
         for (const p of sorted) { if (p.result === "pending") continue; if (p.result === "win") streak++; else break; }
-        return { userId, wins, losses, profit: Math.round(profit * 100) / 100, roi: Math.round(roi * 100) / 100, streak, total };
+        return { userId, wins, losses, profit: Math.round(profit * 100) / 100, roi: Math.round(roi * 100) / 100, streak, total, mlbPicks };
       })
       .filter((e) => e.total > 0)
       .sort((a, b) => {
@@ -288,6 +293,7 @@ export class DatabaseStorage implements IStorage {
       wins: e.wins,
       losses: e.losses,
       totalPicks: e.total,
+      mlbPicks: e.mlbPicks,
       roi: e.roi,
       profit: e.profit,
       streak: e.streak,
