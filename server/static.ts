@@ -10,10 +10,12 @@ export function serveStatic(app: Express) {
     );
   }
 
-  // Hashed assets (JS/CSS bundles from Vite) — safe to cache long-term
+  // Assets with stable filenames — must-revalidate so browsers always check for updates
   app.use("/assets", express.static(path.join(distPath, "assets"), {
-    maxAge: "1y",
-    immutable: true,
+    maxAge: 0,
+    setHeaders: (res) => {
+      res.setHeader("Cache-Control", "no-cache, must-revalidate");
+    },
   }));
 
   // Audio files — short cache (1 hour) so updates propagate same day
