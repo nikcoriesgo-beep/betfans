@@ -149,14 +149,33 @@ export class DatabaseStorage implements IStorage {
     const [y, m, d] = pstDateStr.split("-").map(Number);
     const cutoff = new Date(Date.UTC(y, m - 1, d, 8, 0, 0, 0));     // today 00:00 PST = 08:00 UTC
     const nextCutoff = new Date(Date.UTC(y, m - 1, d + 1, 8, 0, 0, 0)); // tomorrow 00:00 PST = 08:00 UTC
+    let rows: Game[];
     if (league && league !== "ALL") {
-      return db.select().from(games)
+      rows = await db.select().from(games)
         .where(and(eq(games.league, league), sql`${games.gameTime} >= ${cutoff} AND ${games.gameTime} < ${nextCutoff} AND ${games.status} != 'postponed'`))
         .orderBy(asc(games.gameTime));
+    } else {
+      rows = await db.select().from(games)
+        .where(sql`${games.gameTime} >= ${cutoff} AND ${games.gameTime} < ${nextCutoff} AND ${games.status} != 'postponed'`)
+        .orderBy(asc(games.gameTime));
     }
-    return db.select().from(games)
-      .where(sql`${games.gameTime} >= ${cutoff} AND ${games.gameTime} < ${nextCutoff} AND ${games.status} != 'postponed'`)
-      .orderBy(asc(games.gameTime));
+    // Deduplicate: keep only one game per (league, homeTeam, awayTeam) per day.
+    // MLB series = same matchup 3 days in a row; if duplicates leaked into the DB,
+    // keep the one that is NOT upcoming (i.e., live/finished first), else the first by gameTime.
+    const seen = new Map<string, Game>();
+    for (const g of rows) {
+      const key = `${g.league}|${g.homeTeam}|${g.awayTeam}`;
+      if (!seen.has(key)) {
+        seen.set(key, g);
+      } else {
+        const existing = seen.get(key)!;
+        // Prefer the game that already has picks or is live/finished over a plain upcoming dupe
+        const existingIsActive = existing.status === "live" || existing.status === "finished";
+        const newIsActive = g.status === "live" || g.status === "finished";
+        if (newIsActive && !existingIsActive) seen.set(key, g);
+      }
+    }
+    return [...seen.values()].sort((a, b) => new Date(a.gameTime).getTime() - new Date(b.gameTime).getTime());
   }
 
   async getGame(id: number): Promise<Game | null> {
