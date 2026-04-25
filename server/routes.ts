@@ -4,7 +4,7 @@ import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integra
 import { storage } from "./storage";
 import { db } from "./db";
 import { users, referrals, games, predictions, leaderboardEntries } from "@shared/schema";
-import { eq, sql, and, desc } from "drizzle-orm";
+import { eq, sql, and, desc, asc, inArray } from "drizzle-orm";
 import { insertPredictionSchema, insertChatMessageSchema, insertThreadSchema, insertThreadReplySchema, insertAdvertiserSchema } from "@shared/schema";
 import { stripeService } from "./stripeService";
 import { WebhookHandlers } from "./webhookHandlers";
@@ -143,11 +143,11 @@ export async function registerRoutes(
 
   app.get("/api/baseball-breakfast", async (req: any, res) => {
     try {
-      const FOUNDER_ID = "29b670b7-5296-44dc-a0a0-aec0d878ef9b";
       const callerId: string | null = (req.session as any)?.userId || null;
-      const callerIsFounder = callerId === FOUNDER_ID;
-      const [founderRow] = await db.select().from(users).where(eq(users.id, FOUNDER_ID)).limit(1);
+      // Find founder by referralCode so any account with NIKCOX code is recognised
+      const [founderRow] = await db.select().from(users).where(eq(users.referralCode, "NIKCOX")).limit(1);
       const founder = founderRow || null;
+      const callerIsFounder = !!founder && callerId === founder.id;
 
       // ET date — Intl is immune to Replit's dev-server frozen clock
       const etParts = new Intl.DateTimeFormat("en-US", {
@@ -167,9 +167,26 @@ export async function registerRoutes(
       }
 
       // --- Read today's MLB games from DB (populated by the 5-min sync) ---
-      const dbMlbGames = await db.select().from(games).where(
+      const dbMlbGamesRaw = await db.select().from(games).where(
         sql`${games.league} = 'MLB' AND ${games.gameTime} >= ${todayStart} AND ${games.gameTime} < ${todayEnd}`
-      );
+      ).orderBy(asc(games.gameTime));
+      // Deduplicate: keep only one record per (homeTeam, awayTeam).
+      // MLB series = same matchup 3 days in a row; duplicates appear if the sync ran before cleanup.
+      // Prefer live/finished over upcoming; otherwise keep the first by gameTime.
+      const bbSeen = new Map<string, typeof dbMlbGamesRaw[0]>();
+      for (const g of dbMlbGamesRaw) {
+        const key = `${g.homeTeam}|${g.awayTeam}`;
+        if (!bbSeen.has(key)) {
+          bbSeen.set(key, g);
+        } else {
+          const prev = bbSeen.get(key)!;
+          const prevActive = prev.status === "live" || prev.status === "finished";
+          const curActive  = g.status === "live" || g.status === "finished";
+          if (curActive && !prevActive) bbSeen.set(key, g);
+        }
+      }
+      const dbMlbGames = [...bbSeen.values()]
+        .sort((a, b) => new Date(a.gameTime).getTime() - new Date(b.gameTime).getTime());
 
       // --- Fresh ESPN fetch for live scores/status only (no DB writes here) ---
       const espnStatusMap = new Map<string, { status: string; homeScore: number|null; awayScore: number|null }>();
@@ -199,8 +216,8 @@ export async function registerRoutes(
 
       // --- Founder YTD stats — read from annual leaderboard entry (tracks all sports) ---
       // If no entry exists, self-heal by creating one with current YTD numbers
-      const YTD_WINS = 184, YTD_LOSSES = 153;
-      let stats = { wins: YTD_WINS, losses: YTD_LOSSES, profit: 31, roi: 54.6, streak: 5, totalPicks: YTD_WINS + YTD_LOSSES };
+      const YTD_WINS = 222, YTD_LOSSES = 177;
+      let stats = { wins: YTD_WINS, losses: YTD_LOSSES, profit: 37, roi: 55.6, streak: 5, totalPicks: YTD_WINS + YTD_LOSSES };
       if (founder) {
         try {
           const [lbEntry] = await db
@@ -221,7 +238,7 @@ export async function registerRoutes(
           } else if (lbEntry) {
             // Entry exists but has 0-0 data — update it to current YTD
             await db.update(leaderboardEntries)
-              .set({ wins: YTD_WINS, losses: YTD_LOSSES, roi: 54.4, profit: 29, streak: 5, rank: 1 })
+              .set({ wins: YTD_WINS, losses: YTD_LOSSES, roi: 55.6, profit: 37, streak: 5, rank: 1 })
               .where(and(eq(leaderboardEntries.userId, founder.id), eq(leaderboardEntries.period, "annual")));
           } else {
             // Self-heal: insert the annual entry if it's missing
@@ -232,8 +249,8 @@ export async function registerRoutes(
               rank: 1,
               wins: YTD_WINS,
               losses: YTD_LOSSES,
-              roi: 54.4,
-              profit: 29,
+              roi: 55.6,
+              profit: 37,
               streak: 5,
             });
           }
@@ -244,9 +261,9 @@ export async function registerRoutes(
       }
 
       // --- Today's picks: founder sees their own picks; members see only their own picks ---
-      const founderPredictions = callerIsFounder && founder
+      const founderPredictions = callerIsFounder && callerId
         ? await db.select().from(predictions).where(
-            sql`${predictions.userId} = ${founder.id} AND ${predictions.createdAt} >= ${todayStart} AND ${predictions.createdAt} <= ${todayEnd}`
+            sql`${predictions.userId} = ${callerId} AND ${predictions.createdAt} >= ${todayStart} AND ${predictions.createdAt} <= ${todayEnd}`
           )
         : [];
 
@@ -264,7 +281,8 @@ export async function registerRoutes(
         const liveStatus = liveESPN?.status || g.status;
         const liveHomeScore = liveESPN?.homeScore ?? g.homeScore;
         const liveAwayScore = liveESPN?.awayScore ?? g.awayScore;
-        const spider = { pick: g.spiderPick || "", confidence: g.spiderConfidence || 60, type: "Moneyline" };
+        const rawPick = (g.spiderPick || "").replace(/\s*ML\s*$/i, "").trim();
+        const spider = { pick: rawPick, confidence: g.spiderConfidence || 60, type: "Moneyline" };
         // founderPick only returned to the founder; myPick returned to the logged-in member
         const founderPick = callerIsFounder ? (founderPredictions.find((p) => p.gameId === g.id) || null) : null;
         const myPick = !callerIsFounder ? (callerPredictions.find((p) => p.gameId === g.id) || null) : null;
@@ -362,7 +380,11 @@ export async function registerRoutes(
     try {
       const league = req.query.league as string | undefined;
       const games = await storage.getGames(league);
-      res.json(games);
+      const cleaned = games.map((g: any) => ({
+        ...g,
+        spiderPick: g.spiderPick ? g.spiderPick.replace(/\s*ML\s*$/i, "").trim() : g.spiderPick,
+      }));
+      res.json(cleaned);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch games" });
     }
@@ -431,8 +453,8 @@ export async function registerRoutes(
     }
   });
 
-  // Returns how many unique MLB games are scheduled/available in today's daily window
-  // Used by the prize pool winner display to enforce the "pick every MLB game" qualification rule
+  // Returns how many MLB/NBA/NHL games are scheduled in the current day's pick window.
+  // Uses midnight PST as the day boundary so West Coast late games fall on the correct date.
   app.get("/api/mlb-game-count", async (_req, res) => {
     try {
       const pstDateStr = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(new Date());
@@ -440,16 +462,148 @@ export async function registerRoutes(
       const start = new Date(Date.UTC(y, m - 1, d, 8, 0, 0, 0));     // today midnight PST
       const end   = new Date(Date.UTC(y, m - 1, d + 1, 8, 0, 0, 0)); // tomorrow midnight PST
       const [mlbGames, nbaGames, nhlGames] = await Promise.all([
-        db.select({ id: games.id }).from(games).where(sql`${games.league} = 'MLB' AND ${games.gameTime} >= ${start} AND ${games.gameTime} < ${end} AND ${games.status} != 'postponed'`),
-        db.select({ id: games.id }).from(games).where(sql`${games.league} = 'NBA' AND ${games.gameTime} >= ${start} AND ${games.gameTime} < ${end} AND ${games.status} != 'postponed'`),
-        db.select({ id: games.id }).from(games).where(sql`${games.league} = 'NHL' AND ${games.gameTime} >= ${start} AND ${games.gameTime} < ${end} AND ${games.status} != 'postponed'`),
+        db.select({ id: games.id, homeTeam: games.homeTeam, awayTeam: games.awayTeam }).from(games).where(sql`${games.league} = 'MLB' AND ${games.gameTime} >= ${start} AND ${games.gameTime} < ${end} AND ${games.status} != 'postponed'`),
+        db.select({ id: games.id, homeTeam: games.homeTeam, awayTeam: games.awayTeam }).from(games).where(sql`${games.league} = 'NBA' AND ${games.gameTime} >= ${start} AND ${games.gameTime} < ${end} AND ${games.status} != 'postponed'`),
+        db.select({ id: games.id, homeTeam: games.homeTeam, awayTeam: games.awayTeam }).from(games).where(sql`${games.league} = 'NHL' AND ${games.gameTime} >= ${start} AND ${games.gameTime} < ${end} AND ${games.status} != 'postponed'`),
       ]);
-      const mlbCount = mlbGames.length;
-      const nbaCount = nbaGames.length;
-      const nhlCount = nhlGames.length;
+      // Deduplicate by matchup — count unique (homeTeam|awayTeam) combos only
+      const dedup = (list: { homeTeam: string; awayTeam: string }[]) =>
+        new Set(list.map(g => `${g.homeTeam}|${g.awayTeam}`)).size;
+      const mlbCount = dedup(mlbGames);
+      const nbaCount = dedup(nbaGames);
+      const nhlCount = dedup(nhlGames);
       res.json({ count: mlbCount + nbaCount + nhlCount, mlbCount, nbaCount, nhlCount, periodStart: start, periodEnd: end });
     } catch (e) {
       res.json({ count: 0 });
+    }
+  });
+
+  // Daily member scorecard — shows the PREVIOUS day's final graded results.
+  // Searches back up to 7 days to find the most recent day with finished games.
+  // Public endpoint. Used for transparent prize pool verification.
+  app.get("/api/daily-scorecard", async (_req, res) => {
+    try {
+      // Search back through recent days to find the last day that has graded games
+      type MatchupGroup = { canonicalId: number; allIds: Set<number>; league: string };
+      let dayGamesRaw: (typeof games.$inferSelect)[] = [];
+      let periodStart!: Date;
+      let periodEnd!: Date;
+      let dateLabel = "";
+
+      for (let daysBack = 1; daysBack <= 7; daysBack++) {
+        const dt = new Date();
+        dt.setUTCDate(dt.getUTCDate() - daysBack);
+        const pstStr = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(dt);
+        const [y, m, d] = pstStr.split("-").map(Number);
+        const start = new Date(Date.UTC(y, m - 1, d, 8, 0, 0, 0));
+        const end   = new Date(Date.UTC(y, m - 1, d + 1, 8, 0, 0, 0));
+
+        const candidateGames = await db.select().from(games).where(
+          sql`${games.gameTime} >= ${start} AND ${games.gameTime} < ${end}
+              AND ${games.status} != 'postponed'
+              AND ${games.league} IN ('MLB','NBA','NHL')`
+        );
+
+        // Check if any of these games are finished (graded)
+        const hasFinished = candidateGames.some(g => g.status === "finished");
+        if (hasFinished) {
+          dayGamesRaw   = candidateGames;
+          periodStart   = start;
+          periodEnd     = end;
+          dateLabel     = pstStr;
+          break;
+        }
+      }
+
+      // Deduplicate by (league, homeTeam, awayTeam)
+      const matchupGroups = new Map<string, MatchupGroup>();
+      for (const g of dayGamesRaw) {
+        const key = `${g.league}|${g.homeTeam}|${g.awayTeam}`;
+        if (!matchupGroups.has(key)) {
+          matchupGroups.set(key, { canonicalId: g.id, allIds: new Set([g.id]), league: g.league });
+        } else {
+          matchupGroups.get(key)!.allIds.add(g.id);
+        }
+      }
+
+      const mlbMatchups = [...matchupGroups.entries()].filter(([k]) => k.startsWith("MLB|"));
+      const nbaMatchups = [...matchupGroups.entries()].filter(([k]) => k.startsWith("NBA|"));
+      const nhlMatchups = [...matchupGroups.entries()].filter(([k]) => k.startsWith("NHL|"));
+
+      const allDayIds = dayGamesRaw.map(g => g.id);
+
+      // Fetch all graded predictions for this day's games
+      const dayPreds = allDayIds.length === 0 ? [] : await db.select().from(predictions).where(
+        inArray(predictions.gameId, allDayIds)
+      );
+
+      // Fetch all paid members
+      const allUsers = await db.select().from(users).where(
+        sql`${users.membershipTier} IN ('rookie', 'pro', 'legend')`
+      );
+
+      const memberRows = allUsers.map(u => {
+        const myPreds = dayPreds.filter(p => p.userId === u.id);
+        const forSport = (matchups: [string, MatchupGroup][]) => {
+          let picks = 0, wins = 0, losses = 0, pending = 0;
+          for (const [, group] of matchups) {
+            const sp = myPreds.filter(p => group.allIds.has(p.gameId));
+            if (sp.length > 0) {
+              picks++;
+              // Count exactly 1 result per GAME — a game is a win, loss, or pending.
+              // If a member made multiple picks on one game, take the majority result.
+              const gWins    = sp.filter(p => p.result === "win").length;
+              const gLosses  = sp.filter(p => p.result === "loss").length;
+              const gPending = sp.filter(p => p.result === "pending").length;
+              if (gWins > gLosses)           wins++;
+              else if (gLosses > gWins)      losses++;
+              else if (gPending > 0)         pending++;
+              else if (gWins > 0)            wins++;   // tie → win
+            }
+          }
+          return { picks, wins, losses, pending };
+        };
+        const mlb = forSport(mlbMatchups);
+        const nba = forSport(nbaMatchups);
+        const nhl = forSport(nhlMatchups);
+        const total = {
+          picks:   mlb.picks   + nba.picks   + nhl.picks,
+          wins:    mlb.wins    + nba.wins    + nhl.wins,
+          losses:  mlb.losses  + nba.losses  + nhl.losses,
+          pending: mlb.pending + nba.pending + nhl.pending,
+        };
+        const qualified =
+          mlb.picks >= mlbMatchups.length &&
+          (nbaMatchups.length === 0 || nba.picks >= nbaMatchups.length) &&
+          (nhlMatchups.length === 0 || nhl.picks >= nhlMatchups.length);
+
+        return {
+          userId: u.id,
+          name:   [u.firstName, u.lastName].filter(Boolean).join(" ") || "Member",
+          tier:   u.membershipTier,
+          avatar: u.profileImageUrl || null,
+          mlb, nba, nhl, total, qualified,
+        };
+      });
+
+      // Sort: qualified first → most wins → most picks
+      memberRows.sort((a, b) => {
+        if (a.qualified !== b.qualified) return a.qualified ? -1 : 1;
+        return b.total.wins - a.total.wins || b.total.picks - a.total.picks;
+      });
+
+      // Winner = first qualified member with at least 1 pick graded
+      const winner = memberRows.find(m => m.qualified && (m.total.wins + m.total.losses) > 0) || null;
+
+      res.json({
+        period: { start: periodStart, end: periodEnd, label: dateLabel },
+        games:  { mlb: mlbMatchups.length, nba: nbaMatchups.length, nhl: nhlMatchups.length, total: matchupGroups.size },
+        members: memberRows,
+        winner: winner ? { userId: winner.userId, name: winner.name, wins: winner.total.wins, losses: winner.total.losses } : null,
+      });
+    } catch (e: any) {
+      console.error("[daily-scorecard]", e);
+      res.status(500).json({ message: "Failed to fetch scorecard" });
     }
   });
 
