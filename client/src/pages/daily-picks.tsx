@@ -223,7 +223,6 @@ export default function DailyPicks() {
                       <div className="min-w-0">
                         <p className="text-xs text-muted-foreground leading-tight">{game ? `${game.awayTeam} @ ${game.homeTeam}` : "—"}</p>
                         <p className="font-display font-bold text-sm">{pred.pick}</p>
-                        <p className="text-[10px] text-muted-foreground/60">{pred.predictionType}{pred.odds ? ` · ${pred.odds}` : ""}</p>
                       </div>
                     </div>
                     <ResultBadge result={pred.result || "pending"} />
@@ -338,7 +337,6 @@ export default function DailyPicks() {
                         <div>
                           <p className="text-[10px] text-primary/70">Your Pick</p>
                           <p className="font-display font-bold text-sm">{myPick.pick}</p>
-                          <p className="text-[10px] text-muted-foreground/50">{myPick.predictionType}</p>
                         </div>
                         <ResultBadge result={myPick.result || "pending"} />
                       </div>
@@ -365,7 +363,6 @@ export default function DailyPicks() {
                           >
                             <p className="text-[9px] opacity-60 uppercase tracking-wider mb-0.5">Away</p>
                             <p className="font-display font-bold text-xs leading-tight">{game.awayTeam.split(" ").slice(-1)[0]}</p>
-                            {game.moneylineAway && <p className="text-[10px] mt-0.5 opacity-70">{parseInt(game.moneylineAway) > 0 ? "+" : ""}{game.moneylineAway}</p>}
                           </button>
                           <button
                             onClick={() => selectPick(game, game.homeTeam, "Moneyline")}
@@ -379,7 +376,6 @@ export default function DailyPicks() {
                           >
                             <p className="text-[9px] opacity-60 uppercase tracking-wider mb-0.5">Home</p>
                             <p className="font-display font-bold text-xs leading-tight">{game.homeTeam.split(" ").slice(-1)[0]}</p>
-                            {game.moneylineHome && <p className="text-[10px] mt-0.5 opacity-70">{parseInt(game.moneylineHome) > 0 ? "+" : ""}{game.moneylineHome}</p>}
                           </button>
                         </div>
                         {draft && (
