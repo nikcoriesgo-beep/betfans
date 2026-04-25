@@ -1,6 +1,6 @@
 import { db } from "./db";
-import { games, predictions } from "@shared/schema";
-import { eq, and, sql } from "drizzle-orm";
+import { games, predictions, leaderboardEntries } from "@shared/schema";
+import { eq, and, sql, inArray } from "drizzle-orm";
 
 const ESPN_ENDPOINTS: Record<string, string> = {
   MLB: "https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard",
@@ -127,6 +127,31 @@ function gradePick(
   return "pending";
 }
 
+// After grading picks, recount wins/losses from the predictions table and update
+// the user's annual leaderboard entry so BB score auto-updates each day.
+async function refreshAnnualLeaderboard(userIds: string[]): Promise<void> {
+  if (userIds.length === 0) return;
+  for (const userId of userIds) {
+    try {
+      const [row] = await db.execute<{ wins: string; losses: string }>(
+        sql`SELECT
+          COUNT(*) FILTER (WHERE result = 'win')  AS wins,
+          COUNT(*) FILTER (WHERE result = 'loss') AS losses
+        FROM predictions WHERE user_id = ${userId}`
+      );
+      const wins   = parseInt((row as any).wins  ?? "0", 10);
+      const losses = parseInt((row as any).losses ?? "0", 10);
+      const total  = wins + losses;
+      const roi    = total > 0 ? Math.round((wins / total) * 1000) / 10 : 0;
+      await db.update(leaderboardEntries)
+        .set({ wins, losses, roi, updatedAt: new Date() })
+        .where(and(eq(leaderboardEntries.userId, userId), eq(leaderboardEntries.period, "annual")));
+    } catch (e: any) {
+      console.log(`[spider] refreshAnnualLeaderboard error for ${userId}:`, e.message);
+    }
+  }
+}
+
 async function autoGradePredictions(
   gameId: number,
   homeTeam: string,
@@ -145,6 +170,7 @@ async function autoGradePredictions(
     .where(and(eq(predictions.gameId, gameId), eq(predictions.result, "pending")));
 
   let graded = 0;
+  const affectedUsers = new Set<string>();
   for (const pred of pending) {
     const result = gradePick(
       pred.pick,
@@ -159,8 +185,13 @@ async function autoGradePredictions(
     if (result !== "pending") {
       const payout = result === "win" ? 1 : result === "push" ? 0 : -1;
       await db.update(predictions).set({ result, payout }).where(eq(predictions.id, pred.id));
+      affectedUsers.add(pred.userId);
       graded++;
     }
+  }
+  // Auto-update the annual leaderboard for every user whose picks were just graded
+  if (affectedUsers.size > 0) {
+    await refreshAnnualLeaderboard([...affectedUsers]).catch(() => {});
   }
   return graded;
 }
@@ -464,21 +495,32 @@ export async function syncSportsData(): Promise<{ synced: number; leagues: strin
         .select()
         .from(games)
         .where(
-          sql`${games.league} = ${game.league} AND ${games.homeTeam} = ${game.homeTeam} AND ${games.awayTeam} = ${game.awayTeam} AND DATE(${games.gameTime}) = DATE(${game.gameTime})`
+          sql`${games.league} = ${game.league} AND ${games.homeTeam} = ${game.homeTeam} AND ${games.awayTeam} = ${game.awayTeam} AND DATE(${games.gameTime} AT TIME ZONE 'America/Los_Angeles') = DATE(${game.gameTime} AT TIME ZONE 'America/Los_Angeles')`
         );
 
       if (existing.length > 0) {
         const prev = existing[0];
+
+        // CRITICAL: If the existing record is already FINISHED (played yesterday),
+        // treat today's same-matchup as a brand-new game — INSERT, never UPDATE.
+        // MLB series = same teams play 3 days in a row; this is the root cause of
+        // the duplicate game / reset-picks bug.
+        if (prev.status === "finished" && game.status === "upcoming") {
+          await db.insert(games).values(game);
+          totalSynced++;
+          continue;
+        }
+
         // Never mark a game as finished before its scheduled start time
-        // ESPN sometimes returns stale/incorrect "post" status for future games
         const safeStatus = (game.status === "finished" && game.gameTime > new Date())
           ? (prev.status ?? "upcoming")
           : game.status;
+
         await db.update(games).set({
           gameTime: game.gameTime,
           status: safeStatus,
-          homeScore: game.homeScore,
-          awayScore: game.awayScore,
+          homeScore: safeStatus === "upcoming" ? null : game.homeScore,
+          awayScore: safeStatus === "upcoming" ? null : game.awayScore,
           spread: game.spread || prev.spread,
           total: game.total || prev.total,
           moneylineHome: game.moneylineHome || prev.moneylineHome,
