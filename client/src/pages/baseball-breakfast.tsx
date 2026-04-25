@@ -416,7 +416,6 @@ export default function BaseballBreakfast() {
                       </div>
                       <div className="flex items-center justify-between">
                         <div>
-                          <p className="text-[10px] text-muted-foreground">{game.spider.type}</p>
                           <p className="font-display font-bold text-sm text-primary">{game.spider.pick}</p>
                         </div>
                         <div className="w-16 h-1.5 bg-white/5 rounded-full overflow-hidden">
@@ -434,7 +433,6 @@ export default function BaseballBreakfast() {
                               <Coffee size={10} className="text-yellow-400" />
                               <span className="text-[10px] text-yellow-400 uppercase tracking-wider">My Pick</span>
                             </div>
-                            <p className="text-[10px] text-muted-foreground">{game.founderPick.predictionType}</p>
                             <p className="font-display font-bold text-sm">{game.founderPick.pick}</p>
                           </div>
                           <PickResultBadge result={game.founderPick.result} />
@@ -449,7 +447,6 @@ export default function BaseballBreakfast() {
                               <Target size={10} className="text-blue-400" />
                               <span className="text-[10px] text-blue-400 uppercase tracking-wider">My Pick</span>
                             </div>
-                            <p className="text-[10px] text-muted-foreground">{game.myPick.predictionType}</p>
                             <p className="font-display font-bold text-sm">{game.myPick.pick}</p>
                           </div>
                           <PickResultBadge result={game.myPick.result} />
