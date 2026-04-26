@@ -1588,16 +1588,28 @@ export async function registerRoutes(
 
   app.post("/api/internal/retry-paypal-payout", async (req, res) => {
     try {
-      const { secret, payoutId, userId, amount, periodLabel, period } = req.body;
+      const { secret, payoutId, userId, amount, periodLabel, period, directEmail } = req.body;
       if (secret !== "bf-internal-k9x2m7") return res.status(403).json({ error: "forbidden" });
-      const { sendPayPalPayout } = await import("./paypalService");
-      const { getSubscriptionDetails } = await import("./paypalService");
-      const user = await storage.getUser(userId);
-      if (!user?.paypalSubscriptionId) return res.status(404).json({ error: "No PayPal subscription for user" });
-      const sub = await getSubscriptionDetails(user.paypalSubscriptionId);
-      const email = sub?.subscriber?.email_address;
-      if (!email) return res.status(404).json({ error: "No PayPal email on subscription" });
-      const batchId = `betfans-retry-${period}-${periodLabel}-${userId.slice(0, 8)}`;
+      const { sendPayPalPayout, getSubscriptionDetails } = await import("./paypalService");
+
+      let email = directEmail || null;
+      if (!email) {
+        const user = await storage.getUser(userId);
+        if (user?.paypalPayoutEmail) {
+          email = user.paypalPayoutEmail;
+        } else if (user?.paypalSubscriptionId) {
+          const sub = await getSubscriptionDetails(user.paypalSubscriptionId);
+          email = sub?.subscriber?.email_address || null;
+        }
+      }
+      if (!email) return res.status(404).json({ error: "No PayPal email found for user" });
+
+      // Persist payout email for future use
+      if (userId && directEmail) {
+        await storage.updateUser(userId, { paypalPayoutEmail: directEmail });
+      }
+
+      const batchId = `betfans-retry-${period}-${periodLabel}-${Date.now()}`;
       const note = `BetFans ${period} prize — 10% pool — ${periodLabel}`;
       const result = await sendPayPalPayout(email, amount, batchId, note);
       if (payoutId) {
