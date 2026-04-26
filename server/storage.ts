@@ -84,6 +84,7 @@ export interface IStorage {
 
   createPayout(data: { userId: string; amount: number; period: string; periodLabel: string; rank: number; sharePercent: number; wins?: number; losses?: number }): Promise<Payout>;
   updatePayout(id: number, data: Partial<Payout>): Promise<Payout | null>;
+  getPayoutById(id: number): Promise<(Payout & { user: User | null }) | null>;
   getPayoutsByPeriod(period: string, periodLabel: string): Promise<(Payout & { user: User | null })[]>;
   getUserPayouts(userId: string): Promise<Payout[]>;
   getAllPayouts(limit?: number): Promise<(Payout & { user: User | null })[]>;
@@ -807,6 +808,15 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(payouts.period, period), eq(payouts.periodLabel, periodLabel)))
       .orderBy(asc(payouts.rank));
     return results.map(r => ({ ...r.payouts, user: r.users }));
+  }
+
+  async getPayoutById(id: number): Promise<(Payout & { user: User | null }) | null> {
+    const results = await db.select().from(payouts)
+      .leftJoin(users, eq(payouts.userId, users.id))
+      .where(eq(payouts.id, id))
+      .limit(1);
+    if (!results.length) return null;
+    return { ...results[0].payouts, user: results[0].users };
   }
 
   async getUserPayouts(userId: string): Promise<Payout[]> {
