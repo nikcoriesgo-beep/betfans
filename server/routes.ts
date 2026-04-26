@@ -166,27 +166,8 @@ export async function registerRoutes(
         return na === nb || na.includes(nb.slice(-6)) || nb.includes(na.slice(-6));
       }
 
-      // --- Read today's MLB games from DB (populated by the 5-min sync) ---
-      const dbMlbGamesRaw = await db.select().from(games).where(
-        sql`${games.league} = 'MLB' AND ${games.gameTime} >= ${todayStart} AND ${games.gameTime} < ${todayEnd}`
-      ).orderBy(asc(games.gameTime));
-      // Deduplicate: keep only one record per (homeTeam, awayTeam).
-      // MLB series = same matchup 3 days in a row; duplicates appear if the sync ran before cleanup.
-      // Prefer live/finished over upcoming; otherwise keep the first by gameTime.
-      const bbSeen = new Map<string, typeof dbMlbGamesRaw[0]>();
-      for (const g of dbMlbGamesRaw) {
-        const key = `${g.homeTeam}|${g.awayTeam}`;
-        if (!bbSeen.has(key)) {
-          bbSeen.set(key, g);
-        } else {
-          const prev = bbSeen.get(key)!;
-          const prevActive = prev.status === "live" || prev.status === "finished";
-          const curActive  = g.status === "live" || g.status === "finished";
-          if (curActive && !prevActive) bbSeen.set(key, g);
-        }
-      }
-      const dbMlbGames = [...bbSeen.values()]
-        .sort((a, b) => new Date(a.gameTime).getTime() - new Date(b.gameTime).getTime());
+      // --- Read today's MLB games via storage.getGames so game IDs match daily-picks exactly ---
+      const dbMlbGames = await storage.getGames("MLB");
 
       // --- Fresh ESPN fetch for live scores/status only (no DB writes here) ---
       const espnStatusMap = new Map<string, { status: string; homeScore: number|null; awayScore: number|null }>();
@@ -216,7 +197,7 @@ export async function registerRoutes(
 
       // --- Founder YTD stats — read from annual leaderboard entry (tracks all sports) ---
       // If no entry exists, self-heal by creating one with current YTD numbers
-      const YTD_WINS = 222, YTD_LOSSES = 177;
+      const YTD_WINS = 228, YTD_LOSSES = 185;
       let stats = { wins: YTD_WINS, losses: YTD_LOSSES, profit: 37, roi: 55.6, streak: 5, totalPicks: YTD_WINS + YTD_LOSSES };
       if (founder) {
         try {
