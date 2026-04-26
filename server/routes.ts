@@ -1586,6 +1586,32 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/internal/create-payout", async (req, res) => {
+    try {
+      const { secret, userId, amount, periodLabel, period, rank } = req.body;
+      if (secret !== "bf-internal-k9x2m7") return res.status(403).json({ error: "forbidden" });
+      const user = await storage.getUser(userId);
+      if (!user) return res.status(404).json({ error: "User not found" });
+      const existing = await storage.getPayoutsByPeriod(period, periodLabel);
+      const alreadyExists = existing.find(p => p.userId === userId);
+      if (alreadyExists) return res.json({ ok: true, skipped: true, payoutId: alreadyExists.id, message: "Payout already exists" });
+      const payout = await storage.createPayout({
+        userId,
+        amount: parseFloat(amount),
+        period,
+        periodLabel,
+        rank: rank || 1,
+        sharePercent: 10,
+      });
+      await storage.updatePayout(payout.id, { status: "wallet_credited", paidAt: new Date() });
+      const currentBalance = parseFloat((user as any).walletBalance || "0");
+      await storage.updateUser(userId, { walletBalance: String(currentBalance + parseFloat(amount)) } as any);
+      res.json({ ok: true, payoutId: payout.id, userId, amount, message: `Payout of $${amount} created for ${user.firstName || userId}` });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.post("/api/internal/retry-paypal-payout", async (req, res) => {
     try {
       const { secret, payoutId, userId, amount, periodLabel, period, directEmail } = req.body;
