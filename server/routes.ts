@@ -1479,6 +1479,42 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/admin/send-to-card/:payoutId", isAuthenticated, isAdmin, async (req: any, res) => {
+    try {
+      const payoutId = parseInt(req.params.payoutId);
+      if (isNaN(payoutId)) return res.status(400).json({ error: "Invalid payout ID" });
+
+      const payout = await storage.getPayoutById(payoutId);
+      if (!payout) return res.status(404).json({ error: "Payout not found" });
+      if (payout.status === "paypal_sent") return res.status(400).json({ error: "Already sent via PayPal" });
+
+      const user = await storage.getUser(payout.userId);
+      if (!user) return res.status(404).json({ error: "User not found" });
+
+      const { sendPayPalPayout, getSubscriptionDetails } = await import("./paypalService");
+      const amount = parseFloat(String(payout.amount));
+      const note = `BetFans ${payout.period} prize — ${payout.periodLabel}`;
+      const senderItemId = `betfans-card-${payoutId}-${Date.now()}`;
+
+      let email = user.paypalPayoutEmail;
+      if (!email && user.paypalSubscriptionId) {
+        const sub = await getSubscriptionDetails(user.paypalSubscriptionId);
+        email = sub?.subscriber?.email_address || null;
+      }
+      if (!email) return res.status(400).json({ error: "No PayPal email on file for this member. Ask them to add a payout email in their profile." });
+
+      const result = await sendPayPalPayout(email, amount, senderItemId, note);
+      await storage.updatePayout(payoutId, {
+        stripeTransferId: result.batchId,
+        status: "paypal_sent",
+        paidAt: new Date(),
+      });
+      res.json({ ok: true, email, batchId: result.batchId, status: result.status });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.post("/api/internal/paypal-refund-payout", async (req, res) => {
     try {
       const { secret, subscriptionId, amount, note } = req.body;
