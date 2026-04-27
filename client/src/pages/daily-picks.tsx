@@ -99,6 +99,9 @@ export default function DailyPicks() {
   const { data: myPredictions = [] } = useQuery<any[]>({
     queryKey: ["/api/predictions"],
     enabled: !!user,
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchInterval: 30000,
   });
 
   const syncGames = useMutation({
@@ -132,7 +135,11 @@ export default function DailyPicks() {
 
   const myPicksToday = useMemo(() => {
     const todayGameIds = new Set(todayGames.map((g) => g.id));
-    return myPredictions.filter((p) => todayGameIds.has(p.gameId));
+    const todayStr = new Date().toDateString();
+    return myPredictions.filter((p) =>
+      todayGameIds.has(p.gameId) ||
+      (p.createdAt && new Date(p.createdAt).toDateString() === todayStr)
+    );
   }, [myPredictions, todayGames]);
 
   const myPickGameIds = new Set(myPicksToday.map((p) => p.gameId));
