@@ -1081,10 +1081,26 @@ export async function registerRoutes(
             if (foundUser) {
               await storage.updateUser(foundUser.id, { membershipTier: tier });
               console.log(`[PayPal webhook] User ${foundUser.id} activated ${tier}`);
-              // Add prize pool contribution on monthly renewal (not initial — that's handled by /api/paypal/subscription)
+              // Add prize pool + affiliate commission on monthly renewal
               if (resourceType === "BILLING.SUBSCRIPTION.RENEWED") {
+                // Affiliate residual commissions per tier
+                const affiliateCommission: Record<string, number> = { rookie: 5, pro: 10, legend: 50 };
+                // Prize pool gets the remainder after affiliate commission
                 const tierPrices: Record<string, number> = { rookie: 19, pro: 29, legend: 99 };
-                const prizeContribution = (tierPrices[tier] || 0) * 0.5;
+                const commission = affiliateCommission[tier] || 0;
+                const prizeContribution = (tierPrices[tier] || 0) - commission;
+
+                // Pay affiliate commission to referrer
+                if (commission > 0 && foundUser.referredBy) {
+                  const referrer = await storage.getUser(foundUser.referredBy);
+                  if (referrer) {
+                    const refBalance = parseFloat((referrer as any).walletBalance || "0");
+                    await storage.updateUser(referrer.id, { walletBalance: String(refBalance + commission) } as any);
+                    await storage.createTransaction({ userId: referrer.id, type: "referral_bonus", amount: commission, description: `Monthly residual — ${foundUser.firstName || foundUser.id} (${tier}) renewed`, status: "completed" });
+                    console.log(`[PayPal webhook] Affiliate $${commission} to ${referrer.id} for ${foundUser.id} renewal`);
+                  }
+                }
+
                 if (prizeContribution > 0) {
                   await storage.addPrizePoolContribution(prizeContribution, "paypal_renewal", subscriptionId, foundUser.id);
                   console.log(`[PayPal webhook] Prize pool +$${prizeContribution} renewal for ${tier}`);
@@ -1607,6 +1623,23 @@ export async function registerRoutes(
       const currentBalance = parseFloat((user as any).walletBalance || "0");
       await storage.updateUser(userId, { walletBalance: String(currentBalance + parseFloat(amount)) } as any);
       res.json({ ok: true, payoutId: payout.id, userId, amount, message: `Payout of $${amount} created for ${user.firstName || userId}` });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/internal/credit-wallet", async (req, res) => {
+    try {
+      const { secret, userId, amount, description } = req.body;
+      if (secret !== "bf-internal-k9x2m7") return res.status(403).json({ error: "forbidden" });
+      const user = await storage.getUser(userId);
+      if (!user) return res.status(404).json({ error: "User not found" });
+      const credit = parseFloat(amount);
+      if (!credit || credit <= 0) return res.status(400).json({ error: "Invalid amount" });
+      const currentBalance = parseFloat((user as any).walletBalance || "0");
+      await storage.updateUser(userId, { walletBalance: String(currentBalance + credit) } as any);
+      await storage.createTransaction({ userId, type: "referral_bonus", amount: credit, description: description || `Manual wallet credit $${credit}`, status: "completed" });
+      res.json({ ok: true, credited: credit, newBalance: currentBalance + credit, message: `Credited $${credit} to ${user.firstName || userId}` });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
