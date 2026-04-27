@@ -1612,6 +1612,20 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/internal/add-prize-pool", async (req, res) => {
+    try {
+      const { secret, amount, source, userId } = req.body;
+      if (secret !== "bf-internal-k9x2m7") return res.status(403).json({ error: "forbidden" });
+      const contribution = parseFloat(amount);
+      if (!contribution || contribution <= 0) return res.status(400).json({ error: "Invalid amount" });
+      await storage.addPrizePoolContribution(contribution, source || "manual", undefined, userId || undefined);
+      const newTotal = await storage.getPrizePoolTotal();
+      res.json({ ok: true, added: contribution, newTotal, message: `Added $${contribution} to prize pool. New total: $${newTotal}` });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.post("/api/internal/retry-paypal-payout", async (req, res) => {
     try {
       const { secret, payoutId, userId, amount, periodLabel, period, directEmail } = req.body;
