@@ -197,8 +197,8 @@ export async function registerRoutes(
 
       // --- Founder YTD stats — read from annual leaderboard entry (tracks all sports) ---
       // If no entry exists, self-heal by creating one with current YTD numbers
-      const YTD_WINS = 228, YTD_LOSSES = 185;
-      let stats = { wins: YTD_WINS, losses: YTD_LOSSES, profit: 37, roi: 55.6, streak: 5, totalPicks: YTD_WINS + YTD_LOSSES };
+      const YTD_WINS = 238, YTD_LOSSES = 191;
+      let stats = { wins: YTD_WINS, losses: YTD_LOSSES, profit: 37, roi: 55.4, streak: 5, totalPicks: YTD_WINS + YTD_LOSSES };
       if (founder) {
         try {
           const [lbEntry] = await db
@@ -219,7 +219,7 @@ export async function registerRoutes(
           } else if (lbEntry) {
             // Entry exists but has 0-0 data — update it to current YTD
             await db.update(leaderboardEntries)
-              .set({ wins: YTD_WINS, losses: YTD_LOSSES, roi: 55.6, profit: 37, streak: 5, rank: 1 })
+              .set({ wins: YTD_WINS, losses: YTD_LOSSES, roi: 55.4, profit: 37, streak: 5, rank: 1 })
               .where(and(eq(leaderboardEntries.userId, founder.id), eq(leaderboardEntries.period, "annual")));
           } else {
             // Self-heal: insert the annual entry if it's missing
