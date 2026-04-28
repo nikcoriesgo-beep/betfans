@@ -412,6 +412,12 @@ ${t.timestamp}`}),ce(`\u2713 Push notification sent to ntfy.sh/${_q}`)}catch(a){
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW()
       )
+    `),await t.query(`
+      CREATE TABLE IF NOT EXISTS site_counters (
+        key TEXT PRIMARY KEY,
+        value INTEGER NOT NULL DEFAULT 0,
+        updated_at TIMESTAMP DEFAULT NOW()
+      )
     `),console.log("[migration] All tables created successfully"),(await t.query("SELECT 1 FROM users WHERE id = $1",["29b670b7-5296-44dc-a0a0-aec0d878ef9b"])).rowCount===0?(await t.query(`
         INSERT INTO users (id, phone, password_hash, first_name, last_name, membership_tier, referral_code, wallet_balance, created_at, updated_at)
         VALUES (
