@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { PrizePoolQualRule } from "@/components/PrizePoolQualRule";
 import { Navbar } from "@/components/layout/Navbar";
-import { AdBannerTop, AdBannerInline } from "@/components/AdBanner";
+import { AdBannerInline } from "@/components/AdBanner";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -95,7 +95,11 @@ export default function DailyPicks() {
 
   const isFounder = user?.referralCode === FOUNDER_CODE;
 
-  const { data: allGames = [], isLoading: gamesLoading } = useQuery<any[]>({ queryKey: ["/api/games"] });
+  const { data: allGames = [], isLoading: gamesLoading } = useQuery<any[]>({
+    queryKey: ["/api/games"],
+    staleTime: 0,
+    refetchOnMount: "always",
+  });
   const { data: myPredictions = [] } = useQuery<any[]>({
     queryKey: ["/api/predictions"],
     enabled: !!user,
@@ -165,7 +169,6 @@ export default function DailyPicks() {
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
-      <AdBannerTop />
       <div className={cn("container mx-auto px-4 pt-24 max-w-5xl", draftCount > 0 ? "pb-32" : "pb-16")}>
 
         <div className="relative mb-8 overflow-hidden rounded-2xl bg-gradient-to-br from-primary/10 via-card/60 to-blue-900/20 border border-white/5 p-6 md:p-10">
@@ -293,8 +296,9 @@ export default function DailyPicks() {
         ) : (
           <div className="grid gap-3 md:grid-cols-2">
             {filteredGames.map((game) => {
-              const alreadyPicked = myPickGameIds.has(game.id);
-              const myPick = myPicksToday.find((p) => p.gameId === game.id);
+              const myPick = myPicksToday.find((p) => p.gameId === game.id) ||
+                myPicksToday.find((p) => p.awayTeam && p.homeTeam && p.awayTeam === game.awayTeam && p.homeTeam === game.homeTeam);
+              const alreadyPicked = !!myPick;
               const draft = drafts[game.id];
 
               const isFinished = game.status === "finished";
