@@ -1742,5 +1742,23 @@ export async function registerRoutes(
     });
   });
 
+  app.get("/api/views/home", async (_req, res) => {
+    try {
+      const count = await storage.getPageViews("home");
+      res.json({ count });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/views/home", async (_req, res) => {
+    try {
+      const count = await storage.incrementPageViews("home");
+      res.json({ count });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   return httpServer;
 }
