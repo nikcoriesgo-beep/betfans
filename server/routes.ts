@@ -1347,6 +1347,21 @@ export async function registerRoutes(
     }
   });
 
+  app.patch("/api/user/payout-email", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = (req.session as any)?.userId;
+      const { email } = req.body;
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+        return res.status(400).json({ message: "A valid PayPal email address is required" });
+      }
+      const updated = await storage.updateUser(userId, { paypalPayoutEmail: email.trim().toLowerCase() });
+      if (!updated) return res.status(404).json({ message: "User not found" });
+      res.json({ ok: true, paypalPayoutEmail: updated.paypalPayoutEmail });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update payout email" });
+    }
+  });
+
   app.patch("/api/user/phone-consent", isAuthenticated, async (req: any, res) => {
     try {
       const userId = (req.session as any)?.userId;
