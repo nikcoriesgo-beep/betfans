@@ -223,3 +223,9 @@ export const merchOrders = pgTable("merch_orders", {
 export const insertMerchOrderSchema = createInsertSchema(merchOrders).omit({ id: true, createdAt: true, updatedAt: true });
 export type MerchOrder = typeof merchOrders.$inferSelect;
 export type InsertMerchOrder = z.infer<typeof insertMerchOrderSchema>;
+
+export const siteCounters = pgTable("site_counters", {
+  key: text("key").primaryKey(),
+  value: integer("value").notNull().default(0),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
