@@ -197,7 +197,7 @@ export async function registerRoutes(
 
       // --- Founder YTD stats — read from annual leaderboard entry (tracks all sports) ---
       // If no entry exists, self-heal by creating one with current YTD numbers
-      const YTD_WINS = 238, YTD_LOSSES = 191;
+      const YTD_WINS = 242, YTD_LOSSES = 195;
       let stats = { wins: YTD_WINS, losses: YTD_LOSSES, profit: 37, roi: 55.4, streak: 5, totalPicks: YTD_WINS + YTD_LOSSES };
       if (founder) {
         try {
@@ -402,8 +402,20 @@ export async function registerRoutes(
   app.get("/api/predictions", isAuthenticated, async (req: any, res) => {
     try {
       const userId = (req.session as any)?.userId;
-      const predictions = await storage.getUserPredictions(userId);
-      res.json(predictions);
+      const userPredictions = await storage.getUserPredictions(userId);
+      // Join game team data so client can match BFB picks by team names as a fallback
+      const gameIds = [...new Set(userPredictions.map((p) => p.gameId))];
+      const gameRows = gameIds.length > 0
+        ? await db.select({ id: games.id, awayTeam: games.awayTeam, homeTeam: games.homeTeam })
+            .from(games).where(inArray(games.id, gameIds))
+        : [];
+      const gameMap = new Map(gameRows.map((g) => [g.id, g]));
+      const result = userPredictions.map((p) => ({
+        ...p,
+        awayTeam: gameMap.get(p.gameId)?.awayTeam ?? null,
+        homeTeam: gameMap.get(p.gameId)?.homeTeam ?? null,
+      }));
+      res.json(result);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch predictions" });
     }
@@ -875,7 +887,7 @@ export async function registerRoutes(
 
       const annualRemaining = Math.max(0, yearContributions - dailyPaidThisYear);
       // Remaining pool = total contributions minus all payouts ever made
-      const remaining = Math.max(0, Math.round((total - allTimePaid) * 100) / 100);
+      const remaining = Math.max(0, Math.floor(total - allTimePaid));
 
       res.json({ amount: remaining, daily, weekly: 0, monthly: 0, annual: annualRemaining });
     } catch (error) {
