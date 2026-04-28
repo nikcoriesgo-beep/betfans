@@ -35,18 +35,43 @@ const FOUNDER_CODES = ["NIKCOX"];
 const PAID_TIERS = ["rookie", "pro", "legend"];
 const BUILD_KEY = "bf_build_id";
 
+// Pages anyone can browse — no membership required
+const PUBLIC_PATHS = [
+  "/",
+  "/membership",
+  "/auth",
+  "/official-rules",
+  "/how-to-play",
+  "/leaderboard",
+  "/leaderboard/daily",
+  "/leaderboard/annual",
+  "/winners",
+  "/winners-probability",
+  "/baseball-breakfast",
+  "/news",
+  "/article",
+  "/members-map",
+  "/advertising",
+];
+
+function isPublicPath(path: string) {
+  if (PUBLIC_PATHS.includes(path)) return true;
+  if (path.startsWith("/winners/")) return true;
+  if (path.startsWith("/membership?")) return true;
+  if (path.startsWith("/auth?")) return true;
+  return false;
+}
+
 function PaymentGate({ children }: { children: ReactNode }) {
   const { user, isLoading } = useAuth();
   const [location, navigate] = useLocation();
 
   useEffect(() => {
     if (isLoading || !user) return;
+    if (isPublicPath(location)) return;
     const isFounder = FOUNDER_CODES.includes(user.referralCode ?? "");
     const isPaid = PAID_TIERS.includes(user.membershipTier ?? "");
-    const isMembershipPage = location === "/membership" || location.startsWith("/membership?");
-    const isAuthPage = location === "/auth" || location.startsWith("/auth?");
-    const isOfficialRulesPage = location === "/official-rules";
-    if (!isFounder && !isPaid && !isMembershipPage && !isAuthPage && !isOfficialRulesPage) {
+    if (!isFounder && !isPaid) {
       navigate("/membership");
     }
   }, [user, isLoading, location]);
