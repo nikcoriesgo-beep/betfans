@@ -24,6 +24,7 @@ import ArticleReader from "@/pages/article-reader";
 import Referrals from "@/pages/referrals";
 import ResidualIncome from "@/pages/residual-income";
 import HowToPlay from "@/pages/how-to-play";
+import OfficialRules from "@/pages/official-rules";
 import Auth from "@/pages/auth";
 import { PhoneConsentModal } from "@/components/PhoneConsentModal";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -44,7 +45,8 @@ function PaymentGate({ children }: { children: ReactNode }) {
     const isPaid = PAID_TIERS.includes(user.membershipTier ?? "");
     const isMembershipPage = location === "/membership" || location.startsWith("/membership?");
     const isAuthPage = location === "/auth" || location.startsWith("/auth?");
-    if (!isFounder && !isPaid && !isMembershipPage && !isAuthPage) {
+    const isOfficialRulesPage = location === "/official-rules";
+    if (!isFounder && !isPaid && !isMembershipPage && !isAuthPage && !isOfficialRulesPage) {
       navigate("/membership");
     }
   }, [user, isLoading, location]);
@@ -75,6 +77,7 @@ function Router() {
       <Route path="/residual-income" component={ResidualIncome} />
       <Route path="/how-to-play" component={HowToPlay} />
       <Route path="/auth" component={Auth} />
+      <Route path="/official-rules" component={OfficialRules} />
       <Route path="/advertising" component={Advertising} />
       <Route path="/game/:id" component={GameDetail} />
       <Route component={NotFound} />
