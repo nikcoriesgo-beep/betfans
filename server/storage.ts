@@ -13,6 +13,7 @@ import {
   payouts, type Payout,
   referrals, type Referral,
   merchOrders, type MerchOrder, type InsertMerchOrder,
+  siteCounters,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, sql, asc } from "drizzle-orm";
@@ -115,6 +116,9 @@ export interface IStorage {
     byProduct: Record<string, { name: string; unitsSold: number; revenue: number; wholesale: number; profit: number; marginPercent: number }>;
     byMonth: { month: string; revenue: number; wholesale: number; profit: number; orders: number }[];
   }>;
+
+  incrementPageViews(key: string): Promise<number>;
+  getPageViews(key: string): Promise<number>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1134,6 +1138,23 @@ export class DatabaseStorage implements IStorage {
       byProduct,
       byMonth,
     };
+  }
+
+  async incrementPageViews(key: string): Promise<number> {
+    await db.execute(sql`
+      INSERT INTO site_counters (key, value, updated_at)
+      VALUES (${key}, 1, NOW())
+      ON CONFLICT (key) DO UPDATE
+        SET value = site_counters.value + 1,
+            updated_at = NOW()
+    `);
+    const [row] = await db.select().from(siteCounters).where(eq(siteCounters.key, key));
+    return row?.value ?? 0;
+  }
+
+  async getPageViews(key: string): Promise<number> {
+    const [row] = await db.select().from(siteCounters).where(eq(siteCounters.key, key));
+    return row?.value ?? 0;
   }
 }
 
