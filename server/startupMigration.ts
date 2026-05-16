@@ -1,7 +1,9 @@
 import { pool } from "./db";
 import type { PoolClient } from "pg";
 
-const NIK_ID = '29b670b7-5296-44dc-a0a0-aec0d878ef9b';
+// Real Nikco account (aa5b3efa) — the one he actually logs into.
+// The old seeded UUID (29b670b7) is now NIKCOX-SEED and has no picks.
+const NIK_ID = 'aa5b3efa-fb3e-49b1-9f60-983bcec7d67a';
 const SCOTT_ID = '61a80e5c-4c0c-484a-87a7-7c1ae92c0991';
 const MOE_ID = '827bf2c0-df36-4045-b2bf-5650e9aa02a4';
 
@@ -59,8 +61,9 @@ async function seedHistoricalGamesAndPredictions(client: PoolClient) {
     for (let i = 0; i < total; i++) {
       const matchup = matchups[i % matchups.length];
       let date = new Date(startDate.getTime() + i * 28800000); // spread 8h apart (~3 picks/day)
-      // Hard cap: never create seeded games in the future
-      const cap = new Date(Date.now() - 3 * 3600000); // at least 3h in the past
+      // Hard cap: seeded games must be at least 14 days old so they never
+      // appear in the 7-day scorecard window used by the prize-pool scorecard.
+      const cap = new Date(Date.now() - 14 * 24 * 3600000);
       if (date > cap) date = new Date(cap.getTime() - (total - i) * 3600000);
       const isWin = results[i] === 'win';
       const isNba = league === 'NBA';
@@ -112,20 +115,23 @@ async function seedHistoricalGamesAndPredictions(client: PoolClient) {
 export async function runHistoricalDataSeed() {
   const client = await pool.connect();
   try {
-    // Check if Nik has exactly 312 picks (173W+139L) — if not, clear and reseed
+    // Check if real Nikco has 312 seeded NBA picks (173W+139L) — if not, seed them
+    // These are historical NBA picks from Jan-Apr 2026 before daily tracking began.
     const nikPickCount = await client.query(
-      `SELECT count(*) as cnt FROM predictions WHERE user_id = $1 AND result IN ('win','loss')`,
+      `SELECT count(*) as cnt FROM predictions p
+       JOIN games g ON p.game_id = g.id
+       WHERE p.user_id = $1 AND g.league = 'NBA' AND p.result IN ('win','loss')`,
       [NIK_ID]
     );
     const nikPicks = parseInt(nikPickCount.rows[0].cnt);
     if (nikPicks < 312) {
-      console.log(`[migration] Nik has ${nikPicks} picks (need ≥312), clearing and reseeding...`);
-      // Only delete historical data — keep any games/predictions from today onwards
-      await client.query(`DELETE FROM predictions WHERE created_at < '2026-04-19'`);
+      console.log(`[migration] Nik has ${nikPicks} NBA picks (need ≥312), clearing and reseeding historical data...`);
+      // Only delete historical seeded data — keep any real games/predictions from today onwards
+      await client.query(`DELETE FROM predictions WHERE user_id = $1 AND created_at < '2026-04-19'`, [NIK_ID]);
       await client.query(`DELETE FROM games WHERE game_time < '2026-04-19' AND status = 'final'`);
       await seedHistoricalGamesAndPredictions(client);
     } else {
-      console.log("[migration] Historical picks already seeded correctly (312 picks for Nik)");
+      console.log("[migration] Historical NBA picks already seeded correctly (312 picks for real Nikco)");
     }
   } catch (err: any) {
     console.error("[migration] Historical seed error:", err.message);
@@ -166,19 +172,225 @@ export async function runStartupMigration() {
         console.log(`[migration] Self-heal: deleted ${delGames.rowCount} fake seeded NBA games`);
       }
 
-      // Self-heal: delete ALL seeded picks for Scott & Moe — they should have zero seeded predictions.
-      // Seeded picks reference games where created_at = game_time (ts_diff < 60s fingerprint).
-      const delScottMoe = await client.query(`
-        DELETE FROM predictions
-        WHERE user_id IN ($1, $2)
+      // Self-heal: DELETE duplicate upcoming games (same league + teams + PST-date + 90-min time bucket).
+      // Caused by the MLB series bug where the same matchup plays 3 days in a row.
+      // Time bucket ensures doubleheaders (same matchup at different times) are NOT deleted.
+      // Strategy: for each duplicate group, keep the game_id with the most picks (or lowest id),
+      // reassign any picks from the other copies to the keeper, then delete the extras.
+      const dupRows = await client.query(`
+        WITH bucketed AS (
+          SELECT
+            id,
+            league,
+            home_team,
+            away_team,
+            DATE(game_time AT TIME ZONE 'America/Los_Angeles') AS pst_date,
+            ROUND(EXTRACT(EPOCH FROM game_time) / 5400) AS time_bucket
+          FROM games
+          WHERE status = 'upcoming'
+        ),
+        ranked AS (
+          SELECT
+            id, league, home_team, away_team, pst_date, time_bucket,
+            ROW_NUMBER() OVER (
+              PARTITION BY league, home_team, away_team, pst_date, time_bucket
+              ORDER BY
+                (SELECT COUNT(*) FROM predictions WHERE game_id = bucketed.id) DESC,
+                id ASC
+            ) AS rn
+          FROM bucketed
+        )
+        SELECT id, league, home_team, away_team, pst_date, rn FROM ranked
+        WHERE (league, home_team, away_team, pst_date, time_bucket) IN (
+          SELECT league, home_team, away_team, pst_date, time_bucket
+          FROM bucketed
+          GROUP BY league, home_team, away_team, pst_date, time_bucket
+          HAVING COUNT(*) > 1
+        )
+        ORDER BY league, home_team, away_team, pst_date, rn
+      `);
+
+      if (dupRows.rowCount && dupRows.rowCount > 0) {
+        // Group by (league, home_team, away_team, pst_date, time_bucket) — ids are integers (serial)
+        const groups: Record<string, { keeper: number; dupes: number[] }> = {};
+        for (const row of dupRows.rows) {
+          const key = `${row.league}|${row.home_team}|${row.away_team}|${row.pst_date}|${row.time_bucket}`;
+          if (!groups[key]) groups[key] = { keeper: Number(row.id), dupes: [] };
+          else groups[key].dupes.push(Number(row.id));
+        }
+        let totalDupesRemoved = 0;
+        for (const [key, { keeper, dupes }] of Object.entries(groups)) {
+          if (dupes.length === 0) continue;
+          // Reassign any picks from duplicates to the keeper (game_id is integer)
+          await client.query(
+            `UPDATE predictions SET game_id = $1 WHERE game_id = ANY($2::int[])`,
+            [keeper, dupes]
+          );
+          // Delete duplicate game records (id is integer/serial)
+          const del = await client.query(
+            `DELETE FROM games WHERE id = ANY($1::int[])`,
+            [dupes]
+          );
+          totalDupesRemoved += del.rowCount ?? 0;
+          console.log(`[migration] Dedup: kept game #${keeper} for ${key}, removed ${dupes.length} dupes`);
+        }
+        console.log(`[migration] Self-heal: removed ${totalDupesRemoved} duplicate upcoming game records`);
+      }
+
+      // Ensure subscription_paid_until column exists (added May 2026)
+      await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_paid_until TIMESTAMP`);
+
+      // ── Seed known PayPal subscription IDs that were missing in the prod DB ──
+      // Scott Lunny and Ian Glover subscribed before their IDs were properly stored.
+      // Without these the lapse sweep downgrades them to free every morning.
+      // Idempotent: only runs when paypal_subscription_id is NULL or empty.
+      await client.query(`
+        UPDATE users
+        SET paypal_subscription_id    = 'I-4KGNK2G8FDCG',
+            membership_tier           = CASE WHEN membership_tier = 'free' THEN 'legend' ELSE membership_tier END,
+            subscription_paid_until   = GREATEST(COALESCE(subscription_paid_until, NOW()), NOW() + INTERVAL '45 days'),
+            subscription_cancelled_at = NULL
+        WHERE phone = '8182314634'
+          AND (paypal_subscription_id IS NULL OR paypal_subscription_id = '')
+      `);
+      await client.query(`
+        UPDATE users
+        SET paypal_subscription_id    = 'I-0XKYAP00ULWM',
+            membership_tier           = CASE WHEN membership_tier = 'free' THEN 'legend' ELSE membership_tier END,
+            subscription_paid_until   = GREATEST(COALESCE(subscription_paid_until, NOW()), NOW() + INTERVAL '45 days'),
+            subscription_cancelled_at = NULL
+        WHERE phone = '3107367905'
+          AND (paypal_subscription_id IS NULL OR paypal_subscription_id = '')
+      `);
+      console.log("[migration] Subscription IDs seeded for Scott and Ian (no-op if already set)");
+
+      // ── One-time cleanup: remove accidental manual_payment contributions added 2026-05-10 ──
+      // record-payment was called to restore tiers but it also added prize pool contributions.
+      // Those were erroneous — real contributions come from PayPal webhooks only.
+      await client.query(`
+        DELETE FROM prize_pool_contributions
+        WHERE source = 'manual_payment'
+          AND created_at >= '2026-05-10'::date
+      `);
+
+      // Founders are permanently exempt — set far future expiry
+      await client.query(`
+        UPDATE users SET subscription_paid_until = '2099-12-31'
+        WHERE referral_code IN ('NIKCOX', 'DAMON822')
+          AND (subscription_paid_until IS NULL OR subscription_paid_until < '2099-12-30')
+      `);
+      // Members with a PayPal subscription plan: refresh their expiry to 31 days from now.
+      // The PayPal audit in the daily sweep re-confirms status — this is just the initial window.
+      await client.query(`
+        UPDATE users SET subscription_paid_until = NOW() + INTERVAL '31 days'
+        WHERE paypal_subscription_id IS NOT NULL
+          AND referral_code NOT IN ('NIKCOX', 'DAMON822')
+          AND (subscription_paid_until IS NULL OR subscription_paid_until < NOW() + INTERVAL '1 day')
+      `);
+
+      // Self-heal: reset any predictions graded as win/loss on UPCOMING games that haven't started yet.
+      // This happens when the sportsDataService re-uses an old game record (same PST-day matchup)
+      // for a new game, carrying over old graded results onto tomorrow's game.
+      // CRITICAL: only reset picks on 'upcoming' games — never touch 'finished' or 'live' games.
+      // Without the status filter, west-coast evening games (9:30 PM ET = 1:30 AM UTC) get reset
+      // to 'pending' during early deploys and then misgraded when the final score comes in.
+      const resetFutureGraded = await client.query(`
+        UPDATE predictions SET result = 'pending'
+        WHERE result != 'pending'
           AND game_id IN (
             SELECT id FROM games
-            WHERE ABS(EXTRACT(EPOCH FROM (created_at - game_time))) < 60
+            WHERE game_time > NOW() + INTERVAL '30 minutes'
+              AND status = 'upcoming'
           )
+      `);
+      if (resetFutureGraded.rowCount && resetFutureGraded.rowCount > 0) {
+        console.log(`[migration] Self-heal: reset ${resetFutureGraded.rowCount} graded predictions on future games`);
+      }
+
+      // Self-heal: clear home_score/away_score on games that are upcoming (ESPN may have stale scores).
+      await client.query(`
+        UPDATE games SET home_score = NULL, away_score = NULL, status = 'upcoming'
+        WHERE status = 'upcoming' AND (home_score IS NOT NULL OR away_score IS NOT NULL)
+      `);
+
+      // Self-heal: re-grade misgraded Moneyline picks from the last 72 hours using pure SQL.
+      // This catches picks that were graded wrong during partial score updates (e.g. ESPN returns
+      // interim scores briefly before the final). Uses the last word of each team name for matching
+      // (e.g. 'Thunder' from 'Oklahoma City Thunder') since it is typically unique.
+      // Runs synchronously in migration so it fires before the async sportsDataSync starts.
+      const fixMoneylineLoss = await client.query(`
+        UPDATE predictions p
+        SET result = 'win', payout = 1
+        FROM games g
+        WHERE p.game_id = g.id
+          AND g.status = 'finished'
+          AND g.home_score IS NOT NULL
+          AND g.away_score IS NOT NULL
+          AND g.home_score > g.away_score
+          AND p.result = 'loss'
+          AND lower(p.prediction_type) = 'moneyline'
+          AND p.created_at > NOW() - INTERVAL '72 hours'
+          AND lower(p.pick) LIKE '%' || lower(regexp_replace(g.home_team, '^.* ', '')) || '%'
+      `);
+      const fixMoneylineWin = await client.query(`
+        UPDATE predictions p
+        SET result = 'loss', payout = -1
+        FROM games g
+        WHERE p.game_id = g.id
+          AND g.status = 'finished'
+          AND g.home_score IS NOT NULL
+          AND g.away_score IS NOT NULL
+          AND g.home_score < g.away_score
+          AND p.result = 'win'
+          AND lower(p.prediction_type) = 'moneyline'
+          AND p.created_at > NOW() - INTERVAL '72 hours'
+          AND lower(p.pick) LIKE '%' || lower(regexp_replace(g.home_team, '^.* ', '')) || '%'
+      `);
+      // Away-team variant: pick mentions the away team's last word
+      const fixMoneylineAwayLoss = await client.query(`
+        UPDATE predictions p
+        SET result = 'win', payout = 1
+        FROM games g
+        WHERE p.game_id = g.id
+          AND g.status = 'finished'
+          AND g.home_score IS NOT NULL
+          AND g.away_score IS NOT NULL
+          AND g.away_score > g.home_score
+          AND p.result = 'loss'
+          AND lower(p.prediction_type) = 'moneyline'
+          AND p.created_at > NOW() - INTERVAL '72 hours'
+          AND lower(p.pick) LIKE '%' || lower(regexp_replace(g.away_team, '^.* ', '')) || '%'
+      `);
+      const fixMoneylineAwayWin = await client.query(`
+        UPDATE predictions p
+        SET result = 'loss', payout = -1
+        FROM games g
+        WHERE p.game_id = g.id
+          AND g.status = 'finished'
+          AND g.home_score IS NOT NULL
+          AND g.away_score IS NOT NULL
+          AND g.away_score < g.home_score
+          AND p.result = 'win'
+          AND lower(p.prediction_type) = 'moneyline'
+          AND p.created_at > NOW() - INTERVAL '72 hours'
+          AND lower(p.pick) LIKE '%' || lower(regexp_replace(g.away_team, '^.* ', '')) || '%'
+      `);
+      const totalFixed = (fixMoneylineLoss.rowCount ?? 0) + (fixMoneylineWin.rowCount ?? 0)
+                       + (fixMoneylineAwayLoss.rowCount ?? 0) + (fixMoneylineAwayWin.rowCount ?? 0);
+      if (totalFixed > 0) {
+        console.log(`[migration] Self-heal: corrected ${totalFixed} misgraded Moneyline pick(s) on finished games`);
+      }
+
+      // Self-heal: delete ALL picks for Scott & Moe — they are test accounts and should never
+      // have any picks. Any predictions on their accounts are seeded/fake data.
+      const delScottMoe = await client.query(`
+        DELETE FROM predictions WHERE user_id IN ($1, $2)
       `, [SCOTT_ID, MOE_ID]);
       if (delScottMoe.rowCount && delScottMoe.rowCount > 0) {
-        console.log(`[migration] Self-heal: deleted ${delScottMoe.rowCount} fake seeded picks for Scott/Moe`);
+        console.log(`[migration] Self-heal: deleted ${delScottMoe.rowCount} fake picks for Scott/Moe`);
       }
+      // Also wipe their leaderboard entries so they show 0-0
+      await client.query(`DELETE FROM leaderboard_entries WHERE user_id IN ($1, $2)`, [SCOTT_ID, MOE_ID]);
     } catch (e: any) {
       console.log("[migration] Self-heal skipped (tables not yet created):", e.message);
     }
@@ -208,6 +420,7 @@ export async function runStartupMigration() {
         referral_code TEXT,
         referred_by TEXT,
         subscription_cancelled_at TIMESTAMP,
+        subscription_paid_until TIMESTAMP,
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW()
       )
@@ -429,15 +642,27 @@ export async function runStartupMigration() {
       )
     `);
 
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS site_counters (
+        key TEXT PRIMARY KEY,
+        value INTEGER NOT NULL DEFAULT 0,
+        updated_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+
     console.log("[migration] All tables created successfully");
 
-    // Seed admin/founder account
-    const nikCheck = await client.query(`SELECT 1 FROM users WHERE id = $1`, ['29b670b7-5296-44dc-a0a0-aec0d878ef9b']);
+    // Ensure the real Nikco account (aa5b3efa) has NIKCOX referral code and legend tier.
+    // The old seeded UUID (29b670b7) is now NIKCOX-SEED — do NOT recreate it with NIKCOX.
+    const nikCheck = await client.query(
+      `SELECT 1 FROM users WHERE id = $1`, ['aa5b3efa-fb3e-49b1-9f60-983bcec7d67a']
+    );
     if (nikCheck.rowCount === 0) {
+      // Real Nikco doesn't exist yet — create his account
       await client.query(`
         INSERT INTO users (id, phone, password_hash, first_name, last_name, membership_tier, referral_code, wallet_balance, created_at, updated_at)
         VALUES (
-          '29b670b7-5296-44dc-a0a0-aec0d878ef9b',
+          'aa5b3efa-fb3e-49b1-9f60-983bcec7d67a',
           '2482757932',
           '$2b$10$lvK7ApWKudqKz8ThTrdUJe726Q2qsQap7stfIcFqMuY3O2AUzdFyu',
           'Nikco',
@@ -449,15 +674,25 @@ export async function runStartupMigration() {
           NOW()
         )
       `);
-      console.log("[migration] Seeded founder account");
+      console.log("[migration] Created real Nikco account (aa5b3efa)");
     } else {
-      // Fix name if it was seeded incorrectly in a previous version
+      // Ensure real Nikco always has NIKCOX referral code and correct name
       await client.query(`
-        UPDATE users SET first_name = 'Nikco', last_name = 'X'
-        WHERE id = '29b670b7-5296-44dc-a0a0-aec0d878ef9b'
-          AND (first_name != 'Nikco' OR last_name != 'X')
+        UPDATE users SET first_name = 'Nikco', last_name = 'X', referral_code = 'NIKCOX', membership_tier = 'legend'
+        WHERE id = 'aa5b3efa-fb3e-49b1-9f60-983bcec7d67a'
       `);
     }
+    // Make sure the old seeded UUID never has the NIKCOX code (to avoid BFB route confusion)
+    // Also downgrade it to 'free' so it never appears in scorecards, leaderboards, or prize pool
+    await client.query(
+      `UPDATE users SET referral_code = 'NIKCOX-SEED', membership_tier = 'free' WHERE id = '29b670b7-5296-44dc-a0a0-aec0d878ef9b'`
+    );
+    // Remove ALL leaderboard entries for any user tagged NIKCOX-SEED — including bfb_ytd.
+    // Delete by referral_code (not UUID) so this catches any account in prod that holds the code.
+    // The real Nikco UUID (aa5b3efa) owns the authoritative bfb_ytd entry maintained by refreshBFBRecord().
+    await client.query(
+      `DELETE FROM leaderboard_entries WHERE user_id IN (SELECT id FROM users WHERE referral_code = 'NIKCOX-SEED')`
+    );
 
     // Seed Scott's real account (Legend)
     const scottPhone = '8182314634';
@@ -552,36 +787,20 @@ export async function runStartupMigration() {
       console.log("[migration] Seeded Moe leaderboard entry");
     }
 
-    // Update Nikco's annual leaderboard to current YTD (184W-153L as of Apr 21)
-    const nikLbCheck = await client.query(`SELECT 1 FROM leaderboard_entries WHERE user_id = $1 AND period = 'annual'`, [NIK_ID]);
+    // Ensure Nikco's annual leaderboard entry exists (all-sports YTD from graded picks).
+    // Do NOT override if live data is higher — refreshAnnualLeaderboard() keeps this current.
+    const nikLbCheck = await client.query(`SELECT wins, losses FROM leaderboard_entries WHERE user_id = $1 AND period = 'annual'`, [NIK_ID]);
     if (nikLbCheck.rowCount === 0) {
+      // First boot: seed with known NBA historical baseline (173W-139L = seeded NBA picks)
       await client.query(`
         INSERT INTO leaderboard_entries (user_id, period, period_start, wins, losses, roi, profit, streak, rank, updated_at)
-        VALUES ($1, 'annual', $2, 184, 153, 54.6, 31, 5, 1, NOW())
+        VALUES ($1, 'annual', $2, 173, 139, 55.4, 37, 5, 1, NOW())
       `, [NIK_ID, ytdStart]);
+      console.log("[migration] Nikco annual leaderboard baseline seeded (173W-139L NBA historical)");
     } else {
-      await client.query(`
-        UPDATE leaderboard_entries SET wins = 184, losses = 153, roi = 54.6, profit = 31, streak = 5, rank = 1, updated_at = NOW()
-        WHERE user_id = $1 AND period = 'annual'
-      `, [NIK_ID]);
+      console.log(`[migration] Nikco annual leaderboard = ${nikLbCheck.rows[0].wins}W-${nikLbCheck.rows[0].losses}L (live data kept)`);
     }
-    console.log("[migration] Nikco annual leaderboard = 184W-153L");
-
-    // Update Nikco's daily leaderboard to yesterday's results (12W-11L: 4-0 NHL + 3-1 NBA + 5-10 MLB)
-    const dailyStart = new Date('2026-04-19T04:00:00Z');
-    const nikDailyCheck = await client.query(`SELECT 1 FROM leaderboard_entries WHERE user_id = $1 AND period = 'daily'`, [NIK_ID]);
-    if (nikDailyCheck.rowCount === 0) {
-      await client.query(`
-        INSERT INTO leaderboard_entries (user_id, period, period_start, wins, losses, roi, profit, streak, rank, updated_at)
-        VALUES ($1, 'daily', $2, 12, 11, 52.2, 1, 5, 1, NOW())
-      `, [NIK_ID, dailyStart]);
-    } else {
-      await client.query(`
-        UPDATE leaderboard_entries SET wins = 12, losses = 11, roi = 52.2, period_start = $2, rank = 1, updated_at = NOW()
-        WHERE user_id = $1 AND period = 'daily'
-      `, [NIK_ID, dailyStart]);
-    }
-    console.log("[migration] Nikco daily leaderboard = 12W-11L");
+    // NOTE: Daily leaderboard for Nikco is computed live from today's picks — do NOT hardcode it here.
 
     // Seed referrals: Nikco referred Scott, Moe, Ian (all active Legend members)
     // Look up by phone so we get the real production UUID regardless of insert order
@@ -602,6 +821,17 @@ export async function runStartupMigration() {
         `, [referredId]);
       }
       console.log("[migration] Seeded 3 referrals (Scott, Moe, Ian → Nikco)");
+    }
+
+    // Seed BMW as a default advertiser (banner placement) — restore if removed
+    const bmwCheck = await client.query(`SELECT 1 FROM advertisers WHERE company_name = 'BMW' LIMIT 1`);
+    if (bmwCheck.rowCount === 0) {
+      await client.query(`
+        INSERT INTO advertisers (company_name, logo_url, tagline, website_url, placement, annual_fee, active)
+        VALUES ('BMW', 'https://upload.wikimedia.org/wikipedia/commons/thumb/4/44/BMW.svg/1200px-BMW.svg.png',
+                'The Ultimate Driving Machine', 'https://bmwusa.com', 'banner', 1200000, true)
+      `);
+      console.log("[migration] BMW advertiser seeded");
     }
 
     // CLEANUP: Remove any fake/demo accounts — placeholder phones OR demo names seeded earlier
@@ -646,9 +876,59 @@ export async function runStartupMigration() {
     if (ppRestoreCheck.rowCount === 0) {
       await client.query(`
         INSERT INTO prize_pool_contributions (amount, source, user_id, created_at)
-        VALUES (83, 'migration_restore', '29b670b7-5296-44dc-a0a0-aec0d878ef9b', '2026-04-19T00:00:00Z')
+        VALUES (68, 'migration_restore', '29b670b7-5296-44dc-a0a0-aec0d878ef9b', '2026-04-19T00:00:00Z')
       `);
-      console.log("[migration] Restored $83 prize pool balance from real PayPal payments");
+      console.log("[migration] Restored $68 prize pool balance from real PayPal payments");
+    }
+
+    // CLEANUP: Remove seeded historical games that landed in the last 14 days.
+    // These are identified by created_at = game_time (the seed always sets them equal).
+    // Real ESPN-synced games have created_at = NOW() at time of sync, which differs from game_time.
+    // Contaminating seeded games cause double-counting in the prize-pool scorecard.
+    const seededInWindow = await client.query(`
+      SELECT id FROM games
+      WHERE created_at = game_time
+        AND game_time >= NOW() - INTERVAL '14 days'
+        AND status = 'final'
+    `);
+    if (seededInWindow.rowCount && seededInWindow.rowCount > 0) {
+      const seededIds = seededInWindow.rows.map((r: any) => r.id);
+      await client.query(
+        `DELETE FROM predictions WHERE game_id = ANY($1::int[])`,
+        [seededIds]
+      );
+      await client.query(
+        `DELETE FROM games WHERE id = ANY($1::int[])`,
+        [seededIds]
+      );
+      console.log(`[migration] Removed ${seededIds.length} contaminating seeded game(s) from the last 14 days`);
+    }
+
+    // PAYOUT CORRECTION: If yesterday's daily payout only has 1 pending/wallet_credited winner,
+    // delete and allow re-run. Never touch paypal_sent records — those are confirmed real payments.
+    try {
+      const yesterday = new Date();
+      yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+      const pstStr = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(yesterday);
+      const existingPayouts = await client.query(
+        `SELECT id, user_id, status FROM payouts WHERE period = 'daily' AND period_label = $1`,
+        [pstStr]
+      );
+      if (existingPayouts.rowCount === 1) {
+        const payoutStatus = existingPayouts.rows[0].status;
+        // Only clear unsent payouts — if it's already paypal_sent it was actually paid, never delete it
+        if (payoutStatus !== 'paypal_sent') {
+          await client.query(
+            `DELETE FROM payouts WHERE period = 'daily' AND period_label = $1 AND status != 'paypal_sent'`,
+            [pstStr]
+          );
+          console.log(`[migration] Cleared 1-winner pending payout for ${pstStr} to allow correct re-calculation`);
+        } else {
+          console.log(`[migration] Keeping confirmed paypal_sent payout for ${pstStr} — already paid`);
+        }
+      }
+    } catch (payoutErr: any) {
+      console.log(`[migration] Payout correction check skipped: ${payoutErr.message}`);
     }
 
   } catch (err: any) {
