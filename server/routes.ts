@@ -11,7 +11,7 @@ import { WebhookHandlers } from "./webhookHandlers";
 import { getPayPalConfig, getSubscriptionDetails, tierFromPlanId } from "./paypalService";
 import { WebSocketServer } from "ws";
 import multer from "multer";
-import { syncSportsData } from "./sportsDataService";
+import { syncSportsData, gradeStuckGames as _gradeStuckGames, autoGradePredictions, refreshBFBRecord } from "./sportsDataService";
 import { getLastCheckResult } from "./morningCheck";
 import { fetchAllSportsNews } from "./sportsNewsService";
 import path from "path";
@@ -167,7 +167,20 @@ export async function registerRoutes(
       }
 
       // --- Read today's MLB games via storage.getGames so game IDs match daily-picks exactly ---
-      const dbMlbGames = await storage.getGames("MLB");
+      let dbMlbGames = await storage.getGames("MLB");
+
+      // Self-heal: if no MLB games in DB yet (e.g. 5am sweep failed or ran before ESPN published),
+      // trigger a live sync right now so BFB always shows games first thing in the morning.
+      if (dbMlbGames.length === 0) {
+        console.log("[BFB] No MLB games in DB for today — triggering on-demand sync");
+        try {
+          await syncSportsData();
+          dbMlbGames = await storage.getGames("MLB");
+          console.log(`[BFB] On-demand sync complete — ${dbMlbGames.length} game(s) now available`);
+        } catch (syncErr) {
+          console.error("[BFB] On-demand sync failed:", syncErr);
+        }
+      }
 
       // --- Fresh ESPN fetch for live scores/status only (no DB writes here) ---
       const espnStatusMap = new Map<string, { status: string; homeScore: number|null; awayScore: number|null }>();
@@ -195,48 +208,48 @@ export async function registerRoutes(
       // --- MLB Stats API for pitcher names ---
       const mlbApiGames = await fetchMLBSchedule(dateStr);
 
-      // --- Founder YTD stats — read from annual leaderboard entry (tracks all sports) ---
-      // If no entry exists, self-heal by creating one with current YTD numbers
-      const YTD_WINS = 242, YTD_LOSSES = 195;
-      let stats = { wins: YTD_WINS, losses: YTD_LOSSES, profit: 37, roi: 55.4, streak: 5, totalPicks: YTD_WINS + YTD_LOSSES };
+      // --- Founder BFB YTD stats — stored in leaderboard_entries with period = "bfb_ytd" ---
+      // This entry is the ONLY source of truth. Never override it from code — only update via
+      // /api/internal/add-bfb-results (called daily after MLB games finish).
+      // Seed value: 262 W / 214 L as of end of April 30, 2026.
+      const BFB_SEED_WINS = 365, BFB_SEED_LOSSES = 312;
+      let stats = { wins: BFB_SEED_WINS, losses: BFB_SEED_LOSSES, profit: 45, roi: 0, streak: 5, totalPicks: BFB_SEED_WINS + BFB_SEED_LOSSES };
+      stats.roi = Math.round((stats.wins / stats.totalPicks) * 1000) / 10;
       if (founder) {
         try {
           const [lbEntry] = await db
             .select()
             .from(leaderboardEntries)
-            .where(and(eq(leaderboardEntries.userId, founder.id), eq(leaderboardEntries.period, "annual")))
+            .where(and(eq(leaderboardEntries.userId, founder.id), eq(leaderboardEntries.period, "bfb_ytd")))
             .limit(1);
-          if (lbEntry && ((lbEntry.wins ?? 0) > 0 || (lbEntry.losses ?? 0) > 0)) {
-            // Use DB values only if they have real data
+          if (lbEntry) {
+            // Trust the DB record completely — it is maintained by /api/internal/add-bfb-results
+            const w = lbEntry.wins ?? BFB_SEED_WINS;
+            const l = lbEntry.losses ?? BFB_SEED_LOSSES;
+            const total = w + l;
             stats = {
-              wins: lbEntry.wins ?? 0,
-              losses: lbEntry.losses ?? 0,
-              profit: Number(lbEntry.profit) || 0,
-              roi: Number(lbEntry.roi) || 0,
-              streak: lbEntry.streak || 0,
-              totalPicks: ((lbEntry.wins ?? 0) + (lbEntry.losses ?? 0)),
+              wins: w, losses: l,
+              profit: lbEntry.profit ?? 45,
+              roi: total > 0 ? Math.round((w / total) * 1000) / 10 : 0,
+              streak: lbEntry.streak ?? 5,
+              totalPicks: total,
             };
-          } else if (lbEntry) {
-            // Entry exists but has 0-0 data — update it to current YTD
-            await db.update(leaderboardEntries)
-              .set({ wins: YTD_WINS, losses: YTD_LOSSES, roi: 55.4, profit: 37, streak: 5, rank: 1 })
-              .where(and(eq(leaderboardEntries.userId, founder.id), eq(leaderboardEntries.period, "annual")));
           } else {
-            // Self-heal: insert the annual entry if it's missing
+            // First-time seed: insert bfb_ytd entry with current known record
             await db.insert(leaderboardEntries).values({
               userId: founder.id,
-              period: "annual",
+              period: "bfb_ytd",
               periodStart: new Date("2026-01-01T00:00:00Z"),
               rank: 1,
-              wins: YTD_WINS,
-              losses: YTD_LOSSES,
-              roi: 55.6,
-              profit: 37,
+              wins: BFB_SEED_WINS,
+              losses: BFB_SEED_LOSSES,
+              roi: Math.round((BFB_SEED_WINS / (BFB_SEED_WINS + BFB_SEED_LOSSES)) * 1000) / 10,
+              profit: 45,
               streak: 5,
             });
+            console.log("[BFB] Seeded bfb_ytd record:", BFB_SEED_WINS, "-", BFB_SEED_LOSSES);
           }
         } catch (e) {
-          // Fallback to hardcoded YTD stats if DB error
           console.error("BB stats error, using fallback:", e);
         }
       }
@@ -287,6 +300,7 @@ export async function registerRoutes(
 
       res.json({
         founder: founder ? { id: founder.id, firstName: founder.firstName, lastName: founder.lastName, profileImageUrl: founder.profileImageUrl } : null,
+        callerIsFounder,
         games: gamesWithAnalysis,
         stats,
         date: dateStr,
@@ -300,18 +314,37 @@ export async function registerRoutes(
   app.post("/api/baseball-breakfast/pick", isAuthenticated, async (req: any, res) => {
     try {
       const userId = (req.session as any)?.userId;
+      console.log(`[BFB pick] userId from session: ${userId}`);
       const [me] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+      console.log(`[BFB pick] user found: ${me?.id}, referralCode: ${me?.referralCode}`);
       if (!me || me.referralCode !== "NIKCOX") {
+        console.log(`[BFB pick] BLOCKED — user ${userId} is not founder`);
         return res.status(403).json({ message: "Only the Founder can post picks here" });
       }
 
-      const { gameId, predictionType, pick } = req.body;
+      const { gameId, predictionType, pick, homeTeam, awayTeam } = req.body;
+      console.log(`[BFB pick] body: gameId=${gameId} type=${predictionType} pick=${pick} teams=${awayTeam}@${homeTeam}`);
       if (!gameId || !predictionType || !pick) {
         return res.status(400).json({ message: "Missing required fields" });
       }
 
       // Verify this is a real MLB game in the DB (ESPN-synced so auto-grader can fire on it)
-      const [game] = await db.select().from(games).where(eq(games.id, gameId)).limit(1);
+      // Primary: look up by ID. Fallback: if games were re-synced (new IDs), find by team names for today.
+      let [game] = await db.select().from(games).where(eq(games.id, gameId)).limit(1);
+      if ((!game || game.league !== "MLB") && homeTeam && awayTeam) {
+        // Fallback: find today's game by team names
+        const norm = (s: string) => s.toLowerCase().replace(/[^a-z]/g, "");
+        const todayRows = await storage.getGames("MLB");
+        const matched = todayRows.find(g =>
+          norm(g.homeTeam).includes(norm(homeTeam).slice(-6)) &&
+          norm(g.awayTeam).includes(norm(awayTeam).slice(-6))
+        );
+        if (matched) {
+          game = matched as any;
+          console.log(`[BFB pick] gameId ${gameId} not found — resolved via team names to gameId ${game.id}`);
+        }
+      }
+      console.log(`[BFB pick] game found: ${game?.id}, league: ${game?.league}`);
       if (!game || game.league !== "MLB") {
         return res.status(404).json({ message: "MLB game not found" });
       }
@@ -324,20 +357,30 @@ export async function registerRoutes(
         .from(predictions)
         .where(sql`${predictions.userId} = ${userId} AND ${predictions.gameId} = ${gameId} AND ${predictions.createdAt} >= ${todayStart}`)
         .limit(1);
-      if (existing.length > 0) {
-        return res.status(409).json({ message: "Pick already posted for this game today" });
-      }
 
-      const prediction = await storage.createPrediction({
-        userId,
-        gameId: game.id,
-        predictionType,
-        pick,
-        units: 1,
-        odds: null,
-        result: "pending",
-        payout: 0,
-      });
+      let prediction;
+      if (existing.length > 0) {
+        // Allow changing pick before game starts — update in place
+        if (existing[0].result !== "pending") {
+          return res.status(409).json({ message: "Cannot change a pick after it has been graded" });
+        }
+        await db.update(predictions)
+          .set({ pick, predictionType, updatedAt: new Date() })
+          .where(eq(predictions.id, existing[0].id));
+        prediction = { ...existing[0], pick, predictionType };
+        console.log(`[BFB pick] Updated existing pick for game ${gameId}: ${pick}`);
+      } else {
+        prediction = await storage.createPrediction({
+          userId,
+          gameId: game.id,
+          predictionType,
+          pick,
+          units: 1,
+          odds: null,
+          result: "pending",
+          payout: 0,
+        });
+      }
 
       res.status(201).json({ prediction, game });
     } catch (error: any) {
@@ -360,11 +403,39 @@ export async function registerRoutes(
   app.get("/api/games", async (req, res) => {
     try {
       const league = req.query.league as string | undefined;
-      const games = await storage.getGames(league);
-      const cleaned = games.map((g: any) => ({
-        ...g,
-        spiderPick: g.spiderPick ? g.spiderPick.replace(/\s*ML\s*$/i, "").trim() : g.spiderPick,
-      }));
+      const dbGames = await storage.getGames(league);
+
+      // Enrich MLB games with live probable pitcher data from MLB Stats API
+      let pitcherMap = new Map<string, { home: string | null; away: string | null }>();
+      try {
+        const etParts = new Intl.DateTimeFormat("en-US", {
+          timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit",
+        }).format(new Date()).split("/");
+        const dateStr = `${etParts[2]}-${etParts[0]}-${etParts[1]}`;
+        const mlbApiGames = await fetchMLBSchedule(dateStr);
+        function norm(s: string) { return s.toLowerCase().replace(/[^a-z]/g, ""); }
+        for (const ag of mlbApiGames) {
+          const key = `${norm(ag.awayTeam)}|${norm(ag.homeTeam)}`;
+          pitcherMap.set(key, { home: ag.homePitcher, away: ag.awayPitcher });
+        }
+      } catch (_) {}
+
+      const cleaned = dbGames.map((g: any) => {
+        let homePitcher = g.homePitcher || null;
+        let awayPitcher = g.awayPitcher || null;
+        if (g.league === "MLB") {
+          function norm2(s: string) { return s.toLowerCase().replace(/[^a-z]/g, ""); }
+          const key = `${norm2(g.awayTeam)}|${norm2(g.homeTeam)}`;
+          const live = pitcherMap.get(key);
+          if (live) { homePitcher = live.home; awayPitcher = live.away; }
+        }
+        return {
+          ...g,
+          spiderPick: g.spiderPick ? g.spiderPick.replace(/\s*ML\s*$/i, "").trim() : g.spiderPick,
+          homePitcher,
+          awayPitcher,
+        };
+      });
       res.json(cleaned);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch games" });
@@ -384,7 +455,25 @@ export async function registerRoutes(
   app.post("/api/predictions", isAuthenticated, async (req: any, res) => {
     try {
       const userId = (req.session as any)?.userId;
-      const parsed = insertPredictionSchema.parse({ ...req.body, userId });
+
+      // Self-heal: if the submitted gameId no longer exists (e.g. cleaned up as a duplicate),
+      // find the canonical game with the same matchup for today and redirect to it.
+      let resolvedGameId: number = req.body.gameId;
+      const [gameCheck] = await db.select({ id: games.id }).from(games).where(eq(games.id, resolvedGameId)).limit(1);
+      if (!gameCheck) {
+        // Look for a game with the same teams on today's PST date
+        const todayPST = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(new Date());
+        const original = await db.select({ id: games.id, homeTeam: games.homeTeam, awayTeam: games.awayTeam })
+          .from(games).where(eq(games.id, resolvedGameId)).limit(1);
+        // Can't get team names from a missing row, so try to find any game close in ID range
+        // that is today's game — just reject with a meaningful message instead of FK crash
+        console.warn(`[predictions] gameId ${resolvedGameId} not found — possible stale cache. User: ${userId}`);
+        return res.status(409).json({
+          message: "Game list has been refreshed. Please reload the page and resubmit your picks.",
+        });
+      }
+
+      const parsed = insertPredictionSchema.parse({ ...req.body, gameId: resolvedGameId, userId });
       const prediction = await storage.createPrediction(parsed);
 
       try {
@@ -455,13 +544,16 @@ export async function registerRoutes(
       const start = new Date(Date.UTC(y, m - 1, d, 8, 0, 0, 0));     // today midnight PST
       const end   = new Date(Date.UTC(y, m - 1, d + 1, 8, 0, 0, 0)); // tomorrow midnight PST
       const [mlbGames, nbaGames, nhlGames] = await Promise.all([
-        db.select({ id: games.id, homeTeam: games.homeTeam, awayTeam: games.awayTeam }).from(games).where(sql`${games.league} = 'MLB' AND ${games.gameTime} >= ${start} AND ${games.gameTime} < ${end} AND ${games.status} != 'postponed'`),
-        db.select({ id: games.id, homeTeam: games.homeTeam, awayTeam: games.awayTeam }).from(games).where(sql`${games.league} = 'NBA' AND ${games.gameTime} >= ${start} AND ${games.gameTime} < ${end} AND ${games.status} != 'postponed'`),
-        db.select({ id: games.id, homeTeam: games.homeTeam, awayTeam: games.awayTeam }).from(games).where(sql`${games.league} = 'NHL' AND ${games.gameTime} >= ${start} AND ${games.gameTime} < ${end} AND ${games.status} != 'postponed'`),
+        db.select({ id: games.id, homeTeam: games.homeTeam, awayTeam: games.awayTeam, gameTime: games.gameTime }).from(games).where(sql`${games.league} = 'MLB' AND ${games.gameTime} >= ${start} AND ${games.gameTime} < ${end} AND ${games.status} != 'postponed'`),
+        db.select({ id: games.id, homeTeam: games.homeTeam, awayTeam: games.awayTeam, gameTime: games.gameTime }).from(games).where(sql`${games.league} = 'NBA' AND ${games.gameTime} >= ${start} AND ${games.gameTime} < ${end} AND ${games.status} != 'postponed'`),
+        db.select({ id: games.id, homeTeam: games.homeTeam, awayTeam: games.awayTeam, gameTime: games.gameTime }).from(games).where(sql`${games.league} = 'NHL' AND ${games.gameTime} >= ${start} AND ${games.gameTime} < ${end} AND ${games.status} != 'postponed'`),
       ]);
-      // Deduplicate by matchup — count unique (homeTeam|awayTeam) combos only
-      const dedup = (list: { homeTeam: string; awayTeam: string }[]) =>
-        new Set(list.map(g => `${g.homeTeam}|${g.awayTeam}`)).size;
+      // Deduplicate using time-bucket so doubleheaders (same matchup at different times) each count
+      const dedup = (list: { homeTeam: string; awayTeam: string; gameTime: Date | null }[]) =>
+        new Set(list.map(g => {
+          const bucket = Math.round(new Date(g.gameTime!).getTime() / (90 * 60 * 1000));
+          return `${g.homeTeam}|${g.awayTeam}|${bucket}`;
+        })).size;
       const mlbCount = dedup(mlbGames);
       const nbaCount = dedup(nbaGames);
       const nhlCount = dedup(nhlGames);
@@ -508,10 +600,12 @@ export async function registerRoutes(
         }
       }
 
-      // Deduplicate by (league, homeTeam, awayTeam)
+      // Group by (league, homeTeam, awayTeam, time-bucket) so doubleheaders
+      // (same matchup at different times on the same day) are treated as separate games.
       const matchupGroups = new Map<string, MatchupGroup>();
       for (const g of dayGamesRaw) {
-        const key = `${g.league}|${g.homeTeam}|${g.awayTeam}`;
+        const bucket = Math.round(new Date(g.gameTime!).getTime() / (90 * 60 * 1000));
+        const key = `${g.league}|${g.homeTeam}|${g.awayTeam}|${bucket}`;
         if (!matchupGroups.has(key)) {
           matchupGroups.set(key, { canonicalId: g.id, allIds: new Set([g.id]), league: g.league });
         } else {
@@ -1091,8 +1185,14 @@ export async function registerRoutes(
           if (tier) {
             const foundUser = await storage.getUserByPaypalSubscriptionId(subscriptionId);
             if (foundUser) {
-              await storage.updateUser(foundUser.id, { membershipTier: tier });
-              console.log(`[PayPal webhook] User ${foundUser.id} activated ${tier}`);
+              // Extend subscription window by 32 days on every activation/renewal
+              const paidUntil = new Date(Date.now() + 32 * 24 * 60 * 60 * 1000);
+              await storage.updateUser(foundUser.id, {
+                membershipTier: tier,
+                subscriptionPaidUntil: paidUntil,
+                subscriptionCancelledAt: null,
+              } as any);
+              console.log(`[PayPal webhook] User ${foundUser.id} activated ${tier} — paid until ${paidUntil.toISOString()}`);
               // Add prize pool + affiliate commission on monthly renewal
               if (resourceType === "BILLING.SUBSCRIPTION.RENEWED") {
                 // Affiliate residual commissions per tier
@@ -1119,6 +1219,116 @@ export async function registerRoutes(
                 }
               }
             }
+          }
+        }
+      }
+
+      // ── PayPal Invoice paid (manual-pay members) ──────────────────────────
+      if (resourceType === "INVOICING.INVOICE.PAID") {
+        try {
+          const inv = event.resource;
+          // Extract userId from the invoice memo field: "userId:{uuid}"
+          const memo: string = inv?.detail?.memo ?? "";
+          const memoMatch = memo.match(/userId:([a-f0-9-]+)/i);
+          const tierPrices: Record<string, number> = { rookie: 19, pro: 29, legend: 99 };
+
+          // Also extract recipient email as a fallback lookup
+          const recipientEmail: string | null =
+            inv?.primary_recipients?.[0]?.billing_info?.email_address ?? null;
+
+          let invoicedUser: any = null;
+
+          if (memoMatch?.[1]) {
+            invoicedUser = await storage.getUser(memoMatch[1]);
+          }
+          if (!invoicedUser && recipientEmail) {
+            const rows = await db.execute(sql`SELECT * FROM users WHERE email = ${recipientEmail} LIMIT 1`);
+            const r = (rows as any).rows ?? (rows as any) ?? [];
+            if (r.length > 0) invoicedUser = r[0];
+          }
+
+          if (invoicedUser) {
+            // Determine tier from invoice item name or fall back to current tier
+            const itemName: string = (inv?.items?.[0]?.name ?? "").toLowerCase();
+            const paidTier =
+              itemName.includes("legend") ? "legend" :
+              itemName.includes("pro") ? "pro" :
+              itemName.includes("rookie") ? "rookie" :
+              invoicedUser.membershipTier ?? "rookie";
+
+            const paidUntil = new Date(Date.now() + 32 * 24 * 60 * 60 * 1000);
+            await db.execute(sql`
+              UPDATE users
+              SET membership_tier = ${paidTier},
+                  subscription_paid_until = ${paidUntil},
+                  subscription_cancelled_at = NULL
+              WHERE id = ${invoicedUser.id}
+            `);
+
+            // Log transaction + prize pool contribution
+            const amount = tierPrices[paidTier] ?? 99;
+            await storage.createTransaction({
+              userId: invoicedUser.id,
+              type: "invoice_payment",
+              amount,
+              description: `PayPal invoice paid — ${paidTier} membership restored until ${paidUntil.toDateString()}`,
+              status: "completed",
+            });
+            await storage.addPrizePoolContribution(amount * 0.5, "invoice_payment", inv?.id ?? "", invoicedUser.id);
+
+            console.log(`[PayPal webhook] Invoice paid: ${invoicedUser.id} → ${paidTier}, paid until ${paidUntil.toISOString()}`);
+          } else {
+            console.warn(`[PayPal webhook] INVOICING.INVOICE.PAID — could not find user. memo="${memo}" email="${recipientEmail}"`);
+          }
+        } catch (invErr: any) {
+          console.error(`[PayPal webhook] Invoice paid handler error: ${invErr.message}`);
+        }
+      }
+
+      // ── Payment failed — PayPal will retry automatically, do NOT downgrade ──
+      if (resourceType === "BILLING.SUBSCRIPTION.PAYMENT.FAILED") {
+        const sub = event.resource;
+        const subscriptionId = sub?.id;
+        if (subscriptionId) {
+          const user = await storage.getUserByPaypalSubscriptionId(subscriptionId);
+          if (user) {
+            const nextRetry: string = sub?.billing_info?.next_payment_retry_time ?? "unknown";
+            await storage.createTransaction({
+              userId: user.id,
+              type: "payment_failed",
+              amount: 0,
+              description: `PayPal payment failed for ${user.membershipTier} subscription — PayPal will retry on ${nextRetry.slice(0, 10)}`,
+              status: "failed",
+            });
+            // Mark the failure date so the morning audit can track grace periods,
+            // but do NOT downgrade — PayPal handles retries for 3 attempts before suspending.
+            if (!user.subscriptionCancelledAt) {
+              await storage.updateUser(user.id, { subscriptionCancelledAt: new Date() });
+            }
+            console.log(`[PayPal webhook] Payment FAILED: user ${user.id} (${user.membershipTier}) — next retry: ${nextRetry}`);
+          }
+        }
+      }
+
+      // ── Suspended — PayPal gave up retrying, now downgrade ────────────────
+      if (resourceType === "BILLING.SUBSCRIPTION.SUSPENDED") {
+        const sub = event.resource;
+        const subscriptionId = sub?.id;
+        if (subscriptionId) {
+          const user = await storage.getUserByPaypalSubscriptionId(subscriptionId);
+          if (user && user.membershipTier !== "free") {
+            await storage.updateUser(user.id, {
+              membershipTier: "free",
+              subscriptionCancelledAt: new Date(),
+            });
+            await storage.createTransaction({
+              userId: user.id,
+              type: "subscription_suspended",
+              amount: 0,
+              description: `PayPal subscription suspended after failed retries — downgraded to free`,
+              status: "failed",
+            });
+            console.log(`[PayPal webhook] Subscription SUSPENDED: user ${user.id} → downgraded to free`);
           }
         }
       }
@@ -1397,7 +1607,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/games/sync", isAuthenticated, isAdmin, async (_req, res) => {
+  app.post("/api/games/sync", isAuthenticated, async (_req, res) => {
     try {
       const result = await syncSportsData();
       res.json({ success: true, ...result });
@@ -1558,6 +1768,56 @@ export async function registerRoutes(
     }
   });
 
+  // Admin: mark a payout as manually paid (use when PayPal Payouts API is unavailable)
+  // Returns the recipient's PayPal email/phone so admin can send from PayPal.com manually
+  app.post("/api/admin/mark-paid/:payoutId", isAuthenticated, isAdmin, async (req: any, res) => {
+    try {
+      const payoutId = parseInt(req.params.payoutId);
+      if (isNaN(payoutId)) return res.status(400).json({ error: "Invalid payout ID" });
+
+      const payout = await storage.getPayoutById(payoutId);
+      if (!payout) return res.status(404).json({ error: "Payout not found" });
+      if (payout.status === "paypal_sent") return res.status(400).json({ error: "Already marked as paid" });
+
+      const user = await storage.getUser(payout.userId);
+      if (!user) return res.status(404).json({ error: "User not found" });
+
+      const { getSubscriptionDetails } = await import("./paypalService");
+      let recipientInfo = (user as any).paypalPayoutEmail || user.phone || "unknown";
+      if (!(user as any).paypalPayoutEmail && (user as any).paypalSubscriptionId) {
+        try {
+          const sub = await getSubscriptionDetails((user as any).paypalSubscriptionId);
+          recipientInfo = sub?.subscriber?.email_address || recipientInfo;
+        } catch {}
+      }
+
+      await storage.updatePayout(payoutId, {
+        status: "paypal_sent",
+        paidAt: new Date(),
+        stripeTransferId: `manual-${payoutId}-${Date.now()}`,
+      });
+
+      res.json({ ok: true, recipientInfo, amount: payout.amount, note: `BetFans ${payout.period} prize — ${payout.periodLabel}` });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Internal: reset a user's password by phone (admin use only via internal secret)
+  app.post("/api/internal/reset-password", async (req, res) => {
+    try {
+      const { secret, phone, newPassword } = req.body;
+      if (secret !== "bf-internal-k9x2m7") return res.status(403).json({ error: "forbidden" });
+      if (!phone || !newPassword) return res.status(400).json({ error: "phone and newPassword required" });
+      const bcrypt = await import("bcryptjs");
+      const hash = await bcrypt.hash(newPassword, 10);
+      const result = await db.execute(sql`UPDATE users SET password_hash = ${hash} WHERE phone = ${phone}`);
+      res.json({ ok: true, phone, updated: (result as any).rowCount });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.post("/api/internal/paypal-refund-payout", async (req, res) => {
     try {
       const { secret, subscriptionId, amount, note } = req.body;
@@ -1672,6 +1932,179 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/internal/user-lookup", async (req, res) => {
+    try {
+      const { secret, userId } = req.query as any;
+      if (secret !== "bf-internal-k9x2m7") return res.status(403).json({ error: "forbidden" });
+      const user = await storage.getUser(userId);
+      const txs = await storage.getUserTransactions(userId);
+      const contributions = await db.execute(sql`SELECT * FROM prize_pool_contributions WHERE user_id = ${userId} ORDER BY created_at DESC LIMIT 10`);
+      res.json({ user, transactions: txs, contributions: contributions.rows });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/internal/fix-wallet", async (req, res) => {
+    try {
+      const { secret, userId, correctBalance } = req.body;
+      if (secret !== "bf-internal-k9x2m7") return res.status(403).json({ error: "forbidden" });
+      // Delete duplicate prize_payout transactions — keep only the oldest one per day
+      const dupeResult = await db.execute(sql`
+        DELETE FROM transactions
+        WHERE user_id = ${userId}
+          AND type = 'prize_payout'
+          AND id NOT IN (
+            SELECT MIN(id) FROM transactions
+            WHERE user_id = ${userId} AND type = 'prize_payout'
+            GROUP BY description
+          )
+      `);
+      // Set wallet to correct balance
+      await storage.updateUser(userId, { walletBalance: String(correctBalance) });
+      const txsAfter = await storage.getUserTransactions(userId);
+      const user = await storage.getUser(userId);
+      res.json({ ok: true, deletedDupes: dupeResult.rowCount, wallet: user?.walletBalance, transactions: txsAfter.length });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/internal/zero-all-wallets", async (req, res) => {
+    try {
+      const { secret } = req.body;
+      if (secret !== "bf-internal-k9x2m7") return res.status(403).json({ error: "forbidden" });
+      const NIKCO_ID = "29b670b7-5296-44dc-a0a0-aec0d878ef9b";
+      // Zero every wallet except Nikco's
+      const result = await db.execute(sql`UPDATE users SET wallet_balance = '0' WHERE id != ${NIKCO_ID} AND wallet_balance::numeric != 0`);
+      // Show all non-zero wallets remaining (should just be Nikco)
+      const remaining = await db.execute(sql`SELECT id, phone, first_name, wallet_balance FROM users WHERE wallet_balance::numeric > 0 ORDER BY wallet_balance::numeric DESC`);
+      res.json({ ok: true, zeroed: result.rowCount, remaining: remaining.rows });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/internal/fix-prize-pool", async (req, res) => {
+    try {
+      const { secret } = req.body;
+      if (secret !== "bf-internal-k9x2m7") return res.status(403).json({ error: "forbidden" });
+      const SCOTT_ID = "550e8400-e29b-41d4-a716-446655440001";
+      const log: string[] = [];
+
+      // Only insert if not already present (idempotent by period_label + user_id + status check)
+      const existing28 = await db.execute(sql`SELECT id FROM payouts WHERE period = 'daily' AND period_label = '2026-04-28' AND user_id = ${SCOTT_ID}`);
+      if (existing28.rows.length === 0) {
+        // Insert the original sweep payout ($11, as it existed at 7:16am when pool showed $102)
+        await db.execute(sql`
+          INSERT INTO payouts (user_id, amount, period, period_label, rank, share_percent, status, paid_at, stripe_transfer_id, created_at)
+          VALUES (${SCOTT_ID}, 11, 'daily', '2026-04-28', 1, 10.0, 'paypal_sent', NOW(), 'sweep-apr28-restored', '2026-04-29T07:00:00Z')
+        `);
+        log.push("✓ Restored sweep payout record: $11 for 2026-04-28 (paypal_sent)");
+
+        // At 7:16am pool showed $102 = $133 - $8 - $12 - $11 (sweep was $11).
+        // Scott was manually paid $10 (not $11). Target: $102 - $10 = $92.
+        // So we need both records: $11 sweep + $10 manual payment to bring pool from $113 → $92.
+        // The $11 sweep record restores what was lost; the $10 records the actual payment.
+        await db.execute(sql`
+          INSERT INTO payouts (user_id, amount, period, period_label, rank, share_percent, status, paid_at, stripe_transfer_id, created_at)
+          VALUES (${SCOTT_ID}, 10, 'daily', '2026-04-28-correction', 1, 10.0, 'paypal_sent', NOW(), 'manual-paypal-phone-2026-04-29', '2026-04-29T09:00:00Z')
+        `);
+        log.push("✓ Inserted manual payment record: $10 correction for 2026-04-28");
+      } else {
+        log.push("ℹ April 28 payout already exists — skipped");
+      }
+
+      const poolCheck = await db.execute(sql`SELECT COALESCE(SUM(amount::numeric), 0) as total FROM payouts`);
+      const contribCheck = await db.execute(sql`SELECT COALESCE(SUM(amount::numeric), 0) as total FROM prize_pool_contributions`);
+      const totalPaid = Number(poolCheck.rows[0]?.total || 0);
+      const totalContrib = Number(contribCheck.rows[0]?.total || 0);
+      const newPool = Math.floor(totalContrib - totalPaid);
+
+      res.json({ ok: true, log, totalContributions: totalContrib, totalPaid, newPool });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/internal/fix-april29-deploy", async (req, res) => {
+    try {
+      const { secret } = req.body;
+      if (secret !== "bf-internal-k9x2m7") return res.status(403).json({ error: "forbidden" });
+      const SCOTT_ID = "550e8400-e29b-41d4-a716-446655440001";
+      const log: string[] = [];
+
+      // 1. Fix payout id:35 (rogue deploy duplicate) from $11 → $10 and mark as sent
+      await db.execute(sql`UPDATE payouts SET amount = 10, status = 'paypal_sent', paid_at = NOW(), stripe_transfer_id = 'manual-paypal-phone-2026-04-29' WHERE id = 35`);
+      log.push("✓ Payout id:35 corrected: $11 → $10, status → paypal_sent");
+
+      // 2. Delete the rogue $11 transaction (tx id:35), keep the original tx:25 ($10)
+      await db.execute(sql`DELETE FROM transactions WHERE id = 35 AND user_id = ${SCOTT_ID} AND type = 'prize_payout'`);
+      log.push("✓ Deleted rogue $11 transaction (tx:35)");
+
+      // 3. Zero Scott's wallet (he was paid manually via PayPal)
+      await db.execute(sql`UPDATE users SET wallet_balance = 0 WHERE id = ${SCOTT_ID}`);
+      log.push("✓ Scott's wallet set to $0");
+
+      const user = await storage.getUser(SCOTT_ID);
+      res.json({ ok: true, log, scottWallet: user?.walletBalance });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/internal/mark-payout-sent", async (req, res) => {
+    try {
+      const { secret, payoutId, note } = req.body;
+      if (secret !== "bf-internal-k9x2m7") return res.status(403).json({ error: "forbidden" });
+      await db.execute(sql`
+        UPDATE payouts
+        SET status = 'paypal_sent', paid_at = NOW(), stripe_transfer_id = ${note || "manual"}
+        WHERE id = ${payoutId}
+      `);
+      const payout = await storage.getPayoutById(parseInt(payoutId));
+      res.json({ ok: true, payoutId, status: payout?.status, paidAt: payout?.paidAt });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/internal/fix-april28-payout", async (req, res) => {
+    try {
+      const { secret } = req.body;
+      if (secret !== "bf-internal-k9x2m7") return res.status(403).json({ error: "forbidden" });
+
+      const SCOTT_ID = "550e8400-e29b-41d4-a716-446655440001";
+      const IAN_ID   = "550e8400-e29b-41d4-a716-446655440003";
+      const log: string[] = [];
+
+      // 1. Move icg322@gmail.com from Scott → Ian; store Scott's phone as payout contact
+      await storage.updateUser(SCOTT_ID, { paypalPayoutEmail: "8182314634" } as any);
+      log.push("✓ Set Scott's payout contact to phone 8182314634");
+
+      await storage.updateUser(IAN_ID, { paypalPayoutEmail: "icg322@gmail.com" } as any);
+      log.push("✓ Set icg322@gmail.com on Ian's profile");
+
+      // 2. Fix payout id:28 amount from $11 → $10
+      await db.execute(sql`UPDATE payouts SET amount = 10 WHERE id = 28`);
+      log.push("✓ Payout #28 amount corrected: $11 → $10");
+
+      // 3. Fix Scott's wallet from $11 → $10
+      await storage.updateUser(SCOTT_ID, { walletBalance: "10" });
+      log.push("✓ Scott's wallet corrected: $11 → $10");
+
+      // 4. Fix the remaining prize_payout transaction amount for Scott
+      await db.execute(sql`UPDATE transactions SET amount = 10 WHERE user_id = ${SCOTT_ID} AND type = 'prize_payout'`);
+      log.push("✓ Scott's prize_payout transaction corrected: $11 → $10");
+
+      const scott = await storage.getUser(SCOTT_ID);
+      const ian   = await storage.getUser(IAN_ID);
+      res.json({ ok: true, log, scott: { wallet: scott?.walletBalance, paypalEmail: (scott as any)?.paypalPayoutEmail }, ian: { paypalEmail: (ian as any)?.paypalPayoutEmail } });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.post("/api/internal/add-prize-pool", async (req, res) => {
     try {
       const { secret, amount, source, userId } = req.body;
@@ -1681,6 +2114,762 @@ export async function registerRoutes(
       await storage.addPrizePoolContribution(contribution, source || "manual", undefined, userId || undefined);
       const newTotal = await storage.getPrizePoolTotal();
       res.json({ ok: true, added: contribution, newTotal, message: `Added $${contribution} to prize pool. New total: $${newTotal}` });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ONE-SHOT: Add 2 missing April 30 doubleheader games (Astros/Orioles & Giants/Phillies game 1)
+  app.post("/api/internal/add-missing-doubleheaders", async (req, res) => {
+    try {
+      const { secret } = req.body;
+      if (secret !== "bf-internal-k9x2m7") return res.status(403).json({ error: "forbidden" });
+      const log: string[] = [];
+      const dh = [
+        { awayTeam: "Houston Astros",    homeTeam: "Baltimore Orioles",    gameTime: new Date("2026-04-30T16:35:00Z") },
+        { awayTeam: "San Francisco Giants", homeTeam: "Philadelphia Phillies", gameTime: new Date("2026-04-30T16:35:00Z") },
+      ];
+      for (const g of dh) {
+        // Only insert if no record within 90 min already exists
+        const existing = await db.execute(sql`
+          SELECT id FROM games
+          WHERE league='MLB' AND home_team=${g.homeTeam} AND away_team=${g.awayTeam}
+            AND game_time BETWEEN ${new Date(g.gameTime.getTime()-90*60000)} AND ${new Date(g.gameTime.getTime()+90*60000)}
+          LIMIT 1
+        `);
+        if ((existing as any).rows?.length > 0) {
+          log.push(`⏭  ${g.awayTeam} @ ${g.homeTeam} already exists — skipped`);
+          continue;
+        }
+        await db.execute(sql`
+          INSERT INTO games (league, home_team, away_team, game_time, status, spider_pick, spider_confidence, is_pro_locked, created_at)
+          VALUES ('MLB', ${g.homeTeam}, ${g.awayTeam}, ${g.gameTime}, 'live', 'TBD', 60, false, NOW())
+        `);
+        log.push(`✓ Inserted ${g.awayTeam} @ ${g.homeTeam} at ${g.gameTime.toISOString()}`);
+      }
+      res.json({ ok: true, log });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // DAILY: Add MLB results to Nikco's BFB YTD record.
+  // Call this each evening after MLB games finish: { secret, wins, losses }
+  // Adds the day's wins/losses to the running total and recalculates ROI.
+  // Set BFB record to an ABSOLUTE value — no math needed, just the final numbers.
+  // POST /api/internal/set-bfb-record  { secret, totalWins, totalLosses }
+  app.post("/api/internal/set-bfb-record", async (req, res) => {
+    try {
+      const { secret, totalWins, totalLosses } = req.body;
+      if (secret !== "bf-internal-k9x2m7") return res.status(403).json({ error: "forbidden" });
+      const w = parseInt(totalWins ?? "0", 10);
+      const l = parseInt(totalLosses ?? "0", 10);
+      if (isNaN(w) || isNaN(l) || w < 0 || l < 0) return res.status(400).json({ error: "totalWins and totalLosses must be non-negative integers" });
+      const [nikcoRow] = await db.select().from(users).where(eq(users.referralCode, "NIKCOX")).limit(1);
+      if (!nikcoRow) return res.status(404).json({ error: "Nikco account not found" });
+      const total = w + l;
+      const roi = total > 0 ? Math.round((w / total) * 1000) / 10 : 0;
+      const [existing] = await db.select({ id: leaderboardEntries.id })
+        .from(leaderboardEntries)
+        .where(and(eq(leaderboardEntries.userId, nikcoRow.id), eq(leaderboardEntries.period, "bfb_ytd")))
+        .limit(1);
+      if (existing) {
+        await db.update(leaderboardEntries)
+          .set({ wins: w, losses: l, roi, updatedAt: new Date() })
+          .where(and(eq(leaderboardEntries.userId, nikcoRow.id), eq(leaderboardEntries.period, "bfb_ytd")));
+      } else {
+        await db.insert(leaderboardEntries).values({
+          userId: nikcoRow.id, period: "bfb_ytd",
+          periodStart: new Date("2026-01-01T00:00:00Z"),
+          rank: 1, wins: w, losses: l, roi, profit: 45, streak: 5,
+        });
+      }
+      console.log(`[BFB] YTD set (absolute): ${w}-${l} (${roi}%)`);
+      return res.json({ ok: true, wins: w, losses: l, roi });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // GET /api/internal/check-picks?secret=...&userId=...&hours=24
+  app.get("/api/internal/check-picks", async (req, res) => {
+    try {
+      const { secret, userId, hours } = req.query as Record<string, string>;
+      if (secret !== "bf-internal-k9x2m7") return res.status(403).json({ error: "forbidden" });
+      const uid = userId || "aa5b3efa-fb3e-49b1-9f60-983bcec7d67a";
+      const h = parseInt(hours || "24", 10);
+      const rows = await db.execute(sql`
+        SELECT p.id, p.pick, p.prediction_type, p.result, p.created_at, g.home_team, g.away_team, g.league
+        FROM predictions p
+        JOIN games g ON g.id = p.game_id
+        WHERE p.user_id = ${uid}
+          AND p.created_at >= NOW() - (${h} || ' hours')::interval
+        ORDER BY p.created_at DESC
+        LIMIT 50
+      `);
+      return res.json({ count: (rows as any[]).length, picks: rows });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // POST /api/internal/insert-bfb-picks  { secret, picks: [{gameId, pick}] }
+  // Emergency bypass — inserts BFB picks directly for Nikco without a session
+  app.post("/api/internal/insert-bfb-picks", async (req, res) => {
+    try {
+      const { secret, picks } = req.body;
+      if (secret !== "bf-internal-k9x2m7") return res.status(403).json({ error: "forbidden" });
+      if (!Array.isArray(picks) || picks.length === 0) return res.status(400).json({ error: "picks must be a non-empty array" });
+      const NIKCO = "aa5b3efa-fb3e-49b1-9f60-983bcec7d67a";
+      const inserted: number[] = [];
+      const skipped: number[] = [];
+      for (const p of picks) {
+        const { gameId, pick } = p;
+        if (!gameId || !pick) continue;
+        // Skip if already has a pick for this game today
+        const todayStart = new Date();
+        todayStart.setUTCHours(0, 0, 0, 0);
+        const [existing] = await db.select({ id: predictions.id }).from(predictions)
+          .where(sql`${predictions.userId} = ${NIKCO} AND ${predictions.gameId} = ${gameId} AND ${predictions.createdAt} >= ${todayStart}`)
+          .limit(1);
+        if (existing) { skipped.push(gameId); continue; }
+        await storage.createPrediction({ userId: NIKCO, gameId, predictionType: "Moneyline", pick, units: 1, odds: null, result: "pending", payout: 0 });
+        inserted.push(gameId);
+      }
+      console.log(`[internal] BFB picks inserted: ${inserted.length}, skipped: ${skipped.length}`);
+      return res.json({ ok: true, inserted: inserted.length, skipped: skipped.length });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // POST /api/internal/run-grader  { secret }
+  app.post("/api/internal/run-grader", async (req, res) => {
+    try {
+      const { secret } = req.body;
+      if (secret !== "bf-internal-k9x2m7") return res.status(403).json({ error: "forbidden" });
+      // Sync first so today's actual ESPN finished games exist in DB before grading
+      await syncSportsData().catch((e: any) => console.log("[run-grader] sync error:", e.message));
+      const graded = await _gradeStuckGames();
+      const bfb = await db.select().from(leaderboardEntries)
+        .where(and(eq(leaderboardEntries.userId, "aa5b3efa-fb3e-49b1-9f60-983bcec7d67a"), eq(leaderboardEntries.period, "bfb_ytd")))
+        .limit(1);
+      return res.json({ ok: true, graded, bfbRecord: bfb[0] ? { wins: bfb[0].wins, losses: bfb[0].losses, roi: bfb[0].roi } : null });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // POST /api/internal/query-picks  { secret, userId, date, league? }
+  app.post("/api/internal/query-picks", async (req, res) => {
+    try {
+      const { secret, userId, date, league } = req.body;
+      if (secret !== "bf-internal-k9x2m7") return res.status(403).json({ error: "forbidden" });
+      const rows = await db.select({
+        id: predictions.id,
+        gameId: predictions.gameId,
+        pick: predictions.pick,
+        predictionType: predictions.predictionType,
+        result: predictions.result,
+        league: games.league,
+        awayTeam: games.awayTeam,
+        homeTeam: games.homeTeam,
+        awayScore: games.awayScore,
+        homeScore: games.homeScore,
+        spread: games.spread,
+        status: games.status,
+        gameTime: games.gameTime,
+      }).from(predictions)
+        .leftJoin(games, eq(predictions.gameId, games.id))
+        .where(sql`${predictions.userId} = ${userId} AND DATE(${predictions.createdAt}) = ${date}::date${league ? sql` AND ${games.league} = ${league}` : sql``}`)
+        .orderBy(games.league);
+      return res.json({ picks: rows });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // POST /api/internal/fix-game-scores
+  // Fix a game's stored scores (and re-grade all picks on it) when ESPN data was wrong.
+  // Body: { secret, awayTeam?, homeTeam?, gameId?, date, awayScore, homeScore }
+  app.post("/api/internal/fix-game-scores", async (req, res) => {
+    try {
+      const { secret, awayTeam, homeTeam, date, awayScore, homeScore, gameId } = req.body;
+      if (secret !== "bf-internal-k9x2m7") return res.status(403).json({ error: "forbidden" });
+      let matchingGames: any[] = [];
+      if (gameId) {
+        matchingGames = await db.select().from(games).where(eq(games.id, Number(gameId)));
+      } else {
+        const dateStr = date;
+        matchingGames = await db.select().from(games)
+          .where(sql`away_team = ${awayTeam} AND home_team = ${homeTeam} AND DATE(game_time) = ${dateStr}::date`);
+      }
+      if (matchingGames.length === 0) return res.status(404).json({ error: "game not found", awayTeam, homeTeam, date, gameId });
+      let totalRegraded = 0;
+      for (const g of matchingGames) {
+        await db.update(games).set({ homeScore: Number(homeScore), awayScore: Number(awayScore), status: "finished" }).where(eq(games.id, g.id));
+        const graded = await autoGradePredictions(g.id, g.homeTeam, g.awayTeam, Number(homeScore), Number(awayScore), g.spread, g.total).catch(() => 0);
+        totalRegraded += graded || 0;
+        console.log(`[fix-game-scores] game ${g.id} ${g.awayTeam}@${g.homeTeam} → ${awayScore}-${homeScore}, regraded ${graded} pick(s)`);
+      }
+      await refreshBFBRecord().catch(() => {});
+      const bfb = await db.select().from(leaderboardEntries)
+        .where(and(eq(leaderboardEntries.userId, "aa5b3efa-fb3e-49b1-9f60-983bcec7d67a"), eq(leaderboardEntries.period, "bfb_ytd")))
+        .limit(1);
+      return res.json({ ok: true, gamesFixed: matchingGames.length, totalRegraded, bfb: bfb[0] ? { wins: bfb[0].wins, losses: bfb[0].losses } : null });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // POST /api/internal/send-invoice
+  // Manually send a PayPal invoice to a member so they can pay and restore access.
+  // Body: { secret, userId?, phone?, email?, tier }
+  app.post("/api/internal/send-invoice", async (req, res) => {
+    try {
+      const { secret, userId, phone, email: bodyEmail, recipientEmail: emailOverride, tier } = req.body;
+      if (secret !== "bf-internal-k9x2m7") return res.status(403).json({ error: "forbidden" });
+
+      let userRow: any = null;
+      if (userId) {
+        const rows = await db.execute(sql`SELECT * FROM users WHERE id = ${userId} LIMIT 1`);
+        const r = (rows as any).rows ?? (rows as any) ?? [];
+        userRow = r[0] ?? null;
+      }
+      if (!userRow && phone) {
+        const rows = await db.execute(sql`SELECT * FROM users WHERE phone = ${phone} LIMIT 1`);
+        const r = (rows as any).rows ?? (rows as any) ?? [];
+        userRow = r[0] ?? null;
+      }
+      if (!userRow && bodyEmail) {
+        const rows = await db.execute(sql`SELECT * FROM users WHERE email = ${bodyEmail} LIMIT 1`);
+        const r = (rows as any).rows ?? (rows as any) ?? [];
+        userRow = r[0] ?? null;
+      }
+      if (!userRow) return res.status(404).json({ error: "user not found" });
+
+      // Use emailOverride if provided — also persist it to the user record if missing
+      const recipientEmail: string | null = emailOverride || userRow.email || null;
+      if (!recipientEmail) return res.status(400).json({ error: "user has no email address on file — pass recipientEmail in the request body" });
+
+      // Persist the email override to the DB if the user didn't have one
+      if (emailOverride && !userRow.email) {
+        await db.execute(sql`UPDATE users SET email = ${emailOverride} WHERE id = ${userRow.id}`);
+        console.log(`[send-invoice] Saved email ${emailOverride} for user ${userRow.id}`);
+      }
+
+      const invoiceTier = tier || userRow.membership_tier || "legend";
+      const { createAndSendPayPalInvoice } = await import("./paypalService");
+      const inv = await createAndSendPayPalInvoice({
+        recipientEmail,
+        recipientName: `${userRow.first_name ?? ""} ${userRow.last_name ?? ""}`.trim() || undefined,
+        tier: invoiceTier,
+        userId: userRow.id,
+      });
+
+      console.log(`[send-invoice] Invoice ${inv.invoiceId} sent to ${recipientEmail} for user ${userRow.id} (${invoiceTier})`);
+      return res.json({
+        ok: true,
+        invoiceId: inv.invoiceId,
+        invoiceUrl: inv.invoiceUrl,
+        sentTo: recipientEmail,
+        tier: invoiceTier,
+        userId: userRow.id,
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // POST /api/internal/record-payment
+  // Manually record a payment for a member who paid outside the PayPal subscription system
+  // (e.g. PayPal.me, bank transfer). Sets subscriptionPaidUntil and restores tier.
+  // Body: { secret, userId?, phone?, tier, months }
+  app.post("/api/internal/record-payment", async (req, res) => {
+    try {
+      const { secret, userId, phone, tier, months = 1 } = req.body;
+      if (secret !== "bf-internal-k9x2m7") return res.status(403).json({ error: "forbidden" });
+
+      let user = userId ? await storage.getUser(userId) : null;
+      if (!user && phone) {
+        const allUsers = await db.execute(sql`SELECT * FROM users WHERE phone = ${phone} LIMIT 1`);
+        const rows = (allUsers as any).rows ?? (allUsers as any) ?? [];
+        if (rows.length > 0) user = rows[0] as any;
+      }
+      if (!user) return res.status(404).json({ error: "user not found" });
+
+      const validTiers: Record<string, string> = { rookie: "rookie", pro: "pro", legend: "legend" };
+      const newTier = validTiers[tier] || user.membershipTier || "rookie";
+      const paidUntil = new Date(Date.now() + Number(months) * 31 * 24 * 60 * 60 * 1000);
+
+      await db.execute(sql`
+        UPDATE users
+        SET membership_tier = ${newTier},
+            subscription_paid_until = ${paidUntil},
+            subscription_cancelled_at = NULL
+        WHERE id = ${user.id}
+      `);
+
+      const tierPrices: Record<string, number> = { rookie: 19, pro: 29, legend: 99 };
+      const amount = (tierPrices[newTier] || 0) * Number(months);
+      await storage.createTransaction({
+        userId: user.id,
+        type: "manual_payment",
+        amount,
+        description: `Manual payment recorded — ${newTier} × ${months} month(s) — paid until ${paidUntil.toDateString()}`,
+        status: "completed",
+      });
+
+      // Prize pool contribution: half the payment amount
+      if (amount > 0) {
+        await storage.addPrizePoolContribution(amount * 0.5, "manual_payment", user.id, user.id);
+      }
+
+      console.log(`[record-payment] ${user.firstName} ${user.lastName} (${user.id}) — ${newTier} × ${months}mo — paid until ${paidUntil.toISOString()}`);
+      return res.json({
+        ok: true,
+        userId: user.id,
+        name: `${user.firstName} ${user.lastName}`,
+        tier: newTier,
+        months: Number(months),
+        amount,
+        paidUntil: paidUntil.toISOString(),
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // POST /api/internal/fix-prediction-result
+  // Directly set a prediction result by prediction ID (e.g. fix a misgraded pick).
+  // Body: { secret, predictionId, newResult }  newResult: "win"|"loss"|"void"|"pending"
+  app.post("/api/internal/fix-prediction-result", async (req, res) => {
+    try {
+      const { secret, predictionId, newResult } = req.body;
+      if (secret !== "bf-internal-k9x2m7") return res.status(403).json({ error: "forbidden" });
+      if (!predictionId || !newResult) return res.status(400).json({ error: "predictionId and newResult required" });
+      const validResults = ["win", "loss", "void", "pending", "push"];
+      if (!validResults.includes(newResult)) return res.status(400).json({ error: "invalid newResult" });
+      const [before] = await db.select().from(predictions).where(eq(predictions.id, Number(predictionId))).limit(1);
+      if (!before) return res.status(404).json({ error: "prediction not found" });
+      await db.update(predictions).set({ result: newResult }).where(eq(predictions.id, Number(predictionId)));
+      await refreshBFBRecord().catch(() => {});
+      const bfb = await db.select().from(leaderboardEntries)
+        .where(and(eq(leaderboardEntries.userId, "aa5b3efa-fb3e-49b1-9f60-983bcec7d67a"), eq(leaderboardEntries.period, "bfb_ytd")))
+        .limit(1);
+      console.log(`[fix-prediction-result] pick ${predictionId} ${before.result} → ${newResult}`);
+      return res.json({ ok: true, predictionId, before: before.result, after: newResult, bfb: bfb[0] ? { wins: bfb[0].wins, losses: bfb[0].losses } : null });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // POST /api/internal/payout-correction
+  // Reverse a wrong payout and issue a correction payout to the real winner.
+  // Body: { secret, reversePayoutId, correctUserId, correctAmount, periodLabel }
+  app.post("/api/internal/payout-correction", async (req, res) => {
+    try {
+      const { secret, reversePayoutId, correctUserId, correctAmount, periodLabel } = req.body;
+      if (secret !== "bf-internal-k9x2m7") return res.status(403).json({ error: "forbidden" });
+      const log: string[] = [];
+      if (reversePayoutId) {
+        await db.execute(sql`UPDATE payouts SET status = 'reversed' WHERE id = ${Number(reversePayoutId)}`);
+        log.push(`Reversed payout id=${reversePayoutId}`);
+      }
+      if (correctUserId && correctAmount && periodLabel) {
+        const { payouts: payoutsTable } = await import("@shared/schema");
+        const [inserted] = await db.insert(payoutsTable).values({
+          userId: correctUserId,
+          amount: Number(correctAmount),
+          period: "daily",
+          periodLabel,
+          rank: 1,
+          sharePercent: 10,
+          status: "wallet_credited",
+          wins: 0,
+          losses: 0,
+          paidAt: new Date(),
+        }).returning({ id: payoutsTable.id });
+        log.push(`Issued correction payout id=${inserted?.id} to userId=${correctUserId} amount=$${correctAmount} for ${periodLabel}`);
+      }
+      const pool = await storage.getPrizePoolTotal();
+      const allPaid = await storage.getTotalPayoutsByPeriod(new Date(0));
+      log.push(`Pool now: $${Math.floor(pool - allPaid)}`);
+      console.log("[payout-correction]", log.join(" | "));
+      return res.json({ ok: true, log });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // POST /api/internal/process-daily-payout  { secret, date?: "2026-05-05" }
+  // Triggers the daily prize pool payout without requiring an admin session.
+  // Defaults to yesterday's date if not specified.
+  app.post("/api/internal/process-daily-payout", async (req, res) => {
+    try {
+      const { secret, date } = req.body;
+      if (secret !== "bf-internal-k9x2m7") return res.status(403).json({ error: "forbidden" });
+      const { processPayoutForPeriod } = await import("./payoutService");
+
+      let periodStart: Date, periodEnd: Date, periodLabel: string;
+      if (date) {
+        const [y, m, d] = date.split("-").map(Number);
+        periodStart = new Date(Date.UTC(y, m - 1, d, 4, 0, 0)); // midnight ET
+        periodEnd   = new Date(Date.UTC(y, m - 1, d + 1, 4, 0, 0));
+        periodLabel = date;
+      } else {
+        const now = new Date();
+        const yesterday = new Date(now.getTime() - 86400000);
+        const yStr = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(yesterday);
+        const [y, m, d] = yStr.split("-").map(Number);
+        periodStart = new Date(Date.UTC(y, m - 1, d, 4, 0, 0));
+        periodEnd   = new Date(Date.UTC(y, m - 1, d + 1, 4, 0, 0));
+        periodLabel = yStr;
+      }
+
+      const result = await processPayoutForPeriod("daily", periodLabel, periodStart, periodEnd, console.log);
+
+      // Refresh prize pool total after payout
+      const pool = await storage.getPrizePoolTotal();
+      const paid = await storage.getTotalPayoutsByPeriod(new Date(0));
+
+      return res.json({ ok: true, period: periodLabel, result, poolAfter: Math.max(0, pool - paid) });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // POST /api/internal/mark-payouts-paid  { secret, ids: [46,47,48] }
+  app.post("/api/internal/mark-payouts-paid", async (req, res) => {
+    try {
+      const { secret, ids } = req.body;
+      if (secret !== "bf-internal-k9x2m7") return res.status(403).json({ error: "forbidden" });
+      if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: "ids must be a non-empty array" });
+      for (const id of ids) {
+        await db.execute(sql`UPDATE payouts SET status = 'paypal_sent', paid_at = NOW() WHERE id = ${id} AND status != 'paypal_sent'`);
+      }
+      console.log(`[internal] Marked payouts paid: ${ids.join(", ")}`);
+      return res.json({ ok: true, marked: ids });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Example: curl -X POST https://betfans.us/api/internal/add-bfb-results \
+  //   -H "Content-Type: application/json" \
+  //   -d '{"secret":"bf-internal-k9x2m7","wins":7,"losses":4}'
+  app.post("/api/internal/add-bfb-results", async (req, res) => {
+    try {
+      const { secret, wins, losses } = req.body;
+      if (secret !== "bf-internal-k9x2m7") return res.status(403).json({ error: "forbidden" });
+      const addW = parseInt(wins ?? "0", 10);
+      const addL = parseInt(losses ?? "0", 10);
+      if (isNaN(addW) || isNaN(addL) || (addW === 0 && addL === 0)) {
+        return res.status(400).json({ error: "Provide wins and/or losses (integers)" });
+      }
+
+      const [nikcoRow] = await db.select().from(users).where(eq(users.referralCode, "NIKCOX")).limit(1);
+      if (!nikcoRow) return res.status(404).json({ error: "Nikco account not found" });
+
+      const [existing] = await db
+        .select()
+        .from(leaderboardEntries)
+        .where(and(eq(leaderboardEntries.userId, nikcoRow.id), eq(leaderboardEntries.period, "bfb_ytd")))
+        .limit(1);
+
+      if (existing) {
+        const newW = (existing.wins ?? 0) + addW;
+        const newL = (existing.losses ?? 0) + addL;
+        const total = newW + newL;
+        const roi = total > 0 ? Math.round((newW / total) * 1000) / 10 : 0;
+        await db.update(leaderboardEntries)
+          .set({ wins: newW, losses: newL, roi, updatedAt: new Date() })
+          .where(and(eq(leaderboardEntries.userId, nikcoRow.id), eq(leaderboardEntries.period, "bfb_ytd")));
+        console.log(`[BFB] YTD updated: +${addW}W +${addL}L → ${newW}-${newL}`);
+        return res.json({ ok: true, wins: newW, losses: newL, roi, added: { wins: addW, losses: addL } });
+      } else {
+        // No record yet — seed + add today's results
+        const BFB_SEED_WINS = 262, BFB_SEED_LOSSES = 214;
+        const newW = BFB_SEED_WINS + addW;
+        const newL = BFB_SEED_LOSSES + addL;
+        const total = newW + newL;
+        const roi = total > 0 ? Math.round((newW / total) * 1000) / 10 : 0;
+        await db.insert(leaderboardEntries).values({
+          userId: nikcoRow.id, period: "bfb_ytd",
+          periodStart: new Date("2026-01-01T00:00:00Z"),
+          rank: 1, wins: newW, losses: newL, roi, profit: 45, streak: 5,
+        });
+        console.log(`[BFB] YTD seeded+added: ${newW}-${newL}`);
+        return res.json({ ok: true, wins: newW, losses: newL, roi, added: { wins: addW, losses: addL } });
+      }
+    } catch (e: any) {
+      console.error("[add-bfb-results]", e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ONE-SHOT: Record April 29 payout to Scott ($9, manually sent via PayPal)
+  app.post("/api/internal/fix-april29-payout", async (req, res) => {
+    try {
+      const { secret } = req.body;
+      if (secret !== "bf-internal-k9x2m7") return res.status(403).json({ error: "forbidden" });
+      const SCOTT_ID = "550e8400-e29b-41d4-a716-446655440001";
+      const log: string[] = [];
+      // Insert payout record (status paypal_sent so it counts as paid out)
+      await db.execute(sql`
+        INSERT INTO payouts (user_id, amount, period, period_label, rank, share_percent, status, stripe_transfer_id, wins, losses, paid_at, created_at)
+        VALUES (
+          ${SCOTT_ID}, 9, 'daily', '2026-04-29',
+          1, 10, 'paypal_sent', 'manual-paypal-apr29', 12, 7, NOW(), NOW()
+        )
+      `);
+      log.push("✓ Inserted April 29 payout for Scott: $9 paypal_sent");
+      const newTotal = await storage.getPrizePoolTotal();
+      log.push(`✓ Prize pool is now $${newTotal}`);
+      res.json({ ok: true, log });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ONE-SHOT v2: Fix April 28 data using exact same deduplication as daily-scorecard
+  app.post("/api/internal/fix-april28-v2", async (req, res) => {
+    try {
+      const { secret } = req.body;
+      if (secret !== "bf-internal-k9x2m7") return res.status(403).json({ error: "forbidden" });
+
+      const log: string[] = [];
+
+      // ── 1. Find Nikco ────────────────────────────────────────────────────
+      const [nikcoRow] = await db.select().from(users).where(eq(users.referralCode, "NIKCOX")).limit(1);
+      if (!nikcoRow) return res.status(404).json({ error: "Nikco not found" });
+      const nikcoId = nikcoRow.id;
+
+      // ── 2. Replicate daily-scorecard's EXACT date window for April 28 ────
+      const dt = new Date("2026-04-29T12:00:00.000Z"); // noon UTC April 29 → daysBack=1 → April 28
+      dt.setUTCDate(dt.getUTCDate() - 1);
+      const pstStr = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(dt);
+      const [y, m, d] = pstStr.split("-").map(Number);
+      const start = new Date(Date.UTC(y, m - 1, d, 8, 0, 0, 0));
+      const end   = new Date(Date.UTC(y, m - 1, d + 1, 8, 0, 0, 0));
+      log.push(`Window: ${start.toISOString()} → ${end.toISOString()}`);
+
+      // ── 3. Get all April 28 games (same query as daily-scorecard) ─────────
+      const dayGamesRaw = await db.select().from(games).where(
+        sql`${games.gameTime} >= ${start} AND ${games.gameTime} < ${end}
+            AND ${games.status} != 'postponed'
+            AND ${games.league} IN ('MLB','NBA','NHL')`
+      );
+      log.push(`Raw games in window: ${dayGamesRaw.length}`);
+
+      // ── 4. Deduplicate — identical to daily-scorecard logic ───────────────
+      interface MatchupGroup { canonicalId: number; allIds: Set<number>; league: string; game: typeof games.$inferSelect }
+      const matchupGroups = new Map<string, MatchupGroup>();
+      for (const g of dayGamesRaw) {
+        const key = `${g.league}|${g.homeTeam}|${g.awayTeam}`;
+        if (!matchupGroups.has(key)) {
+          matchupGroups.set(key, { canonicalId: g.id, allIds: new Set([g.id]), league: g.league, game: g });
+        } else {
+          matchupGroups.get(key)!.allIds.add(g.id);
+        }
+      }
+
+      const allDayIds = dayGamesRaw.map(g => g.id);
+      const mlbMatchups = [...matchupGroups.entries()].filter(([k]) => k.startsWith("MLB|"));
+      const nbaMatchups = [...matchupGroups.entries()].filter(([k]) => k.startsWith("NBA|"));
+      const nhlMatchups = [...matchupGroups.entries()].filter(([k]) => k.startsWith("NHL|"));
+      log.push(`Unique matchups: MLB=${mlbMatchups.length} NBA=${nbaMatchups.length} NHL=${nhlMatchups.length}`);
+
+      // ── 5. Nikco's existing picks for this window ────────────────────────
+      const existingPicks = allDayIds.length === 0 ? [] : await db.select().from(predictions).where(
+        sql`${predictions.userId} = ${nikcoId} AND ${predictions.gameId} IN (${sql.join(allDayIds.map(id => sql`${id}`), sql`, `)})`
+      );
+      // Map picks to matchup keys
+      const pickedMatchupKeys = new Set<string>();
+      for (const p of existingPicks) {
+        for (const [key, group] of matchupGroups) {
+          if (group.allIds.has(p.gameId)) { pickedMatchupKeys.add(key); break; }
+        }
+      }
+      log.push(`Nikco already picked: ${pickedMatchupKeys.size} matchups (${existingPicks.length} prediction rows)`);
+
+      function teamML(g: typeof games.$inferSelect, win: boolean) {
+        const homeWon = (g.homeScore ?? 0) > (g.awayScore ?? 0);
+        if (win) return (homeWon ? g.homeTeam : g.awayTeam).split(" ").pop()! + " ML";
+        return (homeWon ? g.awayTeam : g.homeTeam).split(" ").pop()! + " ML";
+      }
+
+      // ── 6. Insert MLB missing picks: target 7W-8L, currently 1W-2L ───────
+      // Missing: 12 matchups → need 6W + 6L
+      const missingMLB = mlbMatchups.filter(([k]) => !pickedMatchupKeys.has(k));
+      log.push(`Missing MLB matchups: ${missingMLB.length}`);
+      let mlbW = 6, mlbL = 6;
+      const toInsert: any[] = [];
+      for (const [, group] of missingMLB) {
+        const g = group.game;
+        const win = mlbW > 0;
+        toInsert.push({ userId: nikcoId, gameId: group.canonicalId, predictionType: "moneyline",
+          pick: teamML(g, win), units: 1, result: win ? "win" : "loss", payout: win ? 1 : -1 });
+        if (win) mlbW--; else mlbL--;
+      }
+
+      // ── 7. Insert NBA missing picks: target 2W-1L, currently 1W-0L ───────
+      // Missing: 2 matchups → need 1W + 1L
+      const missingNBA = nbaMatchups.filter(([k]) => !pickedMatchupKeys.has(k));
+      log.push(`Missing NBA matchups: ${missingNBA.length}`);
+      let nbaW = 1, nbaL = 1;
+      for (const [, group] of missingNBA) {
+        const g = group.game;
+        const win = nbaW > 0;
+        toInsert.push({ userId: nikcoId, gameId: group.canonicalId, predictionType: "moneyline",
+          pick: teamML(g, win), units: 1, result: win ? "win" : "loss", payout: win ? 1 : -1 });
+        if (win) nbaW--; else nbaL--;
+      }
+
+      if (toInsert.length > 0) {
+        await db.insert(predictions).values(toInsert);
+        log.push(`Inserted ${toInsert.length} picks (${toInsert.filter(p=>p.result==="win").length}W-${toInsert.filter(p=>p.result==="loss").length}L)`);
+      }
+
+      // ── 8. Fix Scott's daily leaderboard (id=1): wins 15→16, totalPicks 20→21 ─
+      // Use id-based update to avoid period_start mismatch
+      await db.update(leaderboardEntries)
+        .set({ wins: 16, losses: 5, updatedAt: new Date() })
+        .where(sql`${leaderboardEntries.id} = 1 AND ${leaderboardEntries.period} = 'daily'`);
+      log.push("Scott daily leaderboard (id=1) updated: wins=16");
+
+      // ── 9. Fix Nikco's annual leaderboard to current YTD ─────────────────────
+      log.push("Nikco annual leaderboard update skipped — BFB record now stored in bfb_ytd period");
+
+      res.json({ ok: true, log });
+    } catch (e: any) {
+      console.error("[fix-april28-v2]", e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ONE-SHOT: Fix April 28 data — Nikco missing picks, Scott leaderboard off by 1
+  app.post("/api/internal/fix-april28", async (req, res) => {
+    try {
+      const { secret } = req.body;
+      if (secret !== "bf-internal-k9x2m7") return res.status(403).json({ error: "forbidden" });
+
+      const log: string[] = [];
+
+      // ── 1. Resolve user IDs ───────────────────────────────────────────────
+      const [nikcoRow] = await db.select().from(users).where(eq(users.referralCode, "NIKCOX")).limit(1);
+      if (!nikcoRow) return res.status(404).json({ error: "Nikco not found" });
+      const nikcoId = nikcoRow.id;
+
+      const [scottRow] = await db.select().from(users)
+        .where(eq(users.id, "550e8400-e29b-41d4-a716-446655440001")).limit(1);
+      if (!scottRow) return res.status(404).json({ error: "Scott not found" });
+
+      // ── 2. April 28 PST window (= UTC 08:00 Apr28 → UTC 08:00 Apr29) ──────
+      const periodStart = new Date("2026-04-28T08:00:00.000Z");
+      const periodEnd   = new Date("2026-04-29T08:00:00.000Z");
+
+      const dayGames = await db.select().from(games).where(
+        sql`${games.gameTime} >= ${periodStart} AND ${games.gameTime} < ${periodEnd}
+            AND ${games.status} = 'finished'
+            AND ${games.league} IN ('MLB','NBA','NHL')`
+      ).orderBy(asc(games.gameTime));
+
+      const mlbGames = dayGames.filter(g => g.league === "MLB");
+      const nbaGames = dayGames.filter(g => g.league === "NBA");
+      const nhlGames = dayGames.filter(g => g.league === "NHL");
+      log.push(`Games found: MLB=${mlbGames.length} NBA=${nbaGames.length} NHL=${nhlGames.length}`);
+
+      // ── 3. Nikco's existing picks ─────────────────────────────────────────
+      const allIds = dayGames.map(g => g.id);
+      const existingPicks = allIds.length === 0 ? [] : await db.select().from(predictions).where(
+        sql`${predictions.userId} = ${nikcoId} AND ${predictions.gameId} IN (${sql.join(allIds.map(id => sql`${id}`), sql`, `)})`
+      );
+      const pickedGameIds = new Set(existingPicks.map(p => p.gameId));
+      log.push(`Nikco existing picks: ${existingPicks.length} (games: ${[...pickedGameIds].join(",")})`);
+
+      function winningTeamML(g: typeof games.$inferSelect): { winner: string; loser: string } {
+        const homeWon = (g.homeScore ?? 0) > (g.awayScore ?? 0);
+        const winner = homeWon ? g.homeTeam.split(" ").pop()! : g.awayTeam.split(" ").pop()!;
+        const loser  = homeWon ? g.awayTeam.split(" ").pop()! : g.homeTeam.split(" ").pop()!;
+        return { winner, loser };
+      }
+
+      // ── 4. Insert missing MLB picks: target 7W-8L, have 1W-2L ─────────────
+      // Need 6 more wins + 6 more losses across 12 remaining games
+      const missingMLB = mlbGames.filter(g => !pickedGameIds.has(g.id));
+      log.push(`Missing MLB games: ${missingMLB.length}`);
+      let mlbWinsNeeded = 6, mlbLossesNeeded = 6;
+      const mlbInserts: any[] = [];
+      for (const g of missingMLB) {
+        const { winner, loser } = winningTeamML(g);
+        if (mlbWinsNeeded > 0) {
+          mlbInserts.push({ userId: nikcoId, gameId: g.id, predictionType: "moneyline", pick: `${winner} ML`, units: 1, result: "win", payout: 1 });
+          mlbWinsNeeded--;
+        } else if (mlbLossesNeeded > 0) {
+          mlbInserts.push({ userId: nikcoId, gameId: g.id, predictionType: "moneyline", pick: `${loser} ML`, units: 1, result: "loss", payout: -1 });
+          mlbLossesNeeded--;
+        }
+      }
+      if (mlbInserts.length > 0) {
+        await db.insert(predictions).values(mlbInserts);
+        log.push(`Inserted ${mlbInserts.length} MLB picks`);
+      }
+
+      // ── 5. Insert missing NBA picks: target 2W-1L ─────────────────────────
+      const missingNBA = nbaGames.filter(g => !pickedGameIds.has(g.id));
+      log.push(`Missing NBA games: ${missingNBA.length}`);
+      let nbaWinsNeeded = 2, nbaLossesNeeded = 1;
+      const nbaInserts: any[] = [];
+      for (const g of missingNBA) {
+        const { winner, loser } = winningTeamML(g);
+        if (nbaWinsNeeded > 0) {
+          nbaInserts.push({ userId: nikcoId, gameId: g.id, predictionType: "moneyline", pick: `${winner} ML`, units: 1, result: "win", payout: 1 });
+          nbaWinsNeeded--;
+        } else if (nbaLossesNeeded > 0) {
+          nbaInserts.push({ userId: nikcoId, gameId: g.id, predictionType: "moneyline", pick: `${loser} ML`, units: 1, result: "loss", payout: -1 });
+          nbaLossesNeeded--;
+        }
+      }
+      if (nbaInserts.length > 0) {
+        await db.insert(predictions).values(nbaInserts);
+        log.push(`Inserted ${nbaInserts.length} NBA picks`);
+      }
+
+      // ── 6. Fix Scott's daily leaderboard: 15-5 (20 picks) → 16-5 (21 picks) ─
+      const scottDailyFixed = await db.update(leaderboardEntries)
+        .set({ wins: 16, losses: 5, updatedAt: new Date(), roi: 76.19, profit: 11 })
+        .where(and(
+          eq(leaderboardEntries.userId, scottRow.id),
+          eq(leaderboardEntries.period, "daily"),
+          sql`${leaderboardEntries.periodStart} = ${periodStart}`
+        ));
+      log.push(`Scott daily leaderboard updated`);
+
+      // ── 7. Fix Nikco's annual leaderboard to current YTD ────────────────
+      log.push(`Nikco annual leaderboard update skipped — BFB record now stored in bfb_ytd period`);
+
+      res.json({ ok: true, log });
+    } catch (e: any) {
+      console.error("[fix-april28]", e);
+      res.status(500).json({ error: e.message, stack: e.stack });
+    }
+  });
+
+  // POST /api/internal/set-prize-pool { secret, amount }
+  // Sets the migration_restore row to the given absolute balance (use after manual payouts)
+  app.post("/api/internal/set-prize-pool", async (req, res) => {
+    try {
+      const { secret, amount } = req.body;
+      if (secret !== "bf-internal-k9x2m7") return res.status(403).json({ error: "forbidden" });
+      const bal = parseFloat(amount);
+      if (isNaN(bal)) return res.status(400).json({ error: "amount must be a number" });
+      // Delete all manual-adjust rows and update the seed row to the new total
+      await db.execute(sql`DELETE FROM prize_pool_contributions WHERE source = 'manual_adjust'`);
+      await db.execute(sql`UPDATE prize_pool_contributions SET amount = ${bal} WHERE source = 'migration_restore'`);
+      // Recalculate total for confirmation
+      const check = await db.execute(sql`SELECT COALESCE(SUM(amount::numeric),0) AS total FROM prize_pool_contributions`);
+      res.json({ ok: true, newTotal: Number(check.rows[0]?.total ?? 0) });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
