@@ -459,17 +459,23 @@ export async function registerRoutes(
       // Self-heal: if the submitted gameId no longer exists (e.g. cleaned up as a duplicate),
       // find the canonical game with the same matchup for today and redirect to it.
       let resolvedGameId: number = req.body.gameId;
-      const [gameCheck] = await db.select({ id: games.id }).from(games).where(eq(games.id, resolvedGameId)).limit(1);
+      const [gameCheck] = await db.select({ id: games.id, gameTime: games.gameTime, status: games.status })
+        .from(games).where(eq(games.id, resolvedGameId)).limit(1);
       if (!gameCheck) {
-        // Look for a game with the same teams on today's PST date
-        const todayPST = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(new Date());
-        const original = await db.select({ id: games.id, homeTeam: games.homeTeam, awayTeam: games.awayTeam })
-          .from(games).where(eq(games.id, resolvedGameId)).limit(1);
-        // Can't get team names from a missing row, so try to find any game close in ID range
-        // that is today's game — just reject with a meaningful message instead of FK crash
+        // Can't get team names from a missing row, so reject with a meaningful message instead of FK crash
         console.warn(`[predictions] gameId ${resolvedGameId} not found — possible stale cache. User: ${userId}`);
         return res.status(409).json({
           message: "Game list has been refreshed. Please reload the page and resubmit your picks.",
+        });
+      }
+
+      // Block picks on games that have already started, are live, or are finished
+      const now = new Date();
+      const gameStarted = new Date(gameCheck.gameTime) <= now;
+      const gameLocked = gameStarted || gameCheck.status === "live" || gameCheck.status === "finished";
+      if (gameLocked) {
+        return res.status(422).json({
+          message: "This game has already started — picks are locked.",
         });
       }
 
