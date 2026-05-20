@@ -128,7 +128,16 @@ export default function DailyPicks() {
       setDrafts({});
       toast({ title: `${Object.keys(drafts).length} picks locked in!`, description: "Results update automatically when games finish." });
     },
-    onError: (e: any) => toast({ title: "Error submitting picks", description: e.message, variant: "destructive" }),
+    onError: (e: any) => {
+      const msg: string = e.message || "";
+      if (msg.includes("reload") || msg.includes("refreshed")) {
+        qc.invalidateQueries({ queryKey: ["/api/games"] });
+        toast({ title: "Game list updated", description: "Your picks have been cleared — please reselect and resubmit.", variant: "destructive" });
+        setDrafts({});
+      } else {
+        toast({ title: "Error submitting picks", description: msg, variant: "destructive" });
+      }
+    },
   });
 
   const todayGames = allGames;
@@ -302,6 +311,9 @@ export default function DailyPicks() {
               const draft = drafts[game.id];
 
               const isFinished = game.status === "finished";
+              const isLive = game.status === "live";
+              const isStarted = new Date(game.gameTime) <= new Date();
+              const isLocked = isFinished || isLive || isStarted;
 
               return (
                 <Card
@@ -309,7 +321,8 @@ export default function DailyPicks() {
                   className={cn(
                     "bg-card/30 border-white/5 hover:border-white/10 transition-all",
                     draft && "border-primary/40 bg-primary/5",
-                    alreadyPicked && "border-primary/20"
+                    alreadyPicked && "border-primary/20",
+                    isLocked && !alreadyPicked && "opacity-70"
                   )}
                   data-testid={`card-game-${game.id}`}
                 >
@@ -328,20 +341,15 @@ export default function DailyPicks() {
                     <div className="mb-3">
                       <p className="font-display font-bold text-sm leading-tight">{game.awayTeam}</p>
                       <p className="text-xs text-muted-foreground leading-tight">@ {game.homeTeam}</p>
+                      {game.league === "MLB" && (game.awayPitcher || game.homePitcher) && (
+                        <div className="flex items-center justify-between mt-1.5 text-[10px] text-muted-foreground/60">
+                          <span>{game.awayPitcher || "TBD"}</span>
+                          <span className="opacity-40">SP</span>
+                          <span>{game.homePitcher || "TBD"}</span>
+                        </div>
+                      )}
                     </div>
 
-                    {game.spiderPick && !game.spiderPick.toLowerCase().startsWith("over") && !game.spiderPick.toLowerCase().startsWith("under") && (
-                      <div className="bg-primary/5 border border-primary/10 rounded-lg px-3 py-1.5 mb-3 flex items-center justify-between">
-                        <div className="flex items-center gap-1.5">
-                          <Zap size={10} className="text-primary" />
-                          <span className="text-[10px] text-primary uppercase tracking-wider font-medium">Spider AI</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-display font-bold text-sm text-primary">{game.spiderPick}</span>
-                          <span className="text-[10px] text-muted-foreground/50">{game.spiderConfidence}%</span>
-                        </div>
-                      </div>
-                    )}
 
                     {alreadyPicked && myPick ? (
                       <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-primary/5 border border-primary/15">
@@ -353,6 +361,16 @@ export default function DailyPicks() {
                       </div>
                     ) : isFinished ? (
                       <p className="text-center text-[10px] text-muted-foreground/40 py-2">Game finished — picks closed</p>
+                    ) : isLive ? (
+                      <div className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-green-500/5 border border-green-500/15">
+                        <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse inline-block" />
+                        <p className="text-[10px] text-green-400/70">Game is live — picks locked</p>
+                      </div>
+                    ) : isStarted ? (
+                      <div className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-white/5 border border-white/10">
+                        <Lock size={10} className="text-muted-foreground/40" />
+                        <p className="text-[10px] text-muted-foreground/40">Game has started — picks locked</p>
+                      </div>
                     ) : !user ? (
                       <a href="/auth">
                         <Button className="w-full bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 text-xs h-8" data-testid={`button-login-pick-${game.id}`}>
