@@ -2470,6 +2470,38 @@ export async function registerRoutes(
     }
   });
 
+  // GET /api/internal/user-predictions
+  // List recent predictions for a user (for fixing misgraded picks).
+  // Query: ?secret=&userId=&league=&limit=
+  app.get("/api/internal/user-predictions", async (req: any, res) => {
+    try {
+      const { secret, userId, league, limit } = req.query;
+      if (secret !== "bf-internal-k9x2m7") return res.status(403).json({ error: "forbidden" });
+      if (!userId) return res.status(400).json({ error: "userId required" });
+      let q = db.select({
+        id: predictions.id,
+        gameId: predictions.gameId,
+        pick: predictions.pick,
+        predictionType: predictions.predictionType,
+        result: predictions.result,
+        createdAt: predictions.createdAt,
+        league: games.league,
+        homeTeam: games.homeTeam,
+        awayTeam: games.awayTeam,
+        gameTime: games.gameTime,
+      }).from(predictions)
+        .leftJoin(games, eq(predictions.gameId, games.id))
+        .where(eq(predictions.userId, String(userId)))
+        .orderBy(sql`${predictions.id} DESC`)
+        .limit(Number(limit) || 30) as any;
+      const rows = await q;
+      const filtered = league ? rows.filter((r: any) => r.league === league) : rows;
+      return res.json(filtered);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // POST /api/internal/payout-correction
   // Reverse a wrong payout and issue a correction payout to the real winner.
   // Body: { secret, reversePayoutId, correctUserId, correctAmount, periodLabel }
