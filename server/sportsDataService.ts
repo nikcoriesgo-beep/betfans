@@ -137,13 +137,13 @@ function gradePick(
 // Real Nikco account UUID — his BFB picks are tracked under this ID.
 const NIKCO_REAL_ID = 'aa5b3efa-fb3e-49b1-9f60-983bcec7d67a';
 
-// BFB seed: cumulative MLB record through May 20, 2026 (Nikco-confirmed 408-343 YTD).
-// All MLB picks Nikco submits from May 21 onwards are added on top of this baseline.
-const BFB_SEED_WINS = 408;
-const BFB_SEED_LOSSES = 343;
+// BFB seed: cumulative MLB record through May 22, 2026 (Nikco-confirmed 420-352 YTD).
+// All MLB picks Nikco submits from May 23 onwards are added on top of this baseline.
+const BFB_SEED_WINS = 420;
+const BFB_SEED_LOSSES = 352;
 
 // After grading an MLB game, update Nikco's bfb_ytd leaderboard entry.
-// Counts only his graded MLB picks with created_at >= 2026-05-21 (real in-app picks after May 20 seed).
+// Counts only his graded MLB picks with created_at >= 2026-05-23 (real in-app picks after May 22 seed).
 // and adds them to the historical seed record.
 export async function refreshBFBRecord(): Promise<void> {
   try {
