@@ -99,6 +99,7 @@ export interface IStorage {
   generateReferralCode(userId: string): Promise<string>;
   getUserByReferralCode(code: string): Promise<User | null>;
   createReferral(referrerId: string, referredId: string): Promise<Referral>;
+  activateReferral(referredId: string): Promise<void>;
   getReferralsByReferrer(referrerId: string): Promise<(Referral & { referred: User | null })[]>;
   completeReferralPrediction(referredId: string): Promise<void>;
   getReferralStats(userId: string): Promise<{ totalReferred: number; signupBonuses: number; predictionBonuses: number; totalEarned: number; pendingCount: number; completedCount: number; monthlyIncome: number; instantBonus: number }>;
@@ -138,8 +139,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getActivePaypalSubscribers(): Promise<User[]> {
+    // Include ALL users with a subscription ID — even free-tier ones who may have been
+    // wrongly downgraded. The audit will restore them if PayPal says ACTIVE.
     return db.select().from(users).where(
-      sql`paypal_subscription_id IS NOT NULL AND paypal_subscription_id != '' AND membership_tier IN ('rookie','pro','legend')`
+      sql`paypal_subscription_id IS NOT NULL AND paypal_subscription_id != ''`
     );
   }
 
@@ -164,17 +167,17 @@ export class DatabaseStorage implements IStorage {
         .where(sql`${games.gameTime} >= ${cutoff} AND ${games.gameTime} < ${nextCutoff} AND ${games.status} != 'postponed'`)
         .orderBy(asc(games.gameTime));
     }
-    // Deduplicate: keep only one game per (league, homeTeam, awayTeam) per day.
-    // MLB series = same matchup 3 days in a row; if duplicates leaked into the DB,
-    // keep the one that is NOT upcoming (i.e., live/finished first), else the first by gameTime.
+    // Deduplicate: protect against exact-duplicate DB rows (same game inserted twice).
+    // Key includes game time bucketed to nearest 90 minutes so doubleheaders
+    // (same matchup at different times on the same day) both appear.
     const seen = new Map<string, Game>();
     for (const g of rows) {
-      const key = `${g.league}|${g.homeTeam}|${g.awayTeam}`;
+      const bucket = Math.round(new Date(g.gameTime).getTime() / (90 * 60 * 1000));
+      const key = `${g.league}|${g.homeTeam}|${g.awayTeam}|${bucket}`;
       if (!seen.has(key)) {
         seen.set(key, g);
       } else {
         const existing = seen.get(key)!;
-        // Prefer the game that already has picks or is live/finished over a plain upcoming dupe
         const existingIsActive = existing.status === "live" || existing.status === "finished";
         const newIsActive = g.status === "live" || g.status === "finished";
         if (newIsActive && !existingIsActive) seen.set(key, g);
@@ -270,6 +273,18 @@ export class DatabaseStorage implements IStorage {
 
   async getLeaderboard(period: string, limit = 50): Promise<(LeaderboardEntry & { user: User | null; mlbPicks?: number })[]> {
     const now = new Date();
+
+    // bfb_ytd is maintained by refreshBFBRecord() — read stored entries directly.
+    // Do NOT recompute from raw predictions (that would omit the pre-app historical seed).
+    if (period === "bfb_ytd") {
+      const allUsers = await db.select().from(users);
+      const userMap = new Map(allUsers.map((u) => [u.id, u]));
+      const stored = await db.select().from(leaderboardEntries)
+        .where(eq(leaderboardEntries.period, "bfb_ytd"))
+        .orderBy(sql`wins DESC`);
+      return stored.map(e => ({ ...e, user: userMap.get(e.userId) ?? null }));
+    }
+
     const periodStart = this.getPeriodStart(period);
 
     const allPreds = await db.select().from(predictions).where(sql`${predictions.createdAt} >= ${periodStart}`);
@@ -309,12 +324,7 @@ export class DatabaseStorage implements IStorage {
         for (const p of sorted) { if (p.result === "pending") continue; if (p.result === "win") streak++; else break; }
         return { userId, wins, losses, profit: Math.round(profit * 100) / 100, roi: Math.round(roi * 100) / 100, streak, total, mlbPicks, nbaPicks, nhlPicks };
       })
-      .sort((a, b) => {
-        if (period === "annual") return b.wins - a.wins || a.losses - b.losses;
-        const aWinRate = a.total > 0 ? a.wins / a.total : 0;
-        const bWinRate = b.total > 0 ? b.wins / b.total : 0;
-        return bWinRate - aWinRate || b.wins - a.wins;
-      })
+      .sort((a, b) => b.wins - a.wins || a.losses - b.losses)
       .slice(0, limit);
 
     return computed.map((e, i) => ({
@@ -846,10 +856,13 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getPrizePoolTotal(): Promise<number> {
+    // Simple sum — includes negative rows inserted automatically when payouts fire.
+    // Payout service inserts a -$N contribution row after each payout, so the
+    // display drops automatically with no manual intervention needed.
     const [result] = await db.select({
       total: sql<number>`COALESCE(SUM(${prizePoolContributions.amount}), 0)`,
     }).from(prizePoolContributions);
-    return Number(result?.total || 0);
+    return Math.max(0, Number(result?.total || 0));
   }
 
   async getPrizePoolTotalByPeriod(periodStart: Date): Promise<number> {
@@ -865,7 +878,7 @@ export class DatabaseStorage implements IStorage {
     const [result] = await db.select({
       total: sql<number>`COALESCE(SUM(${payouts.amount}), 0)`,
     }).from(payouts).where(
-      sql`${payouts.createdAt} >= ${periodStart}`
+      sql`${payouts.createdAt} >= ${periodStart} AND ${payouts.status} != 'reversed'`
     );
     return Number(result?.total || 0);
   }
@@ -960,12 +973,18 @@ export class DatabaseStorage implements IStorage {
     const [referral] = await db.insert(referrals).values({
       referrerId,
       referredId,
-      status: "active",
+      status: "pending",
       signupBonus: 0,
       predictionBonus: 0,
     }).returning();
 
     return referral;
+  }
+
+  async activateReferral(referredId: string): Promise<void> {
+    await db.update(referrals)
+      .set({ status: "active", completedAt: new Date() })
+      .where(eq(referrals.referredId, referredId));
   }
 
   async getReferralsByReferrer(referrerId: string): Promise<(Referral & { referred: User | null })[]> {
