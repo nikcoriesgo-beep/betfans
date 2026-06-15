@@ -8,6 +8,8 @@ const ESPN_ENDPOINTS: Record<string, string> = {
   NHL: "https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/scoreboard",
   MLS: "https://site.api.espn.com/apis/site/v2/sports/soccer/usa.1/scoreboard",
   NCAAB: "https://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard?groups=50",
+  NCAABB: "https://site.api.espn.com/apis/site/v2/sports/baseball/college-baseball/scoreboard",
+  FIFA_WC: "https://site.api.espn.com/apis/site/v2/sports/soccer/FIFA.WORLD/scoreboard",
 };
 
 interface ESPNEvent {
@@ -137,16 +139,21 @@ function gradePick(
 // Real Nikco account UUID — his BFB picks are tracked under this ID.
 const NIKCO_REAL_ID = 'aa5b3efa-fb3e-49b1-9f60-983bcec7d67a';
 
-// BFB seed: cumulative MLB record through May 22, 2026 (Nikco-confirmed 420-352 YTD).
-// All MLB picks Nikco submits from May 23 onwards are added on top of this baseline.
-const BFB_SEED_WINS = 420;
-const BFB_SEED_LOSSES = 352;
+// ── BFB permanent historical seed ────────────────────────────────────────────
+// Updated June 2 2026: YTD locked to 490-414 (all picks through June 1 inclusive).
+// Seed = YTD through end of June 7 PST (before June 8 games).
+// Cutoff = midnight PST June 8 (08:00 UTC) so ALL June 8+ game picks auto-add forever.
+// June 8 MLB games start at ~7 PM PT = 02:00 UTC June 9 which is >= cutoff, so they auto-add.
+const BFB_SEED_WINS   = 532;
+const BFB_SEED_LOSSES = 455;
+const BFB_CUTOFF      = new Date("2026-06-08T08:00:00Z"); // midnight PST June 8 — never needs changing
 
-// After grading an MLB game, update Nikco's bfb_ytd leaderboard entry.
-// Counts only his graded MLB picks with created_at >= 2026-05-23 (real in-app picks after May 22 seed).
-// and adds them to the historical seed record.
+// After grading an MLB game, recalculate Nikco's BFB YTD record fully automatically.
+// seed (fixed) + ALL graded in-app MLB picks since BFB_CUTOFF = live correct total.
+// Called every time any MLB pick is graded — no manual input ever needed.
 export async function refreshBFBRecord(): Promise<void> {
   try {
+    // Count every graded MLB pick Nikco has submitted in the app
     const result = await db.execute(
       sql`SELECT
         COUNT(*) FILTER (WHERE p.result = 'win')  AS wins,
@@ -156,16 +163,18 @@ export async function refreshBFBRecord(): Promise<void> {
       WHERE p.user_id = ${NIKCO_REAL_ID}
         AND g.league = 'MLB'
         AND p.result IN ('win', 'loss')
-        AND p.created_at >= '2026-05-21'`
+        AND p.created_at >= ${BFB_CUTOFF}`
     );
-    const row = (result as any).rows?.[0] ?? result[0] ?? {};
-    const newW = parseInt((row as any).wins  ?? "0", 10);
-    const newL = parseInt((row as any).losses ?? "0", 10);
-    const totalW = BFB_SEED_WINS  + newW;
-    const totalL = BFB_SEED_LOSSES + newL;
+    const row  = (result as any).rows?.[0] ?? result[0] ?? {};
+    const inAppW = parseInt((row as any).wins  ?? "0", 10);
+    const inAppL = parseInt((row as any).losses ?? "0", 10);
+
+    const totalW = BFB_SEED_WINS  + inAppW;
+    const totalL = BFB_SEED_LOSSES + inAppL;
     const total  = totalW + totalL;
     const roi    = total > 0 ? Math.round((totalW / total) * 1000) / 10 : 0;
 
+    // Upsert the bfb_ytd display record
     const [existing] = await db.select({ id: leaderboardEntries.id })
       .from(leaderboardEntries)
       .where(and(eq(leaderboardEntries.userId, NIKCO_REAL_ID), eq(leaderboardEntries.period, "bfb_ytd")))
@@ -182,7 +191,7 @@ export async function refreshBFBRecord(): Promise<void> {
         rank: 1, wins: totalW, losses: totalL, roi, profit: 45, streak: 5,
       });
     }
-    console.log(`[spider] BFB YTD updated: ${totalW}-${totalL} (${newW}+${newL} new real picks on top of ${BFB_SEED_WINS}-${BFB_SEED_LOSSES} seed)`);
+    console.log(`[spider] BFB YTD: ${totalW}-${totalL} (seed ${BFB_SEED_WINS}-${BFB_SEED_LOSSES} + ${inAppW}-${inAppL} in-app)`);
   } catch (e: any) {
     console.log(`[spider] refreshBFBRecord error:`, e.message);
   }
@@ -424,7 +433,7 @@ export async function gradeStuckGames(): Promise<number> {
   const cutoff = new Date(Date.now() - 2 * 60 * 60 * 1000);
   const oldCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const stuckUpcoming = await db.select().from(games)
-    .where(sql`${games.status} = 'upcoming' AND ${games.gameTime} < ${cutoff} AND ${games.gameTime} > ${oldCutoff} AND ${games.league} IN ('MLB','NBA','NHL','MLS','NCAAB','NCAABB')`);
+    .where(sql`${games.status} = 'upcoming' AND ${games.gameTime} < ${cutoff} AND ${games.gameTime} > ${oldCutoff} AND ${games.league} IN ('MLB','NBA','NHL','MLS','NCAAB','NCAABB','FIFA_WC')`);
 
   if (stuckUpcoming.length > 0) {
     console.log(`[spider] gradeStuckGames: found ${stuckUpcoming.length} upcoming game(s) past start time — fetching ESPN`);
@@ -441,7 +450,7 @@ export async function gradeStuckGames(): Promise<number> {
 
   // ── Pass 2: re-check ALL live games immediately ───────────────────────────
   const liveGames = await db.select().from(games)
-    .where(sql`${games.status} = 'live' AND ${games.league} IN ('MLB','NBA','NHL','MLS','NCAAB')`);
+    .where(sql`${games.status} = 'live' AND ${games.league} IN ('MLB','NBA','NHL','MLS','NCAAB','FIFA_WC')`);
 
   if (liveGames.length > 0) {
     console.log(`[spider] gradeStuckGames: re-checking ${liveGames.length} live game(s) for completion`);
@@ -531,7 +540,7 @@ export async function gradeStuckGames(): Promise<number> {
 
   // ── Pass 5: re-fetch finished games with 0-0 scores (bad/placeholder data) ──
   const zeroScoreFinished = await db.select().from(games)
-    .where(sql`${games.status} = 'finished' AND ${games.homeScore} = 0 AND ${games.awayScore} = 0 AND ${games.league} IN ('MLB','NBA','NHL','MLS','NCAAB') AND ${games.gameTime} > ${oldCutoff}`);
+    .where(sql`${games.status} = 'finished' AND ${games.homeScore} = 0 AND ${games.awayScore} = 0 AND ${games.league} IN ('MLB','NBA','NHL','MLS','NCAAB','NCAABB') AND ${games.gameTime} > ${oldCutoff}`);
 
   if (zeroScoreFinished.length > 0) {
     console.log(`[spider] gradeStuckGames: found ${zeroScoreFinished.length} finished game(s) with 0-0 score — re-fetching`);
@@ -612,7 +621,7 @@ export async function gradeStuckGames(): Promise<number> {
 async function gradeYesterdayGames(): Promise<void> {
   // Look back 3 days to catch postponed/rescheduled games that finally played
   // West coast games, doubleheaders, and weather postponements all handled
-  const activeLeagues = ["MLB", "NBA", "NHL", "MLS", "NCAAB"];
+  const activeLeagues = ["MLB", "NBA", "NHL", "MLS", "NCAAB", "NCAABB"];
   for (let daysBack = 1; daysBack <= 3; daysBack++) {
     const d = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
     const dateStr = getETDateStr(d);
@@ -653,12 +662,16 @@ export async function syncSportsData(): Promise<{ synced: number; leagues: strin
 
   const now = new Date();
   const month = now.getMonth() + 1;
+  const year = now.getFullYear();
   const seasonActive: Record<string, boolean> = {
     MLB: month >= 3 && month <= 10,
     NBA: month >= 10 || month <= 6,
     NHL: month >= 10 || month <= 6,
     MLS: month >= 2 && month <= 11,
     NCAAB: month >= 11 || month <= 4,
+    NCAABB: month >= 2 && month <= 7, // Feb–July covers regular season + tournament + CWS (June 12-22)
+    // FIFA World Cup 2026: June 11 – July 19
+    FIFA_WC: (year === 2026 && ((month === 6 && now.getDate() >= 11) || month === 7)),
   };
 
   let totalSynced = 0;
