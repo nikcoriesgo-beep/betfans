@@ -140,21 +140,24 @@ async function initStripe() {
   if (process.env.NODE_ENV === "production") {
     startMorningSweep();
 
-    // Auto-pay yesterday's winners on every server start (non-blocking).
-    // The payout service skips if already paid correctly; corrects if only 1 winner
-    // was paid when multiple tied (migration already cleared those records above).
+    // On boot, run yesterday's payout if it hasn't been processed yet.
+    // Handles the case where the server restarted after midnight PST and the sweep timer reset.
+    // The dedup check in processPayoutForPeriod prevents any double-payout.
     setTimeout(async () => {
       try {
         const { processPayoutForPeriod, getPayoutSchedule } = await import("./payoutService");
         const schedule = getPayoutSchedule(new Date());
         for (const item of schedule) {
-          const result = await processPayoutForPeriod(item.period, item.periodLabel, item.periodStart, item.periodEnd);
-          console.log(`[startup-payout] ${item.period} ${item.periodLabel}: ${result.detail}`);
+          const result = await processPayoutForPeriod(
+            item.period, item.periodLabel, item.periodStart, item.periodEnd,
+            (msg: string) => console.log(`[startup-payout] ${msg}`)
+          );
+          console.log(`[startup-payout] ${item.period} (${item.periodLabel}): ${result.detail}`);
         }
       } catch (e: any) {
         console.error("[startup-payout] Error:", e.message);
       }
-    }, 15_000); // 15s delay — let sports data sync first
+    }, 45_000); // 45s after boot — lets sports sync and grading finish first
   }
 
   // Keep the production service alive — ping every 4 minutes in all environments
