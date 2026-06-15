@@ -66,7 +66,7 @@ async function sendNtfyAlert(result: CheckResult): Promise<void> {
 
 async function runSweep() {
   log("============================================");
-  log("DAILY 5AM PST SWEEP — STARTING");
+  log("DAILY MIDNIGHT PST SWEEP — STARTING");
   log("============================================");
 
   const checks: Record<string, { ok: boolean; detail: string }> = {};
@@ -282,9 +282,28 @@ async function runSweep() {
         if (!sub) { continue; } // timeout — skip, don't downgrade on a timeout
         const status: string = (sub.status || "").toUpperCase();
         if (status === "ACTIVE" || status === "APPROVED") {
-          // Payment is current — clear any prior cancellation date
-          if (user.subscriptionCancelledAt) {
-            await storage.updateUser(user.id, { subscriptionCancelledAt: null });
+          // Payment is current — sync tier from plan + update subscriptionPaidUntil from
+          // PayPal's actual next billing date. This also RESTORES members who were wrongly
+          // downgraded to free while their PayPal subscription is still active.
+          const nextBillingRaw: string | undefined = sub.billing_info?.next_billing_time;
+          const paidUntil = nextBillingRaw
+            ? new Date(new Date(nextBillingRaw).getTime() + 3 * 24 * 60 * 60 * 1000) // +3 day buffer
+            : new Date(Date.now() + 35 * 24 * 60 * 60 * 1000); // fallback: 35 days from now
+
+          // Determine correct tier from plan ID
+          const { tierFromPlanId } = await import("./paypalService");
+          const correctTier = tierFromPlanId(sub.plan_id) ?? user.membershipTier ?? "rookie";
+
+          const wasDowngraded = user.membershipTier === "free";
+          await db.execute(sql`
+            UPDATE users
+            SET membership_tier = ${correctTier},
+                subscription_paid_until = ${paidUntil},
+                subscription_cancelled_at = NULL
+            WHERE id = ${user.id}
+          `);
+          if (wasDowngraded) {
+            log(`✅ Restored ${user.id} (${user.firstName}) from free → ${correctTier} — PayPal subscription ACTIVE, paidUntil ${paidUntil.toISOString().slice(0,10)}`);
           }
           confirmed++;
         } else {
@@ -348,6 +367,70 @@ async function runSweep() {
     log(`✗ PayPal audit: ${e.message}`);
   }
 
+  // ── 10. Manual-pay member lapse enforcement ───────────────────────────────
+  // Members who pay outside the PayPal subscription system (bank transfer, PayPal.me, etc.)
+  // have no automatic renewal. We track their expiry via subscription_paid_until.
+  // If that date has passed AND they have no active PayPal subscription ID, downgrade them.
+  // Founders (NIKCOX, DAMON822) are permanently exempt.
+  try {
+    const { db: mcDb } = await import("./db");
+    const { sql: mcSql } = await import("drizzle-orm");
+    const lapsedManual = await mcDb.execute(mcSql`
+      SELECT id, first_name, last_name, membership_tier, subscription_paid_until, referral_code
+      FROM users
+      WHERE membership_tier NOT IN ('free')
+        AND (paypal_subscription_id IS NULL OR paypal_subscription_id = '')
+        AND referral_code NOT IN ('NIKCOX', 'DAMON822')
+        AND (
+          subscription_paid_until IS NULL
+          OR subscription_paid_until < NOW()
+        )
+    `);
+    const rows = (lapsedManual as any).rows ?? (lapsedManual as any) ?? [];
+    let manualLapsed = 0;
+    for (const row of rows) {
+      await mcDb.execute(mcSql`
+        UPDATE users
+        SET membership_tier = 'free',
+            subscription_cancelled_at = NOW()
+        WHERE id = ${row.id}
+      `);
+      log(`⚠ Manual-pay lapse: ${row.first_name} ${row.last_name} (${row.membership_tier}) — subscription_paid_until=${row.subscription_paid_until ?? 'never set'} → downgraded to free`);
+      manualLapsed++;
+
+      // Auto-send a PayPal invoice so they can pay and restore access immediately
+      try {
+        const { createAndSendPayPalInvoice } = await import("./paypalService");
+        const emailRow = await mcDb.execute(mcSql`SELECT email FROM users WHERE id = ${row.id} LIMIT 1`);
+        const emailRows = (emailRow as any).rows ?? (emailRow as any) ?? [];
+        const email: string | null = emailRows[0]?.email ?? null;
+        if (email) {
+          const inv = await createAndSendPayPalInvoice({
+            recipientEmail: email,
+            recipientName: `${row.first_name ?? ""} ${row.last_name ?? ""}`.trim() || undefined,
+            tier: row.membership_tier,
+            userId: row.id,
+          });
+          log(`📧 Invoice sent to ${email} — ${inv.invoiceId} — ${inv.invoiceUrl}`);
+        } else {
+          log(`⚠ No email for ${row.id} — cannot send invoice`);
+        }
+      } catch (invErr: any) {
+        log(`✗ Invoice send failed for ${row.id}: ${invErr.message}`);
+      }
+    }
+    checks.manualPayLapse = {
+      ok: true,
+      detail: manualLapsed > 0
+        ? `${manualLapsed} manual-pay member(s) downgraded (payment overdue)`
+        : "All manual-pay members current",
+    };
+    log(`${manualLapsed > 0 ? "⚠" : "✓"} Manual-pay lapse: ${checks.manualPayLapse.detail}`);
+  } catch (e: any) {
+    checks.manualPayLapse = { ok: false, detail: e.message };
+    log(`✗ Manual-pay lapse check: ${e.message}`);
+  }
+
   // ── Tally results ─────────────────────────────────────────────────────────
   const total = Object.keys(checks).length;
   const passed = Object.values(checks).filter((c) => c.ok).length;
@@ -374,7 +457,7 @@ async function runSweep() {
   await sendNtfyAlert(lastCheckResult);
 }
 
-function msUntilNext5amPST(): number {
+function msUntilNextMidnightPST(): number {
   const now = new Date();
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: "America/Los_Angeles",
@@ -388,28 +471,99 @@ function msUntilNext5amPST(): number {
   const second = get("second");
 
   const currentSecondsPastMidnight = hour * 3600 + minute * 60 + second;
-  const target = 5 * 3600;
 
-  const waitSeconds =
-    currentSecondsPastMidnight < target
-      ? target - currentSecondsPastMidnight
-      : 86400 - currentSecondsPastMidnight + target;
+  // Always wait until the next midnight (00:00:00 PT)
+  const waitSeconds = 86400 - currentSecondsPastMidnight;
 
   return waitSeconds * 1000;
 }
 
 function scheduleNextSweep() {
-  const ms = msUntilNext5amPST();
+  const ms = msUntilNextMidnightPST();
   const hrs = (ms / 1000 / 60 / 60).toFixed(1);
-  log(`Next sweep scheduled in ${hrs}h (at 5:00 AM PST)`);
+  log(`Next sweep scheduled in ${hrs}h (at midnight PST)`);
   setTimeout(async () => {
     await runSweep();
     scheduleNextSweep();
   }, ms);
 }
 
+/** Returns ms until the next 1:00 AM PST. Used for the payout retry sweep. */
+function msUntil1amPST(): number {
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Los_Angeles",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+    hour12: false,
+  }).formatToParts(now);
+  const get = (t: string) => parseInt(parts.find((p) => p.type === t)!.value);
+  const hour = get("hour");
+  const minute = get("minute");
+  const second = get("second");
+  const currentSeconds = hour * 3600 + minute * 60 + second;
+  const targetSeconds = 1 * 3600; // 1:00:00 AM
+  const waitSeconds = currentSeconds < targetSeconds
+    ? targetSeconds - currentSeconds               // later tonight
+    : 86400 - currentSeconds + targetSeconds;      // tomorrow night
+  return waitSeconds * 1000;
+}
+
+/** Runs only the payout portion of the sweep — safe to call multiple times (dedup prevents double-pay). */
+async function runPayoutRetry() {
+  log("=== PAYOUT RETRY (1 AM PST) ===");
+  try {
+    // Grade any remaining stuck picks first
+    const graded = await gradeStuckGames().catch(() => 0);
+    log(`Payout retry — pre-grade: ${graded} picks graded`);
+
+    const schedule = getPayoutSchedule(new Date());
+    for (const item of schedule) {
+      try {
+        const result = await processPayoutForPeriod(
+          item.period, item.periodLabel, item.periodStart, item.periodEnd, log
+        );
+        log(`Payout retry ${item.period} (${item.periodLabel}): ${result.detail}`);
+      } catch (e: any) {
+        log(`Payout retry ${item.period} ERROR: ${e.message}`);
+      }
+    }
+  } catch (e: any) {
+    log(`Payout retry failed: ${e.message}`);
+  }
+}
+
+function schedulePayoutRetry() {
+  const ms = msUntil1amPST();
+  const hrs = (ms / 1000 / 60 / 60).toFixed(1);
+  log(`Payout retry scheduled in ${hrs}h (at 1 AM PST)`);
+  setTimeout(async () => {
+    await runPayoutRetry();
+    schedulePayoutRetry(); // schedule the next day's retry
+  }, ms);
+}
+
+// Track the last time we ran the sweep so catch-up logic can check it
+let lastSweepRanAt: Date | null = null;
+
 export function startMorningSweep() {
   log("Morning sweep scheduler started");
+
+  // Catch-up: run once shortly after startup so missed midnight sweeps are recovered.
+  // Wait 45 seconds for DB connections to settle, then run if it's past 1 AM PDT (08:00 UTC).
+  setTimeout(async () => {
+    const utcHour = new Date().getUTCHours();
+    // Only run catch-up between 08:00–20:00 UTC (1 AM–1 PM PDT) so we don't double-fire
+    // near midnight and we only run when yesterday's games are definitely finished.
+    if (utcHour >= 8 && utcHour < 20) {
+      log("Startup catch-up sweep — running now to recover any missed midnight jobs");
+      await runSweep().catch((e: any) => log(`Catch-up sweep error: ${e.message}`));
+      lastSweepRanAt = new Date();
+    } else {
+      log(`Startup catch-up skipped (UTC hour ${utcHour} outside 08–20 window)`);
+    }
+  }, 45_000);
+
   scheduleNextSweep();
+  schedulePayoutRetry(); // second daily payout check at 10 AM PST
 }
 
