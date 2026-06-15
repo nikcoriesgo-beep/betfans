@@ -26,6 +26,7 @@ import ResidualIncome from "@/pages/residual-income";
 import HowToPlay from "@/pages/how-to-play";
 import OfficialRules from "@/pages/official-rules";
 import Auth from "@/pages/auth";
+import WorldCup from "@/pages/world-cup";
 import { PhoneConsentModal } from "@/components/PhoneConsentModal";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
@@ -36,6 +37,22 @@ const PAID_TIERS = ["rookie", "pro", "legend"];
 const BUILD_KEY = "bf_build_id";
 
 function PaymentGate({ children }: { children: ReactNode }) {
+  const { user, isLoading } = useAuth();
+  const [location, setLocation] = useLocation();
+
+  useEffect(() => {
+    if (isLoading || !user) return;
+    const tier = (user as any).membershipTier || "";
+    const refCode = (user as any).referralCode || "";
+    const isPaid = PAID_TIERS.includes(tier);
+    const isFounder = FOUNDER_CODES.includes(refCode);
+    if (isPaid || isFounder) return;
+    // Free / unpaid — redirect to membership except on open pages
+    const openPaths = ["/", "/auth", "/membership", "/how-to-play", "/official-rules", "/merch"];
+    const isOpen = openPaths.some(p => location === p || location.startsWith(p + "?") || location.startsWith(p + "/"));
+    if (!isOpen) setLocation("/membership");
+  }, [user, isLoading, location]);
+
   return <>{children}</>;
 }
 
@@ -65,6 +82,7 @@ function Router() {
       <Route path="/official-rules" component={OfficialRules} />
       <Route path="/advertising" component={Advertising} />
       <Route path="/game/:id" component={GameDetail} />
+      <Route path="/world-cup" component={WorldCup} />
       <Route component={NotFound} />
     </Switch>
     </PaymentGate>
