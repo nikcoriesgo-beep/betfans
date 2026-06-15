@@ -18,6 +18,12 @@ import path from "path";
 import fs from "fs";
 
 const uploadsDir = path.join(process.cwd(), "uploads");
+
+// ── Suspended accounts — blocked from submitting picks and re-subscribing ──
+// Add user IDs here to permanently lock an account without deleting it.
+const SUSPENDED_USERS = new Set<string>([
+  "550e8400-e29b-41d4-a716-446655440003", // Ian — unauthorized Legend access
+]);
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
 const upload = multer({
@@ -147,7 +153,9 @@ export async function registerRoutes(
       // Find founder by referralCode so any account with NIKCOX code is recognised
       const [founderRow] = await db.select().from(users).where(eq(users.referralCode, "NIKCOX")).limit(1);
       const founder = founderRow || null;
-      const callerIsFounder = !!founder && callerId === founder.id;
+      // Both the canonical Nikco UUID and the legacy seed UUID are recognised as founder
+      const FOUNDER_UUIDS = new Set(["aa5b3efa-fb3e-49b1-9f60-983bcec7d67a", "29b670b7-5296-44dc-a0a0-aec0d878ef9b"]);
+      const callerIsFounder = !!callerId && (FOUNDER_UUIDS.has(callerId) || (!!founder && callerId === founder.id));
 
       // ET date — Intl is immune to Replit's dev-server frozen clock
       const etParts = new Intl.DateTimeFormat("en-US", {
@@ -208,46 +216,31 @@ export async function registerRoutes(
       // --- MLB Stats API for pitcher names ---
       const mlbApiGames = await fetchMLBSchedule(dateStr);
 
-      // --- Founder BFB YTD stats — stored in leaderboard_entries with period = "bfb_ytd" ---
-      // This entry is the ONLY source of truth. Never override it from code — only update via
-      // /api/internal/add-bfb-results (called daily after MLB games finish).
-      // Seed value: 262 W / 214 L as of end of April 30, 2026.
-      const BFB_SEED_WINS = 365, BFB_SEED_LOSSES = 312;
-      let stats = { wins: BFB_SEED_WINS, losses: BFB_SEED_LOSSES, profit: 45, roi: 0, streak: 5, totalPicks: BFB_SEED_WINS + BFB_SEED_LOSSES };
+      // --- Founder BFB YTD stats — auto-computed by refreshBFBRecord() after each grading run ---
+      // Fixed permanent seed (269W-222L, pre-app picks) + all in-app graded MLB picks = live total.
+      // refreshBFBRecord() writes to leaderboard_entries with period = "bfb_ytd" every grading cycle.
+      let stats = { wins: 434, losses: 380, profit: 45, roi: 0, streak: 5, totalPicks: 814 };
       stats.roi = Math.round((stats.wins / stats.totalPicks) * 1000) / 10;
       if (founder) {
         try {
-          const [lbEntry] = await db
+          // Always refresh from graded picks so the record stays current without manual updates
+          await refreshBFBRecord();
+          const [entry] = await db
             .select()
             .from(leaderboardEntries)
             .where(and(eq(leaderboardEntries.userId, founder.id), eq(leaderboardEntries.period, "bfb_ytd")))
             .limit(1);
-          if (lbEntry) {
-            // Trust the DB record completely — it is maintained by /api/internal/add-bfb-results
-            const w = lbEntry.wins ?? BFB_SEED_WINS;
-            const l = lbEntry.losses ?? BFB_SEED_LOSSES;
+          if (entry) {
+            const w = entry.wins ?? stats.wins;
+            const l = entry.losses ?? stats.losses;
             const total = w + l;
             stats = {
               wins: w, losses: l,
-              profit: lbEntry.profit ?? 45,
+              profit: entry.profit ?? 45,
               roi: total > 0 ? Math.round((w / total) * 1000) / 10 : 0,
-              streak: lbEntry.streak ?? 5,
+              streak: entry.streak ?? 5,
               totalPicks: total,
             };
-          } else {
-            // First-time seed: insert bfb_ytd entry with current known record
-            await db.insert(leaderboardEntries).values({
-              userId: founder.id,
-              period: "bfb_ytd",
-              periodStart: new Date("2026-01-01T00:00:00Z"),
-              rank: 1,
-              wins: BFB_SEED_WINS,
-              losses: BFB_SEED_LOSSES,
-              roi: Math.round((BFB_SEED_WINS / (BFB_SEED_WINS + BFB_SEED_LOSSES)) * 1000) / 10,
-              profit: 45,
-              streak: 5,
-            });
-            console.log("[BFB] Seeded bfb_ytd record:", BFB_SEED_WINS, "-", BFB_SEED_LOSSES);
           }
         } catch (e) {
           console.error("BB stats error, using fallback:", e);
@@ -317,7 +310,8 @@ export async function registerRoutes(
       console.log(`[BFB pick] userId from session: ${userId}`);
       const [me] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
       console.log(`[BFB pick] user found: ${me?.id}, referralCode: ${me?.referralCode}`);
-      if (!me || me.referralCode !== "NIKCOX") {
+      const BFB_FOUNDER_UUIDS = new Set(["aa5b3efa-fb3e-49b1-9f60-983bcec7d67a", "29b670b7-5296-44dc-a0a0-aec0d878ef9b"]);
+      if (!me || (me.referralCode !== "NIKCOX" && !BFB_FOUNDER_UUIDS.has(me.id))) {
         console.log(`[BFB pick] BLOCKED — user ${userId} is not founder`);
         return res.status(403).json({ message: "Only the Founder can post picks here" });
       }
@@ -347,6 +341,14 @@ export async function registerRoutes(
       console.log(`[BFB pick] game found: ${game?.id}, league: ${game?.league}`);
       if (!game || game.league !== "MLB") {
         return res.status(404).json({ message: "MLB game not found" });
+      }
+
+      // Block picks after game has started
+      const nowBfb = new Date();
+      const gameStartedBfb = game.gameTime && new Date(game.gameTime) <= nowBfb;
+      const gameLockedBfb = gameStartedBfb || game.status === "live" || game.status === "finished";
+      if (gameLockedBfb) {
+        return res.status(422).json({ message: "This game has already started — picks are locked." });
       }
 
       // Prevent duplicate picks for the same game today
@@ -456,6 +458,17 @@ export async function registerRoutes(
     try {
       const userId = (req.session as any)?.userId;
 
+      // Block suspended accounts
+      if (SUSPENDED_USERS.has(userId)) {
+        return res.status(403).json({ message: "Your account has been suspended. Contact support at nikcox@betfans.us." });
+      }
+
+      // Block free-tier (unpaid) accounts
+      const actingUser = await storage.getUser(userId);
+      if (!actingUser || actingUser.membershipTier === "free") {
+        return res.status(403).json({ message: "An active subscription is required to submit picks. Please visit the Membership page." });
+      }
+
       // Self-heal: if the submitted gameId no longer exists (e.g. cleaned up as a duplicate),
       // find the canonical game with the same matchup for today and redirect to it.
       let resolvedGameId: number = req.body.gameId;
@@ -521,8 +534,8 @@ export async function registerRoutes(
       const requestingUserId = (req.session as any)?.userId;
       const targetUserId = req.params.userId;
       const requestingUser = await storage.getUser(requestingUserId);
-      if (!requestingUser || requestingUser.membershipTier === "rookie" || requestingUser.membershipTier === "free") {
-        return res.status(403).json({ message: "Upgrade to Pro to view other members' daily picks" });
+      if (!requestingUser || requestingUser.membershipTier === "free") {
+        return res.status(403).json({ message: "Legend membership required to view other members' picks" });
       }
       const userPredictions = await storage.getUserPredictions(targetUserId);
       res.json(userPredictions);
@@ -592,7 +605,7 @@ export async function registerRoutes(
         const candidateGames = await db.select().from(games).where(
           sql`${games.gameTime} >= ${start} AND ${games.gameTime} < ${end}
               AND ${games.status} != 'postponed'
-              AND ${games.league} IN ('MLB','NBA','NHL')`
+              AND ${games.league} IN ('MLB','NBA','NHL','FIFA_WC','NCAABB')`
         );
 
         // Check if any of these games are finished (graded)
@@ -619,9 +632,11 @@ export async function registerRoutes(
         }
       }
 
-      const mlbMatchups = [...matchupGroups.entries()].filter(([k]) => k.startsWith("MLB|"));
-      const nbaMatchups = [...matchupGroups.entries()].filter(([k]) => k.startsWith("NBA|"));
-      const nhlMatchups = [...matchupGroups.entries()].filter(([k]) => k.startsWith("NHL|"));
+      const mlbMatchups    = [...matchupGroups.entries()].filter(([k]) => k.startsWith("MLB|"));
+      const nbaMatchups    = [...matchupGroups.entries()].filter(([k]) => k.startsWith("NBA|"));
+      const nhlMatchups    = [...matchupGroups.entries()].filter(([k]) => k.startsWith("NHL|"));
+      const wcMatchups     = [...matchupGroups.entries()].filter(([k]) => k.startsWith("FIFA_WC|"));
+      const ncaabbMatchups = [...matchupGroups.entries()].filter(([k]) => k.startsWith("NCAABB|"));
 
       const allDayIds = dayGamesRaw.map(g => g.id);
 
@@ -632,7 +647,7 @@ export async function registerRoutes(
 
       // Fetch all paid members
       const allUsers = await db.select().from(users).where(
-        sql`${users.membershipTier} IN ('rookie', 'pro', 'legend')`
+        sql`${users.membershipTier} IN ('rookie', 'pro', 'legend', 'corporate', 'premium_corporate')`
       );
 
       const memberRows = allUsers.map(u => {
@@ -643,39 +658,61 @@ export async function registerRoutes(
             const sp = myPreds.filter(p => group.allIds.has(p.gameId));
             if (sp.length > 0) {
               picks++;
-              // Count exactly 1 result per GAME — a game is a win, loss, or pending.
-              // If a member made multiple picks on one game, take the majority result.
               const gWins    = sp.filter(p => p.result === "win").length;
               const gLosses  = sp.filter(p => p.result === "loss").length;
               const gPending = sp.filter(p => p.result === "pending").length;
               if (gWins > gLosses)           wins++;
               else if (gLosses > gWins)      losses++;
               else if (gPending > 0)         pending++;
-              else if (gWins > 0)            wins++;   // tie → win
+              else if (gWins > 0)            wins++;
             }
           }
           return { picks, wins, losses, pending };
         };
-        const mlb = forSport(mlbMatchups);
-        const nba = forSport(nbaMatchups);
-        const nhl = forSport(nhlMatchups);
+        const mlb    = forSport(mlbMatchups);
+        const nba    = forSport(nbaMatchups);
+        const nhl    = forSport(nhlMatchups);
+        const wc     = forSport(wcMatchups);
+        const ncaabb = forSport(ncaabbMatchups);
         const total = {
-          picks:   mlb.picks   + nba.picks   + nhl.picks,
-          wins:    mlb.wins    + nba.wins    + nhl.wins,
-          losses:  mlb.losses  + nba.losses  + nhl.losses,
-          pending: mlb.pending + nba.pending + nhl.pending,
+          picks:   mlb.picks   + nba.picks   + nhl.picks   + wc.picks   + ncaabb.picks,
+          wins:    mlb.wins    + nba.wins    + nhl.wins    + wc.wins    + ncaabb.wins,
+          losses:  mlb.losses  + nba.losses  + nhl.losses  + wc.losses  + ncaabb.losses,
+          pending: mlb.pending + nba.pending + nhl.pending + wc.pending + ncaabb.pending,
         };
+        // Only MLB + NHL/NBA required for prize pool qualification.
+        // FIFA_WC and NCAABB are skill-play bonus sports — picks count toward wins/ranking
+        // but NOT required to qualify (matching payoutService.ts logic exactly).
         const qualified =
           mlb.picks >= mlbMatchups.length &&
           (nbaMatchups.length === 0 || nba.picks >= nbaMatchups.length) &&
           (nhlMatchups.length === 0 || nhl.picks >= nhlMatchups.length);
+
+        // Pick submission timestamps in PST
+        const pickTimes = myPreds
+          .map(p => p.createdAt ? new Date(p.createdAt).getTime() : null)
+          .filter((t): t is number => t !== null);
+        const fmtPickTime = (ms: number) =>
+          new Intl.DateTimeFormat("en-US", {
+            timeZone: "America/Los_Angeles",
+            hour: "numeric",
+            minute: "2-digit",
+            second: "2-digit",
+            hour12: true,
+          }).format(new Date(ms))
+            .replace(/\s?[AP]M/i, m => m.trim().toLowerCase())
+            + " PST";
+        const firstPickAt = pickTimes.length > 0 ? fmtPickTime(Math.min(...pickTimes)) : null;
+        const lastPickAt  = pickTimes.length > 0 ? fmtPickTime(Math.max(...pickTimes)) : null;
 
         return {
           userId: u.id,
           name:   [u.firstName, u.lastName].filter(Boolean).join(" ") || "Member",
           tier:   u.membershipTier,
           avatar: u.profileImageUrl || null,
-          mlb, nba, nhl, total, qualified,
+          mlb, nba, nhl, wc, ncaabb, total, qualified,
+          firstPickAt,
+          lastPickAt,
         };
       });
 
@@ -690,13 +727,49 @@ export async function registerRoutes(
 
       res.json({
         period: { start: periodStart, end: periodEnd, label: dateLabel },
-        games:  { mlb: mlbMatchups.length, nba: nbaMatchups.length, nhl: nhlMatchups.length, total: matchupGroups.size },
+        games:  { mlb: mlbMatchups.length, nba: nbaMatchups.length, nhl: nhlMatchups.length, wc: wcMatchups.length, ncaabb: ncaabbMatchups.length, total: matchupGroups.size },
         members: memberRows,
         winner: winner ? { userId: winner.userId, name: winner.name, wins: winner.total.wins, losses: winner.total.losses } : null,
       });
     } catch (e: any) {
       console.error("[daily-scorecard]", e);
       res.status(500).json({ message: "Failed to fetch scorecard" });
+    }
+  });
+
+  // ── FIFA World Cup 2026 Schedule ─────────────────────────────────────────────
+  app.get("/api/world-cup/schedule", async (req, res) => {
+    try {
+      const dateParam = req.query.date as string | undefined;
+      const url = dateParam
+        ? `https://site.api.espn.com/apis/site/v2/sports/soccer/FIFA.WORLD/scoreboard?dates=${dateParam}`
+        : `https://site.api.espn.com/apis/site/v2/sports/soccer/FIFA.WORLD/scoreboard`;
+      const data = await fetch(url).then(r => r.json());
+      const events = (data.events || []).map((e: any) => {
+        const comp = e.competitions?.[0];
+        const home = comp?.competitors?.find((c: any) => c.homeAway === "home");
+        const away = comp?.competitors?.find((c: any) => c.homeAway === "away");
+        return {
+          id: e.id,
+          name: e.name,
+          date: e.date,
+          status: e.status?.type?.state,
+          statusDetail: e.status?.type?.shortDetail || e.status?.type?.name,
+          homeTeam: home?.team?.displayName || "",
+          homeAbbr: home?.team?.abbreviation || "",
+          homeFlag: home?.team?.flag || home?.team?.logo || null,
+          homeScore: home?.score ?? null,
+          awayTeam: away?.team?.displayName || "",
+          awayAbbr: away?.team?.abbreviation || "",
+          awayFlag: away?.team?.flag || away?.team?.logo || null,
+          awayScore: away?.score ?? null,
+          venue: comp?.venue?.fullName || "",
+          group: comp?.notes?.[0]?.headline || e.season?.slug || "Group Stage",
+        };
+      });
+      res.json({ events, total: events.length });
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to fetch World Cup schedule" });
     }
   });
 
@@ -840,7 +913,10 @@ export async function registerRoutes(
       const isFounder = adminIds[0] === referrer.id;
       const tierToCheck = selectedTier || user?.membershipTier || "rookie";
       if (!isFounder && tierToCheck === "legend" && referrer.membershipTier !== "legend") {
-        return res.status(400).json({ message: "Only Legend members can refer Legend tier signups. Your referrer is a " + (referrer.membershipTier || "Rookie") + " member." });
+        return res.status(400).json({ message: "Only Legend members can refer new signups. Your referrer must be a Legend member." });
+      }
+      if (!isFounder && tierToCheck === "corporate" && !["legend", "corporate"].includes(referrer.membershipTier || "")) {
+        return res.status(400).json({ message: "Only Legend or Corporate members can refer Corporate Partners.", allowed: false });
       }
 
       await storage.createReferral(referrer.id, userId);
@@ -849,6 +925,32 @@ export async function registerRoutes(
       res.json({ message: "Affiliate code applied successfully!", referrerTier: referrer.membershipTier || "rookie" });
     } catch (error) {
       res.status(500).json({ message: "Failed to apply affiliate code" });
+    }
+  });
+
+  // GET /api/referral/validate?code=XYZ — public, live code lookup for signup form
+  app.get("/api/referral/validate", async (req, res) => {
+    try {
+      const code = ((req.query.code as string) || "").trim().toUpperCase();
+      if (!code) return res.json({ valid: false });
+
+      // NIKCOX is always the founder
+      if (code === "NIKCOX") {
+        const founder = await db.select().from(users).where(eq(users.referralCode, "NIKCOX")).limit(1);
+        const name = founder[0] ? `${founder[0].firstName || "Nikco"}`.trim() : "Nikco";
+        return res.json({ valid: true, referrerName: name + " (BetFans Founder)", tier: "founder" });
+      }
+
+      const referrer = await storage.getUserByReferralCode(code);
+      if (!referrer) return res.json({ valid: false, error: "Code not found" });
+
+      const firstName = referrer.firstName || "";
+      const lastName  = referrer.lastName  || "";
+      const name = `${firstName} ${lastName}`.trim() || "Member";
+      const tier = referrer.membershipTier || "rookie";
+      return res.json({ valid: true, referrerName: name, tier });
+    } catch {
+      res.json({ valid: false });
     }
   });
 
@@ -872,7 +974,7 @@ export async function registerRoutes(
 
       const referrerTier = referrer.membershipTier || "rookie";
       if (selectedTier === "legend" && referrerTier !== "legend") {
-        return res.json({ allowed: false, referrerTier, message: "Only Legend members can refer new Legend signups. Ask your referrer to upgrade, or choose Rookie or Pro." });
+        return res.json({ allowed: false, referrerTier, message: "Only Legend members can refer new signups. Ask your referrer to upgrade to Legend." });
       }
 
       return res.json({ allowed: true, referrerTier });
@@ -978,16 +1080,15 @@ export async function registerRoutes(
       const yearStart = new Date(now.getFullYear(), 0, 1);
       const epoch = new Date(0);
 
-      const [daily, yearContributions, dailyPaidThisYear, allTimePaid] = await Promise.all([
+      const [daily, yearContributions, dailyPaidThisYear] = await Promise.all([
         storage.getPrizePoolTotalByPeriod(dayStart),
         storage.getPrizePoolTotalByPeriod(yearStart),
         storage.getTotalPayoutsByPeriod(yearStart),
-        storage.getTotalPayoutsByPeriod(epoch),
       ]);
 
       const annualRemaining = Math.max(0, yearContributions - dailyPaidThisYear);
-      // Remaining pool = total contributions minus all payouts ever made
-      const remaining = Math.max(0, Math.floor(total - allTimePaid));
+      // Prize pool amount = total contributions (admin-controlled via set-prize-pool)
+      const remaining = Math.max(0, Math.floor(total));
 
       res.json({ amount: remaining, daily, weekly: 0, monthly: 0, annual: annualRemaining });
     } catch (error) {
@@ -1106,6 +1207,11 @@ export async function registerRoutes(
       const userId = (req.session as any)?.userId;
       if (!userId) return res.status(401).json({ message: "Not authenticated" });
 
+      // Suspended accounts cannot re-subscribe
+      if (SUSPENDED_USERS.has(userId)) {
+        return res.status(403).json({ message: "Your account has been suspended. Contact support at nikcox@betfans.us." });
+      }
+
       const { subscriptionId, tier, affiliateCode } = req.body;
       if (!subscriptionId || !tier) {
         return res.status(400).json({ message: "subscriptionId and tier required" });
@@ -1121,7 +1227,7 @@ export async function registerRoutes(
 
       // Determine tier from plan ID if not provided, or validate it
       const confirmedTier = tierFromPlanId(sub.plan_id) || tier;
-      const validTiers = ["rookie", "pro", "legend"];
+      const validTiers = ["rookie", "pro", "legend", "corporate", "premium_corporate"];
       if (!validTiers.includes(confirmedTier)) {
         return res.status(400).json({ message: "Invalid tier" });
       }
@@ -1131,12 +1237,43 @@ export async function registerRoutes(
         paypalSubscriptionId: subscriptionId,
       });
 
-      // Add 50% of subscription price to prize pool
-      const tierPrices: Record<string, number> = { rookie: 19, pro: 29, legend: 99 };
-      const prizeContribution = (tierPrices[confirmedTier] || 0) * 0.5;
+      // Activate referral now that payment is confirmed
+      await storage.activateReferral(userId).catch(() => {});
+
+      // Prize pool contribution — corporate: $600; premium_corporate: $6,000; others: 50% of price
+      const tierPrices: Record<string, number> = { rookie: 19, pro: 29, legend: 99, corporate: 1200, premium_corporate: 12000 };
+      const prizeContribution = confirmedTier === "premium_corporate" ? 6000 : confirmedTier === "corporate" ? 600 : (tierPrices[confirmedTier] || 0) * 0.5;
       if (prizeContribution > 0) {
         await storage.addPrizePoolContribution(prizeContribution, "paypal", subscriptionId, userId);
         console.log(`[PayPal] Prize pool +$${prizeContribution} for ${confirmedTier} (${subscriptionId})`);
+      }
+
+      // Auto-generate referral code for corporate partners
+      if (confirmedTier === "corporate" || confirmedTier === "premium_corporate") {
+        await storage.generateReferralCode(userId).catch(() => {});
+        console.log(`[PayPal] ${confirmedTier} partner ${userId} — referral code auto-generated`);
+      }
+
+      // Premium corporate: create placeholder advertiser record (admin activates after logo submission)
+      if (confirmedTier === "premium_corporate") {
+        try {
+          const partnerUser = await storage.getUser(userId);
+          const companyName = [partnerUser?.firstName, partnerUser?.lastName].filter(Boolean).join(" ") || "Premium Partner";
+          await storage.createAdvertiser({
+            companyName,
+            logoUrl: "pending",
+            tagline: "Premium BetFans Partner",
+            websiteUrl: null,
+            placement: "banner",
+            annualFee: 12000,
+            active: false,
+            startDate: new Date(),
+            endDate: new Date(Date.now() + 366 * 24 * 60 * 60 * 1000),
+          });
+          console.log(`[PayPal] Premium corporate advertiser placeholder created for ${userId}`);
+        } catch (e) {
+          console.error(`[PayPal] Failed to create advertiser for ${userId}:`, e);
+        }
       }
 
       // Apply affiliate code if provided and not already referred
@@ -1159,7 +1296,7 @@ export async function registerRoutes(
               await db.update(users).set({ referredBy: referrer.id }).where(eq(users.id, userId));
               // Instant signup bonus to referrer's wallet — tier-based
               // Rookie join: $5 instant | Pro join: $10 instant | Legend join: $50 instant
-              const signupBonus = confirmedTier === "legend" ? 50 : confirmedTier === "pro" ? 10 : 5;
+              const signupBonus = confirmedTier === "premium_corporate" ? 6000 : confirmedTier === "corporate" ? 600 : confirmedTier === "legend" ? 50 : confirmedTier === "pro" ? 10 : 5;
               const referrerBalance = parseFloat(referrer.walletBalance || "0");
               await storage.updateUser(referrer.id, { walletBalance: String(referrerBalance + signupBonus) });
               await storage.createTransaction({ userId: referrer.id, type: "referral_bonus", amount: signupBonus, description: `Signup bonus — ${upperCode} referred a ${confirmedTier} member`, status: "completed" });
@@ -1190,7 +1327,7 @@ export async function registerRoutes(
           const tier = tierFromPlanId(planId);
           if (tier) {
             const foundUser = await storage.getUserByPaypalSubscriptionId(subscriptionId);
-            if (foundUser) {
+            if (foundUser && !SUSPENDED_USERS.has(foundUser.id)) {
               // Extend subscription window by 32 days on every activation/renewal
               const paidUntil = new Date(Date.now() + 32 * 24 * 60 * 60 * 1000);
               await storage.updateUser(foundUser.id, {
@@ -1199,14 +1336,17 @@ export async function registerRoutes(
                 subscriptionCancelledAt: null,
               } as any);
               console.log(`[PayPal webhook] User ${foundUser.id} activated ${tier} — paid until ${paidUntil.toISOString()}`);
-              // Add prize pool + affiliate commission on monthly renewal
+              // Activate referral on first payment
+              await storage.activateReferral(foundUser.id).catch(() => {});
+              // Add prize pool + affiliate commission on renewal
               if (resourceType === "BILLING.SUBSCRIPTION.RENEWED") {
-                // Affiliate residual commissions per tier
-                const affiliateCommission: Record<string, number> = { rookie: 5, pro: 10, legend: 50 };
-                // Prize pool gets the remainder after affiliate commission
-                const tierPrices: Record<string, number> = { rookie: 19, pro: 29, legend: 99 };
+                // Corporate: $600 to prize pool, $600 to referrer (annual)
+                // Others: per-month affiliate commission, remainder to prize pool
+                const affiliateCommission: Record<string, number> = { rookie: 5, pro: 10, legend: 50, corporate: 600, premium_corporate: 6000 };
+                const tierPrices: Record<string, number> = { rookie: 19, pro: 29, legend: 99, corporate: 1200, premium_corporate: 12000 };
                 const commission = affiliateCommission[tier] || 0;
-                const prizeContribution = (tierPrices[tier] || 0) - commission;
+                const prizeContribution = tier === "premium_corporate" ? 6000 : tier === "corporate" ? 600 : (tierPrices[tier] || 0) - commission;
+                const renewalLabel = (tier === "corporate" || tier === "premium_corporate") ? "Annual renewal" : "Monthly residual";
 
                 // Pay affiliate commission to referrer
                 if (commission > 0 && foundUser.referredBy) {
@@ -1214,8 +1354,8 @@ export async function registerRoutes(
                   if (referrer) {
                     const refBalance = parseFloat((referrer as any).walletBalance || "0");
                     await storage.updateUser(referrer.id, { walletBalance: String(refBalance + commission) } as any);
-                    await storage.createTransaction({ userId: referrer.id, type: "referral_bonus", amount: commission, description: `Monthly residual — ${foundUser.firstName || foundUser.id} (${tier}) renewed`, status: "completed" });
-                    console.log(`[PayPal webhook] Affiliate $${commission} to ${referrer.id} for ${foundUser.id} renewal`);
+                    await storage.createTransaction({ userId: referrer.id, type: "referral_bonus", amount: commission, description: `${renewalLabel} — ${foundUser.firstName || foundUser.id} (${tier}) renewed`, status: "completed" });
+                    console.log(`[PayPal webhook] Affiliate $${commission} to ${referrer.id} for ${foundUser.id} ${tier} renewal`);
                   }
                 }
 
@@ -1809,20 +1949,7 @@ export async function registerRoutes(
     }
   });
 
-  // Internal: reset a user's password by phone (admin use only via internal secret)
-  app.post("/api/internal/reset-password", async (req, res) => {
-    try {
-      const { secret, phone, newPassword } = req.body;
-      if (secret !== "bf-internal-k9x2m7") return res.status(403).json({ error: "forbidden" });
-      if (!phone || !newPassword) return res.status(400).json({ error: "phone and newPassword required" });
-      const bcrypt = await import("bcryptjs");
-      const hash = await bcrypt.hash(newPassword, 10);
-      const result = await db.execute(sql`UPDATE users SET password_hash = ${hash} WHERE phone = ${phone}`);
-      res.json({ ok: true, phone, updated: (result as any).rowCount });
-    } catch (e: any) {
-      res.status(500).json({ error: e.message });
-    }
-  });
+  // Duplicate reset-password removed — canonical version is registered later in this file
 
   app.post("/api/internal/paypal-refund-payout", async (req, res) => {
     try {
@@ -2164,6 +2291,9 @@ export async function registerRoutes(
   // Adds the day's wins/losses to the running total and recalculates ROI.
   // Set BFB record to an ABSOLUTE value — no math needed, just the final numbers.
   // POST /api/internal/set-bfb-record  { secret, totalWins, totalLosses }
+  // Sets the BFB YTD display record AND writes it as the new seed with cutoff = NOW.
+  // refreshBFBRecord() will add only picks submitted after this moment, so the
+  // record auto-updates from real graded picks going forward with no manual intervention.
   app.post("/api/internal/set-bfb-record", async (req, res) => {
     try {
       const { secret, totalWins, totalLosses } = req.body;
@@ -2173,25 +2303,48 @@ export async function registerRoutes(
       if (isNaN(w) || isNaN(l) || w < 0 || l < 0) return res.status(400).json({ error: "totalWins and totalLosses must be non-negative integers" });
       const [nikcoRow] = await db.select().from(users).where(eq(users.referralCode, "NIKCOX")).limit(1);
       if (!nikcoRow) return res.status(404).json({ error: "Nikco account not found" });
+      const uid = nikcoRow.id;
       const total = w + l;
       const roi = total > 0 ? Math.round((w / total) * 1000) / 10 : 0;
+      const now = new Date();
+
+      // 1. Upsert bfb_ytd (what the page displays)
       const [existing] = await db.select({ id: leaderboardEntries.id })
         .from(leaderboardEntries)
-        .where(and(eq(leaderboardEntries.userId, nikcoRow.id), eq(leaderboardEntries.period, "bfb_ytd")))
+        .where(and(eq(leaderboardEntries.userId, uid), eq(leaderboardEntries.period, "bfb_ytd")))
         .limit(1);
       if (existing) {
         await db.update(leaderboardEntries)
-          .set({ wins: w, losses: l, roi, updatedAt: new Date() })
-          .where(and(eq(leaderboardEntries.userId, nikcoRow.id), eq(leaderboardEntries.period, "bfb_ytd")));
+          .set({ wins: w, losses: l, roi, updatedAt: now })
+          .where(and(eq(leaderboardEntries.userId, uid), eq(leaderboardEntries.period, "bfb_ytd")));
       } else {
         await db.insert(leaderboardEntries).values({
-          userId: nikcoRow.id, period: "bfb_ytd",
+          userId: uid, period: "bfb_ytd",
           periodStart: new Date("2026-01-01T00:00:00Z"),
           rank: 1, wins: w, losses: l, roi, profit: 45, streak: 5,
         });
       }
-      console.log(`[BFB] YTD set (absolute): ${w}-${l} (${roi}%)`);
-      return res.json({ ok: true, wins: w, losses: l, roi });
+
+      // 2. Upsert bfb_seed (used by refreshBFBRecord to add future graded picks).
+      //    periodStart = NOW so only MLB picks submitted after this moment are added.
+      const [seedExisting] = await db.select({ id: leaderboardEntries.id })
+        .from(leaderboardEntries)
+        .where(and(eq(leaderboardEntries.userId, uid), eq(leaderboardEntries.period, "bfb_seed")))
+        .limit(1);
+      if (seedExisting) {
+        await db.update(leaderboardEntries)
+          .set({ wins: w, losses: l, roi, periodStart: now, updatedAt: now })
+          .where(and(eq(leaderboardEntries.userId, uid), eq(leaderboardEntries.period, "bfb_seed")));
+      } else {
+        await db.insert(leaderboardEntries).values({
+          userId: uid, period: "bfb_seed",
+          periodStart: now,
+          rank: 1, wins: w, losses: l, roi, profit: 0, streak: 0,
+        });
+      }
+
+      console.log(`[BFB] seed+YTD set: ${w}-${l} (${roi}%) cutoff=${now.toISOString()}`);
+      return res.json({ ok: true, wins: w, losses: l, roi, seedCutoff: now.toISOString() });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -2295,6 +2448,27 @@ export async function registerRoutes(
     }
   });
 
+  // GET /api/internal/list-games?secret=&league=&q=
+  app.get("/api/internal/list-games", async (req, res) => {
+    try {
+      const { secret, league, q } = req.query as Record<string, string>;
+      if (secret !== "bf-internal-k9x2m7") return res.status(403).json({ error: "forbidden" });
+      let rows: any[];
+      if (q) {
+        rows = await db.execute(sql`
+          SELECT id, league, away_team, home_team, away_score, home_score, status, game_time
+          FROM games WHERE (away_team ILIKE ${'%'+q+'%'} OR home_team ILIKE ${'%'+q+'%'})
+          ORDER BY game_time DESC LIMIT 20`);
+      } else {
+        rows = await db.execute(sql`
+          SELECT id, league, away_team, home_team, away_score, home_score, status, game_time
+          FROM games ${league ? sql`WHERE league = ${league}` : sql``}
+          ORDER BY game_time DESC LIMIT 30`);
+      }
+      res.json((rows as any).rows ?? rows);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
   // POST /api/internal/fix-game-scores
   // Fix a game's stored scores (and re-grade all picks on it) when ESPN data was wrong.
   // Body: { secret, awayTeam?, homeTeam?, gameId?, date, awayScore, homeScore }
@@ -2305,10 +2479,22 @@ export async function registerRoutes(
       let matchingGames: any[] = [];
       if (gameId) {
         matchingGames = await db.select().from(games).where(eq(games.id, Number(gameId)));
-      } else {
-        const dateStr = date;
+      } else if (awayTeam && homeTeam && date) {
+        // Try exact first, then ILIKE
         matchingGames = await db.select().from(games)
-          .where(sql`away_team = ${awayTeam} AND home_team = ${homeTeam} AND DATE(game_time) = ${dateStr}::date`);
+          .where(sql`away_team = ${awayTeam} AND home_team = ${homeTeam} AND DATE(game_time) = ${date}::date`);
+        if (matchingGames.length === 0) {
+          const rows = await db.execute(sql`
+            SELECT * FROM games WHERE away_team ILIKE ${'%'+awayTeam+'%'} AND home_team ILIKE ${'%'+homeTeam+'%'}
+              AND DATE(game_time) = ${date}::date LIMIT 5`);
+          matchingGames = (rows as any).rows ?? [];
+        }
+      } else if (awayTeam && homeTeam) {
+        // No date — find most recent
+        const rows = await db.execute(sql`
+          SELECT * FROM games WHERE away_team ILIKE ${'%'+awayTeam+'%'} AND home_team ILIKE ${'%'+homeTeam+'%'}
+          ORDER BY game_time DESC LIMIT 5`);
+        matchingGames = (rows as any).rows ?? [];
       }
       if (matchingGames.length === 0) return res.status(404).json({ error: "game not found", awayTeam, homeTeam, date, gameId });
       let totalRegraded = 0;
@@ -2448,6 +2634,8 @@ export async function registerRoutes(
 
   // POST /api/internal/fix-prediction-result
   // Directly set a prediction result by prediction ID (e.g. fix a misgraded pick).
+  // Also corrects the underlying game's score direction so the auto-correct pass
+  // (Pass 6 in gradeStuckGames) does not revert the fix on its next run.
   // Body: { secret, predictionId, newResult }  newResult: "win"|"loss"|"void"|"pending"
   app.post("/api/internal/fix-prediction-result", async (req, res) => {
     try {
@@ -2456,9 +2644,51 @@ export async function registerRoutes(
       if (!predictionId || !newResult) return res.status(400).json({ error: "predictionId and newResult required" });
       const validResults = ["win", "loss", "void", "pending", "push"];
       if (!validResults.includes(newResult)) return res.status(400).json({ error: "invalid newResult" });
+
       const [before] = await db.select().from(predictions).where(eq(predictions.id, Number(predictionId))).limit(1);
       if (!before) return res.status(404).json({ error: "prediction not found" });
-      await db.update(predictions).set({ result: newResult }).where(eq(predictions.id, Number(predictionId)));
+
+      const payout = newResult === "win" ? 1 : newResult === "loss" ? -1 : newResult === "push" ? 0 : null;
+      await db.update(predictions)
+        .set({ result: newResult, ...(payout !== null ? { payout } : {}) })
+        .where(eq(predictions.id, Number(predictionId)));
+
+      // Correct the game's score direction so Pass 6 (auto-correct) produces the same result
+      // and never reverts this manual fix. We use a symbolic score (e.g. 110-105) that simply
+      // encodes the correct winner without claiming to be the exact final score.
+      if (newResult === "win" || newResult === "loss") {
+        const [game] = await db.select().from(games).where(eq(games.id, before.gameId)).limit(1);
+        if (game && game.status === "finished") {
+          const pick = before.pick.toLowerCase();
+          const homeWords = game.homeTeam.toLowerCase().split(" ").filter((w: string) => w.length > 2);
+          const awayWords = game.awayTeam.toLowerCase().split(" ").filter((w: string) => w.length > 2);
+          const uniqueHome = homeWords.filter((w: string) => !awayWords.includes(w));
+          const uniqueAway = awayWords.filter((w: string) => !homeWords.includes(w));
+          const effHome = uniqueHome.length > 0 ? uniqueHome : homeWords;
+          const effAway = uniqueAway.length > 0 ? uniqueAway : awayWords;
+          const pickHome = effHome.some((w: string) => pick.includes(w));
+          const pickAway = effAway.some((w: string) => pick.includes(w));
+
+          let correctHomeScore: number | null = null;
+          let correctAwayScore: number | null = null;
+
+          if (newResult === "win") {
+            if (pickHome) { correctHomeScore = 110; correctAwayScore = 105; }   // home team won
+            else if (pickAway) { correctHomeScore = 105; correctAwayScore = 110; } // away team won
+          } else if (newResult === "loss") {
+            if (pickHome) { correctHomeScore = 105; correctAwayScore = 110; }   // home team lost
+            else if (pickAway) { correctHomeScore = 110; correctAwayScore = 105; } // away team lost
+          }
+
+          if (correctHomeScore !== null && correctAwayScore !== null) {
+            await db.update(games)
+              .set({ homeScore: correctHomeScore, awayScore: correctAwayScore })
+              .where(eq(games.id, before.gameId));
+            console.log(`[fix-prediction-result] corrected game ${before.gameId} scores → ${correctHomeScore}-${correctAwayScore} (${game.awayTeam}@${game.homeTeam})`);
+          }
+        }
+      }
+
       await refreshBFBRecord().catch(() => {});
       const bfb = await db.select().from(leaderboardEntries)
         .where(and(eq(leaderboardEntries.userId, "aa5b3efa-fb3e-49b1-9f60-983bcec7d67a"), eq(leaderboardEntries.period, "bfb_ytd")))
@@ -2468,6 +2698,181 @@ export async function registerRoutes(
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
+  });
+
+  // GET /api/internal/search-users?secret=&q=  (search by username/phone)
+  // POST /api/internal/set-user-tier { secret, userId, tier }  (enable/disable a user)
+  app.get("/api/internal/search-users", async (req, res) => {
+    try {
+      const { secret, q } = req.query as Record<string, string>;
+      if (secret !== "bf-internal-k9x2m7") return res.status(403).json({ error: "forbidden" });
+      if (!q) return res.status(400).json({ error: "q required" });
+      const rows = await db.execute(sql`
+        SELECT id, first_name, last_name, phone, email, membership_tier, referral_code, created_at
+        FROM users
+        WHERE first_name ILIKE ${'%' + q + '%'}
+           OR last_name  ILIKE ${'%' + q + '%'}
+           OR phone      ILIKE ${'%' + q + '%'}
+           OR email      ILIKE ${'%' + q + '%'}
+           OR referral_code ILIKE ${'%' + q + '%'}
+        ORDER BY created_at DESC LIMIT 20`);
+      res.json((rows as any).rows ?? rows);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/internal/fix-referral { secret, referredId, status }
+  app.post("/api/internal/fix-referral", async (req, res) => {
+    try {
+      const { secret, referredId, status } = req.body;
+      if (secret !== "bf-internal-k9x2m7") return res.status(403).json({ error: "forbidden" });
+      if (!referredId || !["pending","active","cancelled"].includes(status)) {
+        return res.status(400).json({ error: "referredId and status (pending/active/cancelled) required" });
+      }
+      const result = await db.execute(sql`
+        UPDATE referrals SET status = ${status}, completed_at = ${status === "active" ? new Date() : null}
+        WHERE referred_id = ${referredId}
+        RETURNING id, referrer_id, referred_id, status`);
+      const rows = (result as any).rows ?? [];
+      console.log(`[admin] fix-referral: referredId=${referredId} → ${status} (${rows.length} row(s))`);
+      res.json({ ok: true, updated: rows });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/internal/add-prize-pool { secret, amount, note }
+  app.post("/api/internal/add-prize-pool", async (req, res) => {
+    try {
+      const { secret, amount, note } = req.body;
+      if (secret !== "bf-internal-k9x2m7") return res.status(403).json({ error: "forbidden" });
+      const amt = parseFloat(amount);
+      if (!amt || amt <= 0) return res.status(400).json({ error: "amount required" });
+      await storage.addPrizePoolContribution(amt, "manual", note || "manual", undefined);
+      const pool = await db.execute(sql`SELECT COALESCE(SUM(amount),0) as total FROM prize_pool_contributions`);
+      const total = parseFloat((pool as any).rows?.[0]?.total ?? 0);
+      console.log(`[admin] prize pool +$${amt} (${note}) → total $${total}`);
+      res.json({ ok: true, added: amt, total });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/internal/fix-prediction { secret, userId, pick, result, gameId? }
+  // Re-grade a specific prediction by matching userId + pick text, optionally reassign gameId
+  app.post("/api/internal/fix-prediction", async (req, res) => {
+    try {
+      const { secret, userId, pick, result, gameId } = req.body;
+      if (secret !== "bf-internal-k9x2m7") return res.status(403).json({ error: "forbidden" });
+      if (!userId || !pick || !["win","loss","pending"].includes(result)) {
+        return res.status(400).json({ error: "userId, pick, result required" });
+      }
+      let updated: any;
+      if (gameId) {
+        updated = await db.execute(sql`
+          UPDATE predictions SET result = ${result}, game_id = ${Number(gameId)}
+          WHERE user_id = ${userId} AND pick ILIKE ${'%' + pick + '%'}
+            AND created_at >= NOW() - INTERVAL '5 days'
+          RETURNING id, pick, result, game_id`);
+      } else {
+        updated = await db.execute(sql`
+          UPDATE predictions SET result = ${result}
+          WHERE user_id = ${userId} AND pick ILIKE ${'%' + pick + '%'}
+            AND created_at >= NOW() - INTERVAL '5 days'
+          RETURNING id, pick, result, game_id`);
+      }
+      const rows = (updated as any).rows ?? [];
+      await refreshBFBRecord().catch(() => {});
+      res.json({ ok: true, updated: rows });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  app.post("/api/internal/set-user-tier", async (req, res) => {
+    try {
+      const { secret, userId, tier } = req.body;
+      if (secret !== "bf-internal-k9x2m7") return res.status(403).json({ error: "forbidden" });
+      const validTiers = ["free", "rookie", "pro", "legend"];
+      if (!userId || !tier || !validTiers.includes(tier)) return res.status(400).json({ error: "userId and tier (free/rookie/pro/legend) required" });
+      const [before] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+      if (!before) return res.status(404).json({ error: "user not found" });
+      await db.execute(sql`UPDATE users SET membership_tier = ${tier} WHERE id = ${userId}`);
+      console.log(`[admin] set-user-tier: ${before.username} (${userId}) ${before.membershipTier} → ${tier}`);
+      res.json({ ok: true, userId, username: before.username, before: before.membershipTier, after: tier });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/internal/force-pick { secret, userId, gameId, pick, predictionType }
+  // Admin-only: submit a pick bypassing the game-time lock (for founder emergency use)
+  app.post("/api/internal/force-pick", async (req, res) => {
+    try {
+      const { secret, userId, gameId, pick, predictionType = "Moneyline" } = req.body;
+      if (secret !== "bf-internal-k9x2m7") return res.status(403).json({ error: "forbidden" });
+      if (!userId || !gameId || !pick) return res.status(400).json({ error: "userId, gameId, and pick required" });
+      const [existing] = await db.select({ id: predictions.id })
+        .from(predictions).where(and(eq(predictions.userId, userId), eq(predictions.gameId, gameId))).limit(1);
+      if (existing) {
+        await db.update(predictions).set({ pick, predictionType }).where(eq(predictions.id, existing.id));
+        return res.json({ ok: true, action: "updated", gameId, pick });
+      }
+      const [created] = await db.insert(predictions).values({ userId, gameId, pick, predictionType, units: 1, result: "pending" }).returning();
+      res.json({ ok: true, action: "inserted", id: created.id, gameId, pick });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/internal/update-user { secret, phone, firstName, lastName, createdAt, membershipTier }
+  app.post("/api/internal/update-user", async (req, res) => {
+    try {
+      const { secret, phone, firstName, lastName, createdAt, membershipTier } = req.body;
+      if (secret !== "bf-internal-k9x2m7") return res.status(403).json({ error: "forbidden" });
+      const cleanPhone = (phone || "").replace(/\D/g, "");
+      if (!cleanPhone) return res.status(400).json({ error: "phone required" });
+      let updated = 0;
+      if (firstName !== undefined) { const r = await db.execute(sql`UPDATE users SET first_name = ${firstName} WHERE phone = ${cleanPhone}`); updated += (r as any).rowCount ?? 0; }
+      if (lastName !== undefined)  { const r = await db.execute(sql`UPDATE users SET last_name = ${lastName} WHERE phone = ${cleanPhone}`); updated += (r as any).rowCount ?? 0; }
+      if (createdAt !== undefined) { const dt = new Date(createdAt); const r = await db.execute(sql`UPDATE users SET created_at = ${dt} WHERE phone = ${cleanPhone}`); updated += (r as any).rowCount ?? 0; }
+      if (membershipTier !== undefined) { const r = await db.execute(sql`UPDATE users SET membership_tier = ${membershipTier} WHERE phone = ${cleanPhone}`); updated += (r as any).rowCount ?? 0; }
+      res.json({ ok: true, phone: cleanPhone, updated });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/internal/find-user { secret, phone }
+  app.post("/api/internal/find-user", async (req, res) => {
+    try {
+      const { secret, phone } = req.body;
+      if (secret !== "bf-internal-k9x2m7") return res.status(403).json({ error: "forbidden" });
+      const cleanPhone = (phone || "").replace(/\D/g, "");
+      if (!cleanPhone) return res.status(400).json({ error: "phone required" });
+      const rows = await db.execute(sql`SELECT id, first_name, last_name, phone, membership_tier, referral_code, (password_hash IS NOT NULL) as has_password FROM users WHERE phone = ${cleanPhone} LIMIT 1`);
+      const user = (rows as any).rows?.[0] ?? null;
+      if (!user) return res.status(404).json({ found: false, phone: cleanPhone });
+      res.json({ found: true, id: user.id, name: `${user.first_name || ""} ${user.last_name || ""}`.trim(), phone: user.phone, tier: user.membership_tier, referralCode: user.referral_code, hasPassword: user.has_password });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/internal/reset-password { secret, phone, newPassword }
+  app.post("/api/internal/reset-password", async (req, res) => {
+    try {
+      const { secret, phone, newPassword } = req.body;
+      if (secret !== "bf-internal-k9x2m7") return res.status(403).json({ error: "forbidden" });
+      const cleanPhone = (phone || "").replace(/\D/g, "");
+      if (!cleanPhone || !newPassword) return res.status(400).json({ error: "phone and newPassword required" });
+      const bcryptMod = await import("bcryptjs");
+      const hash = await bcryptMod.default.hash(newPassword, 10);
+      const result = await db.execute(sql`UPDATE users SET password_hash = ${hash} WHERE phone = ${cleanPhone}`);
+      res.json({ ok: true, phone: cleanPhone, rowsAffected: (result as any).rowCount ?? "unknown" });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/internal/create-user { secret, phone, password, firstName, lastName, tier }
+  app.post("/api/internal/create-user", async (req, res) => {
+    try {
+      const { secret, phone, password, firstName, lastName, tier = "legend" } = req.body;
+      if (secret !== "bf-internal-k9x2m7") return res.status(403).json({ error: "forbidden" });
+      const cleanPhone = (phone || "").replace(/\D/g, "");
+      if (!cleanPhone || !password) return res.status(400).json({ error: "phone and password required" });
+      const bcryptMod = await import("bcryptjs");
+      const hash = await bcryptMod.default.hash(password, 10);
+      const { randomUUID } = await import("crypto");
+      const id = randomUUID();
+      const result = await db.execute(sql`INSERT INTO users (id, phone, password_hash, first_name, last_name, membership_tier) VALUES (${id}, ${cleanPhone}, ${hash}, ${firstName ?? null}, ${lastName ?? null}, ${tier}) RETURNING id, phone, membership_tier`);
+      const created = (result as any).rows?.[0];
+      res.json({ ok: true, created });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
   // GET /api/internal/user-predictions
@@ -2895,19 +3300,22 @@ export async function registerRoutes(
   });
 
   // POST /api/internal/set-prize-pool { secret, amount }
-  // Sets the migration_restore row to the given absolute balance (use after manual payouts)
+  // Adjusts the pool to an absolute balance by inserting a delta row — does NOT wipe history.
+  // Payout deduction rows are preserved so the auto-deduction cycle stays intact.
   app.post("/api/internal/set-prize-pool", async (req, res) => {
     try {
       const { secret, amount } = req.body;
       if (secret !== "bf-internal-k9x2m7") return res.status(403).json({ error: "forbidden" });
       const bal = parseFloat(amount);
       if (isNaN(bal)) return res.status(400).json({ error: "amount must be a number" });
-      // Delete all manual-adjust rows and update the seed row to the new total
-      await db.execute(sql`DELETE FROM prize_pool_contributions WHERE source = 'manual_adjust'`);
-      await db.execute(sql`UPDATE prize_pool_contributions SET amount = ${bal} WHERE source = 'migration_restore'`);
-      // Recalculate total for confirmation
+      // Compute current total without wiping history
+      const current = await db.execute(sql`SELECT COALESCE(SUM(amount::numeric),0) AS total FROM prize_pool_contributions`);
+      const currentTotal = Number((current as any).rows?.[0]?.total ?? 0);
+      const delta = bal - currentTotal;
+      // Insert a delta row so the net total equals the requested balance
+      await db.execute(sql`INSERT INTO prize_pool_contributions (user_id, amount, source, created_at) VALUES (NULL, ${delta}, 'admin_adjust', NOW())`);
       const check = await db.execute(sql`SELECT COALESCE(SUM(amount::numeric),0) AS total FROM prize_pool_contributions`);
-      res.json({ ok: true, newTotal: Number(check.rows[0]?.total ?? 0) });
+      res.json({ ok: true, previousTotal: currentTotal, delta, newTotal: Number((check as any).rows?.[0]?.total ?? 0) });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -3000,6 +3408,23 @@ export async function registerRoutes(
     try {
       const count = await storage.getPageViews("home");
       res.json({ count });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // POST /api/internal/set-counter { secret, key, value }
+  app.post("/api/internal/set-counter", async (req, res) => {
+    try {
+      const { secret, key, value } = req.body;
+      if (secret !== "bf-internal-k9x2m7") return res.status(403).json({ error: "forbidden" });
+      if (!key || value === undefined) return res.status(400).json({ error: "key and value required" });
+      await db.execute(sql`
+        INSERT INTO site_counters (key, value, updated_at)
+        VALUES (${key}, ${Number(value)}, NOW())
+        ON CONFLICT (key) DO UPDATE SET value = ${Number(value)}, updated_at = NOW()
+      `);
+      res.json({ ok: true, key, value: Number(value) });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
