@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Zap, Clock, Loader2, CheckCircle2, XCircle, Lock,
-  CircleDot, Calendar, Send, Trophy
+  CircleDot, Calendar, Send, Trophy, Sparkles
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -15,14 +15,16 @@ import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
-const LEAGUES = ["All", "MLB", "NHL", "NBA", "MLS", "NCAAB"];
+const LEAGUES = ["All", "MLB", "NHL", "NBA", "FIFA_WC", "MLS", "NCAAB", "NCAABB"];
 
 const LEAGUE_COLORS: Record<string, string> = {
   MLB: "bg-red-500/20 text-red-400 border-red-500/30",
   NHL: "bg-blue-500/20 text-blue-400 border-blue-500/30",
   NBA: "bg-orange-500/20 text-orange-400 border-orange-500/30",
+  FIFA_WC: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
   MLS: "bg-sky-500/20 text-sky-400 border-sky-500/30",
   NCAAB: "bg-purple-500/20 text-purple-400 border-purple-500/30",
+  NCAABB: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
 };
 
 const LEAGUE_ICON: Record<string, string> = {
@@ -30,8 +32,10 @@ const LEAGUE_ICON: Record<string, string> = {
   MLB: "⚾",
   NHL: "🏒",
   NBA: "🏀",
+  FIFA_WC: "🌍",
   MLS: "⚽",
   NCAAB: "🎓",
+  NCAABB: "⚾",
 };
 
 const LEAGUE_LABEL: Record<string, string> = {
@@ -39,8 +43,10 @@ const LEAGUE_LABEL: Record<string, string> = {
   MLB: "Baseball",
   NHL: "Hockey",
   NBA: "Basketball",
+  FIFA_WC: "World Cup",
   MLS: "Soccer",
   NCAAB: "College BB",
+  NCAABB: "College Baseball",
 };
 
 const LEAGUE_ACTIVE_STYLE: Record<string, string> = {
@@ -48,10 +54,14 @@ const LEAGUE_ACTIVE_STYLE: Record<string, string> = {
   MLB: "border-red-500 bg-red-500/10 text-red-300",
   NHL: "border-blue-500 bg-blue-500/10 text-blue-300",
   NBA: "border-orange-500 bg-orange-500/10 text-orange-300",
+  FIFA_WC: "border-emerald-500 bg-emerald-500/10 text-emerald-300",
   MLS: "border-sky-500 bg-sky-500/10 text-sky-300",
   NCAAB: "border-purple-500 bg-purple-500/10 text-purple-300",
+  NCAABB: "border-yellow-500 bg-yellow-500/10 text-yellow-300",
 };
 
+// Skill play leagues do NOT count toward prize pool eligibility
+const SKILL_PLAY_LEAGUES = new Set(["MLS", "NCAABB"]);
 
 function isToday(dateStr: string) {
   const d = new Date(dateStr);
@@ -331,6 +341,11 @@ export default function DailyPicks() {
                       <div className="flex items-center gap-2">
                         <Badge className={cn("text-[10px]", LEAGUE_COLORS[game.league] || "bg-white/10 text-white/60")}>{game.league}</Badge>
                         <StatusBadge status={game.status || "upcoming"} />
+                        {SKILL_PLAY_LEAGUES.has(game.league) && (
+                          <Badge className="bg-purple-500/20 text-purple-300 border-purple-500/30 text-[9px] gap-0.5">
+                            <Sparkles size={8} />SKILL PLAY
+                          </Badge>
+                        )}
                       </div>
                       <div className="flex items-center gap-1 text-[10px] text-muted-foreground/60">
                         <Clock size={9} />
@@ -346,6 +361,15 @@ export default function DailyPicks() {
                           <span>{game.awayPitcher || "TBD"}</span>
                           <span className="opacity-40">SP</span>
                           <span>{game.homePitcher || "TBD"}</span>
+                        </div>
+                      )}
+                      {game.spiderPick && game.status !== "finished" && (
+                        <div className="flex items-center gap-1.5 mt-1.5 px-2 py-1 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
+                          <Zap size={9} className="text-yellow-400 shrink-0" />
+                          <span className="text-[10px] text-yellow-400 font-bold">Spider: {game.spiderPick}</span>
+                          {game.spiderConfidence && (
+                            <span className="text-[9px] text-yellow-400/60 ml-auto">{game.spiderConfidence}%</span>
+                          )}
                         </div>
                       )}
                     </div>
