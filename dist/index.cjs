@@ -682,12 +682,12 @@ ${t.timestamp}`}),ae(`\u2713 Push notification sent to ntfy.sh/${O6}`)}catch(a){
           'Scott',
           '',
           'legend',
-          'SCOTT818',
+          'SCOTT699',
           '0',
           '2026-01-01T00:00:00Z',
           NOW()
         )
-      `),console.log("[migration] Seeded Scott account")):(await t.query("UPDATE users SET membership_tier = 'legend', first_name = 'Scott' WHERE phone = $1 AND membership_tier != 'legend'",[r]),await t.query("UPDATE users SET password_hash = '$2b$10$WkqjSdvKC9EZlVrP3Je6wuDWlgLvK4ONDg7sfe9bmTQcqq2oxAMu.' WHERE phone = $1 AND password_hash = '$2b$10$c/Wpwe4dfQebNTYaHGja3edrkQESNeamelffoP77hnjRTSGd.setG'",[r]));let i="2138724448";(await t.query("SELECT 1 FROM users WHERE phone = $1",[i])).rowCount===0?(await t.query(`
+      `),console.log("[migration] Seeded Scott account")):(await t.query("UPDATE users SET membership_tier = 'legend', first_name = 'Scott', referral_code = 'SCOTT699' WHERE phone = $1",[r]),await t.query("UPDATE users SET password_hash = '$2b$10$WkqjSdvKC9EZlVrP3Je6wuDWlgLvK4ONDg7sfe9bmTQcqq2oxAMu.' WHERE phone = $1 AND password_hash = '$2b$10$c/Wpwe4dfQebNTYaHGja3edrkQESNeamelffoP77hnjRTSGd.setG'",[r]));let i="2138724448";(await t.query("SELECT 1 FROM users WHERE phone = $1",[i])).rowCount===0?(await t.query(`
         INSERT INTO users (id, phone, password_hash, first_name, last_name, membership_tier, referral_code, wallet_balance, created_at, updated_at)
         VALUES (
           '550e8400-e29b-41d4-a716-446655440002',
