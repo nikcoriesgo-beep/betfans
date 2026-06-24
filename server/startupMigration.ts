@@ -1001,22 +1001,6 @@ export async function runStartupMigration() {
       console.log("[migration] Restored $68 prize pool balance from real PayPal payments");
     }
 
-    // GUARANTEE minimum pool balance — the founder sets this after each manual payout.
-    // If the pool ever drops below $125 on a restart (e.g. admin_adjust rows lost),
-    // this top-up row brings it back. It never fires if the pool has grown past $125 organically.
-    const POOL_FLOOR = 125;
-    const poolTotalRes = await client.query(
-      `SELECT COALESCE(SUM(amount::numeric), 0) AS total FROM prize_pool_contributions`
-    );
-    const poolTotal = Number(poolTotalRes.rows?.[0]?.total ?? 0);
-    if (poolTotal < POOL_FLOOR) {
-      const topUp = POOL_FLOOR - poolTotal;
-      await client.query(`
-        INSERT INTO prize_pool_contributions (amount, source, user_id, created_at)
-        VALUES ($1, 'admin_floor', NULL, NOW())
-      `, [topUp]);
-      console.log(`[migration] Prize pool floor top-up: +$${topUp} → $${POOL_FLOOR}`);
-    }
 
     // CLEANUP: Remove seeded historical games that landed in the last 14 days.
     // These are identified by created_at = game_time (the seed always sets them equal).
