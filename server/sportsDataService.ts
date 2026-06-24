@@ -144,8 +144,8 @@ const NIKCO_REAL_ID = 'aa5b3efa-fb3e-49b1-9f60-983bcec7d67a';
 // Seed = YTD through end of June 7 PST (before June 8 games).
 // Cutoff = midnight PST June 8 (08:00 UTC) so ALL June 8+ game picks auto-add forever.
 // June 8 MLB games start at ~7 PM PT = 02:00 UTC June 9 which is >= cutoff, so they auto-add.
-const BFB_SEED_WINS   = 532;
-const BFB_SEED_LOSSES = 455;
+const BFB_SEED_WINS   = 603;
+const BFB_SEED_LOSSES = 520;
 const BFB_CUTOFF      = new Date("2026-06-08T08:00:00Z"); // midnight PST June 8 — never needs changing
 
 // After grading an MLB game, recalculate Nikco's BFB YTD record fully automatically.
@@ -282,6 +282,18 @@ function getTodayET(): string {
   return `${parts[2]}${parts[0]}${parts[1]}`; // YYYYMMDD
 }
 
+function getTomorrowET(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d).split("/");
+  return `${parts[2]}${parts[0]}${parts[1]}`;
+}
+
 async function fetchLeagueGames(league: string): Promise<any[]> {
   try {
     const url = ESPN_ENDPOINTS[league];
@@ -296,7 +308,19 @@ async function fetchLeagueGames(league: string): Promise<any[]> {
       return [];
     }
     const data = await response.json();
-    const events: ESPNEvent[] = data.events || [];
+    let events: ESPNEvent[] = data.events || [];
+
+    // For FIFA_WC: also fetch tomorrow's games so late-night games (e.g. 9PM PT = midnight ET next day) appear
+    if (league === "FIFA_WC") {
+      try {
+        const tomorrowET = getTomorrowET();
+        const r2 = await fetch(`${url}${separator}dates=${tomorrowET}`);
+        if (r2.ok) {
+          const d2 = await r2.json();
+          events = [...events, ...(d2.events || [])];
+        }
+      } catch {}
+    }
     const results: any[] = [];
 
     // For college baseball, ESPN includes some D2 transition schools — exclude them
