@@ -105,6 +105,14 @@ function AffiliateCodeCapture() {
   return null;
 }
 
+function PageViewTracker() {
+  const [location] = useLocation();
+  useEffect(() => {
+    fetch("/api/views/home", { method: "POST" }).catch(() => {});
+  }, [location]);
+  return null;
+}
+
 function ReplitFounderAutoLogin() {
   useEffect(() => {
     fetch("/api/auth/replit-auto", { credentials: "include" })
@@ -145,6 +153,7 @@ function App() {
         <Toaster />
         <BuildVersionGuard />
         <AffiliateCodeCapture />
+        <PageViewTracker />
         <ReplitFounderAutoLogin />
         <ErrorBoundary>
           <Router />
