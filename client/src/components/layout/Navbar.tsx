@@ -1,6 +1,6 @@
 import { useLocation, Link } from "wouter";
 import { cn } from "@/lib/utils";
-import { TrendingUp, User, Menu, LogIn, ChevronDown, Clock, Calendar, Target, Trophy } from "lucide-react";
+import { TrendingUp, User, Menu, LogIn, ChevronDown, Clock, Calendar, Target } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -19,7 +19,6 @@ export function Navbar() {
 
   const leaderboardItems = [
     { label: "Daily", href: "/leaderboard/daily", icon: Clock },
-    { label: "Annual", href: "/leaderboard/annual", icon: Trophy },
   ];
 
   const moreItems = [
@@ -155,7 +154,7 @@ export function Navbar() {
                 </Avatar>
               </Link>
             ) : (
-              <Link href="/auth?mode=signup">
+              <Link href="/membership">
                 <Button size="default" className="gap-2 font-display font-bold text-sm px-4 shadow-[0_0_12px_rgba(34,197,94,0.4)]" data-testid="button-signup-mobile">
                   Join Now
                 </Button>
@@ -215,16 +214,10 @@ export function Navbar() {
               id="betfans-leaderboard-ad"
               className="w-full bg-black/40 border-b border-white/5 flex justify-center items-center min-h-[50px] overflow-hidden"
             />
-            <div className="w-full bg-primary/10 border-b border-primary/30 px-4 py-1.5 flex items-center justify-center gap-2" data-testid="notice-april18-rule">
-              <span className="text-primary font-bold text-[11px] shrink-0">*</span>
-              <p className="text-[11px] text-primary/90 text-center leading-tight">
-                <span className="font-semibold">Starting Sat Apr 18:</span> Members must predict ALL NBA &amp; NHL playoff games + every MLB game to qualify for the daily prize pool.
-              </p>
-            </div>
           </div>
         </div>
       </nav>
-      <div className="h-[132px]" />
+      <div className="h-[106px]" />
     </>
   );
 }
