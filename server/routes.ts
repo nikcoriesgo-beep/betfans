@@ -3531,6 +3531,26 @@ export async function registerRoutes(
     }
   });
 
+  // Retry a payout using the subscription refund path (bypasses Payouts API)
+  app.post("/api/internal/retry-sub-refund", async (req, res) => {
+    try {
+      const { secret, payoutId, userId, amount, note } = req.body;
+      if (secret !== "bf-internal-k9x2m7") return res.status(403).json({ error: "forbidden" });
+      const { sendPayPalSubscriptionRefund } = await import("./paypalService");
+      const user = await storage.getUser(userId);
+      if (!user) return res.status(404).json({ error: "User not found" });
+      const subscriptionId = user.paypalSubscriptionId;
+      if (!subscriptionId) return res.status(404).json({ error: "No subscription ID on file for user" });
+      const result = await sendPayPalSubscriptionRefund(subscriptionId, amount, note || `BetFans prize payout`);
+      if (payoutId) {
+        await storage.updatePayout(payoutId, { stripeTransferId: result.refundId, status: "paypal_sent", paidAt: new Date() });
+      }
+      res.json({ ok: true, refundId: result.refundId, status: result.status });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.post("/api/internal/retry-paypal-payout", async (req, res) => {
     try {
       const { secret, payoutId, userId, amount, periodLabel, period, directEmail } = req.body;
