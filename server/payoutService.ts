@@ -232,6 +232,12 @@ async function processDailyPayout(
 
     await sendAndRecordPayout(payout.id, entry.userId, perWinner, periodLabel, "daily", tied.length, log);
 
+    // Deduct payout from prize pool so the public display reflects the remaining balance
+    await db.execute(sql`
+      INSERT INTO prize_pool_contributions (user_id, amount, source, created_at)
+      VALUES (NULL, ${-perWinner}, ${'daily_payout_' + periodLabel}, NOW())
+    `);
+
     log(`✓ Paid $${perWinner} to ${entry.userId} (daily winner, ${periodLabel})`);
     paid++;
   }
@@ -311,6 +317,12 @@ async function processAnnualPayout(
     });
 
     await sendAndRecordPayout(payout.id, entry.userId, perWinnerAmount, periodLabel, "annual", tied.length, log);
+
+    // Deduct payout from prize pool so the public display reflects the remaining balance
+    await db.execute(sql`
+      INSERT INTO prize_pool_contributions (user_id, amount, source, created_at)
+      VALUES (NULL, ${-perWinnerAmount}, ${'annual_payout_' + periodLabel}, NOW())
+    `);
 
     log(`✓ Annual paid $${perWinnerAmount} to ${entry.userId} (${periodLabel})`);
     paid++;
