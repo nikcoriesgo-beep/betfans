@@ -329,7 +329,7 @@ export default function DailyPicks() {
                 <Card
                   key={game.id}
                   className={cn(
-                    "bg-card/30 border-white/5 hover:border-white/10 transition-all",
+                    "bg-card/30 border-border hover:border-border/80 transition-all",
                     draft && "border-primary/40 bg-primary/5",
                     alreadyPicked && "border-primary/20",
                     isLocked && !alreadyPicked && "opacity-70"
@@ -339,10 +339,10 @@ export default function DailyPicks() {
                   <CardContent className="p-4">
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-2">
-                        <Badge className={cn("text-[10px]", LEAGUE_COLORS[game.league] || "bg-white/10 text-white/60")}>{game.league}</Badge>
+                        <Badge className={cn("text-[10px]", LEAGUE_COLORS[game.league] || "bg-foreground/10 text-foreground/60")}>{game.league}</Badge>
                         <StatusBadge status={game.status || "upcoming"} />
                         {SKILL_PLAY_LEAGUES.has(game.league) && (
-                          <Badge className="bg-purple-500/20 text-purple-300 border-purple-500/30 text-[9px] gap-0.5">
+                          <Badge className="bg-purple-500/20 text-purple-700 border-purple-500/30 text-[9px] gap-0.5">
                             <Sparkles size={8} />SKILL PLAY
                           </Badge>
                         )}
@@ -363,15 +363,6 @@ export default function DailyPicks() {
                           <span>{game.homePitcher || "TBD"}</span>
                         </div>
                       )}
-                      {game.spiderPick && game.status !== "finished" && (
-                        <div className="flex items-center gap-1.5 mt-1.5 px-2 py-1 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
-                          <Zap size={9} className="text-yellow-400 shrink-0" />
-                          <span className="text-[10px] text-yellow-400 font-bold">Spider: {game.spiderPick}</span>
-                          {game.spiderConfidence && (
-                            <span className="text-[9px] text-yellow-400/60 ml-auto">{game.spiderConfidence}%</span>
-                          )}
-                        </div>
-                      )}
                     </div>
 
 
@@ -387,11 +378,11 @@ export default function DailyPicks() {
                       <p className="text-center text-[10px] text-muted-foreground/40 py-2">Game finished — picks closed</p>
                     ) : isLive ? (
                       <div className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-green-500/5 border border-green-500/15">
-                        <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse inline-block" />
-                        <p className="text-[10px] text-green-400/70">Game is live — picks locked</p>
+                        <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse inline-block" />
+                        <p className="text-[10px] text-green-600">Game is live — picks locked</p>
                       </div>
                     ) : isStarted ? (
-                      <div className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-white/5 border border-white/10">
+                      <div className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-muted border border-border">
                         <Lock size={10} className="text-muted-foreground/40" />
                         <p className="text-[10px] text-muted-foreground/40">Game has started — picks locked</p>
                       </div>
@@ -410,7 +401,7 @@ export default function DailyPicks() {
                               "rounded-lg p-2.5 text-center transition-all border text-xs font-medium",
                               draft?.pick === game.awayTeam
                                 ? "bg-primary text-primary-foreground border-primary"
-                                : "bg-white/5 border-white/10 text-muted-foreground hover:border-white/20 hover:text-white"
+                                : "bg-muted border-border text-foreground hover:border-foreground/30 hover:bg-muted/80"
                             )}
                             data-testid={`button-pick-away-${game.id}`}
                           >
@@ -423,7 +414,7 @@ export default function DailyPicks() {
                               "rounded-lg p-2.5 text-center transition-all border text-xs font-medium",
                               draft?.pick === game.homeTeam
                                 ? "bg-primary text-primary-foreground border-primary"
-                                : "bg-white/5 border-white/10 text-muted-foreground hover:border-white/20 hover:text-white"
+                                : "bg-muted border-border text-foreground hover:border-foreground/30 hover:bg-muted/80"
                             )}
                             data-testid={`button-pick-home-${game.id}`}
                           >
