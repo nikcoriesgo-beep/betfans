@@ -392,6 +392,176 @@ export async function registerRoutes(
   });
 
 
+  // ─── My BFB — Member personal MLB pick-em ────────────────────────────────
+  app.get("/api/my-bfb", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = (req.session as any)?.userId;
+
+      // Today's date in ET
+      const etParts = new Intl.DateTimeFormat("en-US", {
+        timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit",
+      }).format(new Date()).split("/");
+      const dateStr = `${etParts[2]}-${etParts[0]}-${etParts[1]}`;
+      const etDateESPN = `${etParts[2]}${etParts[0]}${etParts[1]}`;
+      const [ey, em, ed] = dateStr.split("-").map(Number);
+      const todayStart = new Date(Date.UTC(ey, em - 1, ed, 4, 0, 0));
+      const todayEnd   = new Date(Date.UTC(ey, em - 1, ed + 1, 4, 0, 0));
+
+      function normalize(s: string) { return s.toLowerCase().replace(/[^a-z]/g, ""); }
+      function teamMatch(a: string, b: string) {
+        const na = normalize(a), nb = normalize(b);
+        return na === nb || na.includes(nb.slice(-6)) || nb.includes(na.slice(-6));
+      }
+
+      // Today's MLB games from DB
+      let dbMlbGames = await storage.getGames("MLB");
+      if (dbMlbGames.length === 0) {
+        try { await syncSportsData(); dbMlbGames = await storage.getGames("MLB"); } catch {}
+      }
+
+      // Live ESPN status
+      const espnStatusMap = new Map<string, { status: string; homeScore: number|null; awayScore: number|null }>();
+      try {
+        const espnResp = await fetch(`https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard?dates=${etDateESPN}`);
+        if (espnResp.ok) {
+          const espnData = await espnResp.json();
+          for (const event of (espnData.events || [])) {
+            const comp = event.competitions?.[0];
+            const homeComp = comp?.competitors?.find((c: any) => c.homeAway === "home");
+            const awayComp = comp?.competitors?.find((c: any) => c.homeAway === "away");
+            if (!homeComp || !awayComp) continue;
+            const state = event.status?.type?.state;
+            const status = state === "post" ? "finished" : state === "in" ? "live" : "upcoming";
+            espnStatusMap.set(`${awayComp.team.displayName}|${homeComp.team.displayName}`, {
+              status, homeScore: homeComp.score ? parseInt(homeComp.score) : null,
+              awayScore: awayComp.score ? parseInt(awayComp.score) : null,
+            });
+          }
+        }
+      } catch {}
+
+      // Pitcher data
+      const mlbApiGames = await fetchMLBSchedule(dateStr);
+
+      // Member's BFB picks for today
+      const todayPicks = await db.select().from(predictions).where(
+        sql`${predictions.userId} = ${userId} AND ${predictions.predictionType} = 'bfb' AND ${predictions.createdAt} >= ${todayStart} AND ${predictions.createdAt} <= ${todayEnd}`
+      );
+
+      // All-time BFB record for this member
+      const allBfbPicks = await db.select().from(predictions).where(
+        sql`${predictions.userId} = ${userId} AND ${predictions.predictionType} = 'bfb'`
+      );
+      const wins   = allBfbPicks.filter(p => p.result === "win").length;
+      const losses = allBfbPicks.filter(p => p.result === "loss").length;
+      const pushes = allBfbPicks.filter(p => p.result === "push").length;
+      const total  = wins + losses + pushes;
+      const winPct = total > 0 ? Math.round((wins / (wins + losses || 1)) * 1000) / 10 : 0;
+      // Streak: walk through most-recent first
+      let streak = 0;
+      const sorted = [...allBfbPicks].filter(p => p.result !== "pending").sort((a, b) =>
+        new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime()
+      );
+      if (sorted.length > 0) {
+        const dir = sorted[0].result;
+        for (const p of sorted) { if (p.result === dir) streak++; else break; }
+        if (dir === "loss" || dir === "push") streak = -streak;
+      }
+
+      // Founder record for "beat this" display
+      const [founderRow] = await db.select().from(users).where(eq(users.referralCode, "NIKCOX")).limit(1);
+      let founderRecord = { wins: 0, losses: 0 };
+      if (founderRow) {
+        const [entry] = await db.select().from(leaderboardEntries)
+          .where(and(eq(leaderboardEntries.userId, founderRow.id), eq(leaderboardEntries.period, "bfb_ytd")))
+          .limit(1);
+        if (entry) founderRecord = { wins: entry.wins ?? 0, losses: entry.losses ?? 0 };
+      }
+
+      const gamesOut = dbMlbGames.map((g) => {
+        const apiGame = mlbApiGames.find((a: any) => teamMatch(g.homeTeam, a.homeTeam) && teamMatch(g.awayTeam, a.awayTeam));
+        const liveESPN = espnStatusMap.get(`${g.awayTeam}|${g.homeTeam}`);
+        const liveStatus = liveESPN?.status || g.status;
+        const myPick = todayPicks.find(p => p.gameId === g.id) || null;
+        return {
+          gameId: g.id,
+          homeTeam: g.homeTeam, awayTeam: g.awayTeam,
+          homeAbbr: apiGame?.homeAbbr || g.homeTeam.split(" ").pop() || "",
+          awayAbbr: apiGame?.awayAbbr || g.awayTeam.split(" ").pop() || "",
+          gameTime: g.gameTime,
+          status: liveStatus === "finished" ? "Final" : liveStatus === "live" ? "Live" : "Upcoming",
+          homeScore: liveESPN?.homeScore ?? g.homeScore,
+          awayScore: liveESPN?.awayScore ?? g.awayScore,
+          inning: apiGame?.inning || null, inningHalf: apiGame?.inningHalf || null,
+          homePitcher: apiGame?.homePitcher || g.homePitcher || null,
+          awayPitcher: apiGame?.awayPitcher || g.awayPitcher || null,
+          myPick: myPick ? { pick: myPick.pick, result: myPick.result } : null,
+          locked: !!(liveStatus === "live" || liveStatus === "finished" || (g.gameTime && new Date(g.gameTime) <= new Date())),
+        };
+      });
+
+      res.json({
+        games: gamesOut,
+        record: { wins, losses, pushes, total, winPct, streak },
+        founderRecord,
+        date: dateStr,
+      });
+    } catch (err: any) {
+      console.error("[my-bfb] error:", err.message);
+      res.status(500).json({ message: "Failed to load My BFB" });
+    }
+  });
+
+  app.post("/api/my-bfb/pick", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = (req.session as any)?.userId;
+      const { gameId, pick, homeTeam, awayTeam } = req.body;
+      if (!gameId || !pick) return res.status(400).json({ message: "Missing gameId or pick" });
+
+      // Verify it's a real MLB game
+      let [game] = await db.select().from(games).where(eq(games.id, gameId)).limit(1);
+      if ((!game || game.league !== "MLB") && homeTeam && awayTeam) {
+        const norm = (s: string) => s.toLowerCase().replace(/[^a-z]/g, "");
+        const todayRows = await storage.getGames("MLB");
+        const matched = todayRows.find(g =>
+          norm(g.homeTeam).includes(norm(homeTeam).slice(-6)) &&
+          norm(g.awayTeam).includes(norm(awayTeam).slice(-6))
+        );
+        if (matched) game = matched as any;
+      }
+      if (!game || game.league !== "MLB") return res.status(404).json({ message: "MLB game not found" });
+
+      // Lock after game starts
+      if (game.gameTime && new Date(game.gameTime) <= new Date()) {
+        return res.status(422).json({ message: "Game has already started — picks are locked." });
+      }
+      if (game.status === "live" || game.status === "finished") {
+        return res.status(422).json({ message: "Game has already started — picks are locked." });
+      }
+
+      // Upsert today's bfb pick for this game
+      const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+      const existing = await db.select().from(predictions).where(
+        sql`${predictions.userId} = ${userId} AND ${predictions.gameId} = ${game.id} AND ${predictions.predictionType} = 'bfb' AND ${predictions.createdAt} >= ${todayStart}`
+      ).limit(1);
+
+      let prediction;
+      if (existing.length > 0) {
+        if (existing[0].result !== "pending") return res.status(409).json({ message: "Pick already graded — cannot change." });
+        await db.update(predictions).set({ pick, updatedAt: new Date() }).where(eq(predictions.id, existing[0].id));
+        prediction = { ...existing[0], pick };
+      } else {
+        prediction = await storage.createPrediction({
+          userId, gameId: game.id, predictionType: "bfb", pick, units: 1, odds: null, result: "pending", payout: 0,
+        });
+      }
+      res.status(201).json({ prediction, game });
+    } catch (err: any) {
+      console.error("[my-bfb pick] error:", err.message);
+      res.status(500).json({ message: "Failed to save pick" });
+    }
+  });
+
   app.get("/api/news", async (req, res) => {
     try {
       const league = req.query.league as string | undefined;
@@ -708,6 +878,7 @@ export async function registerRoutes(
         return {
           userId: u.id,
           name:   [u.firstName, u.lastName].filter(Boolean).join(" ") || "Member",
+          referralCode: u.referralCode || null,
           tier:   u.membershipTier,
           avatar: u.profileImageUrl || null,
           mlb, nba, nhl, wc, ncaabb, total, qualified,
@@ -864,7 +1035,7 @@ export async function registerRoutes(
         result.map(async (r) => {
           const user = await storage.getUser(r.userId);
           const tier = user?.membershipTier || "rookie";
-          const perReferral = tier === "legend" ? 50 : tier === "pro" ? 10 : 5;
+          const perReferral = tier === "legend" ? 50 : 0;
           return {
             userId: r.userId,
             activeReferrals: r.activeReferrals,
@@ -1294,13 +1465,32 @@ export async function registerRoutes(
             if (referrer && referrer.id !== userId) {
               await storage.createReferral(referrer.id, userId);
               await db.update(users).set({ referredBy: referrer.id }).where(eq(users.id, userId));
-              // Instant signup bonus to referrer's wallet — tier-based
-              // Rookie join: $5 instant | Pro join: $10 instant | Legend join: $50 instant
-              const signupBonus = confirmedTier === "premium_corporate" ? 6000 : confirmedTier === "corporate" ? 600 : confirmedTier === "legend" ? 50 : confirmedTier === "pro" ? 10 : 5;
+              // Instant signup bonus to referrer's wallet — Legend join: $50 instant (Rookie/Pro: $0)
+              const signupBonus = confirmedTier === "premium_corporate" ? 6000 : confirmedTier === "corporate" ? 600 : confirmedTier === "legend" ? 50 : 0;
               const referrerBalance = parseFloat(referrer.walletBalance || "0");
               await storage.updateUser(referrer.id, { walletBalance: String(referrerBalance + signupBonus) });
               await storage.createTransaction({ userId: referrer.id, type: "referral_bonus", amount: signupBonus, description: `Signup bonus — ${upperCode} referred a ${confirmedTier} member`, status: "completed" });
               console.log(`[PayPal] Referral applied: ${referrer.id} -> ${userId}, +$${signupBonus} wallet bonus`);
+              // Instant PayPal payout to referrer
+              const referrerPayoutDest = (referrer as any).paypalPayoutEmail || referrer.phone;
+              if (referrerPayoutDest) {
+                try {
+                  const { sendPayPalPayout } = await import("./paypalService");
+                  await sendPayPalPayout(
+                    referrerPayoutDest,
+                    signupBonus,
+                    `aff-signup-${referrer.id}-${userId}-${Date.now()}`,
+                    `You earned a $${signupBonus} affiliate signup bonus — someone joined BetFans using your referral code.`,
+                    "BetFans Affiliate Bonus 💸",
+                    `Congrats! Your referral code was just used. $${signupBonus} affiliate bonus is on its way to you.`
+                  );
+                  console.log(`[PayPal] Affiliate signup payout $${signupBonus} sent to ${referrerPayoutDest}`);
+                } catch (payoutErr: any) {
+                  console.error(`[PayPal] Affiliate signup payout failed for ${referrer.id}:`, payoutErr.message);
+                }
+              } else {
+                console.warn(`[PayPal] Referrer ${referrer.id} has no paypalPayoutEmail or phone — wallet credited but payout skipped`);
+              }
             }
           }
         }
@@ -1342,7 +1532,7 @@ export async function registerRoutes(
               if (resourceType === "BILLING.SUBSCRIPTION.RENEWED") {
                 // Corporate: $600 to prize pool, $600 to referrer (annual)
                 // Others: per-month affiliate commission, remainder to prize pool
-                const affiliateCommission: Record<string, number> = { rookie: 5, pro: 10, legend: 50, corporate: 600, premium_corporate: 6000 };
+                const affiliateCommission: Record<string, number> = { rookie: 0, pro: 0, legend: 50, corporate: 600, premium_corporate: 6000 };
                 const tierPrices: Record<string, number> = { rookie: 19, pro: 29, legend: 99, corporate: 1200, premium_corporate: 12000 };
                 const commission = affiliateCommission[tier] || 0;
                 const prizeContribution = tier === "premium_corporate" ? 6000 : tier === "corporate" ? 600 : (tierPrices[tier] || 0) - commission;
@@ -1356,6 +1546,26 @@ export async function registerRoutes(
                     await storage.updateUser(referrer.id, { walletBalance: String(refBalance + commission) } as any);
                     await storage.createTransaction({ userId: referrer.id, type: "referral_bonus", amount: commission, description: `${renewalLabel} — ${foundUser.firstName || foundUser.id} (${tier}) renewed`, status: "completed" });
                     console.log(`[PayPal webhook] Affiliate $${commission} to ${referrer.id} for ${foundUser.id} ${tier} renewal`);
+                    // Instant PayPal payout to referrer on renewal
+                    const renewalPayoutDest = (referrer as any).paypalPayoutEmail || referrer.phone;
+                    if (renewalPayoutDest) {
+                      try {
+                        const { sendPayPalPayout } = await import("./paypalService");
+                        await sendPayPalPayout(
+                          renewalPayoutDest,
+                          commission,
+                          `aff-renewal-${referrer.id}-${foundUser.id}-${Date.now()}`,
+                          `You earned a $${commission} residual commission — ${foundUser.firstName || "a member"} you referred just renewed their BetFans subscription.`,
+                          "BetFans Residual Income 💸",
+                          `Your monthly residual is here! $${commission} earned from a referred member's renewal.`
+                        );
+                        console.log(`[PayPal webhook] Affiliate renewal payout $${commission} sent to ${renewalPayoutDest}`);
+                      } catch (payoutErr: any) {
+                        console.error(`[PayPal webhook] Affiliate renewal payout failed for ${referrer.id}:`, payoutErr.message);
+                      }
+                    } else {
+                      console.warn(`[PayPal webhook] Referrer ${referrer.id} has no paypalPayoutEmail or phone — wallet credited but renewal payout skipped`);
+                    }
                   }
                 }
 
