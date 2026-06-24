@@ -683,9 +683,9 @@ export async function runStartupMigration() {
       `);
     }
     // Make sure the old seeded UUID never has the NIKCOX code (to avoid BFB route confusion)
-    // Also downgrade it to 'free' so it never appears in scorecards, leaderboards, or prize pool
+    // Also downgrade it to 'free' and CLEAR its phone so find-user never returns it instead of real Nikco
     await client.query(
-      `UPDATE users SET referral_code = 'NIKCOX-SEED', membership_tier = 'free' WHERE id = '29b670b7-5296-44dc-a0a0-aec0d878ef9b'`
+      `UPDATE users SET referral_code = 'NIKCOX-SEED', membership_tier = 'free', phone = NULL WHERE id = '29b670b7-5296-44dc-a0a0-aec0d878ef9b'`
     );
     // Remove ALL leaderboard entries for any user tagged NIKCOX-SEED — including bfb_ytd.
     // Delete by referral_code (not UUID) so this catches any account in prod that holds the code.
@@ -707,7 +707,7 @@ export async function runStartupMigration() {
           'Scott',
           '',
           'legend',
-          'SCOTT818',
+          'SCOTT699',
           '0',
           '2026-01-01T00:00:00Z',
           NOW()
@@ -715,7 +715,9 @@ export async function runStartupMigration() {
       `);
       console.log("[migration] Seeded Scott account");
     } else {
-      await client.query(`UPDATE users SET membership_tier = 'legend', first_name = 'Scott' WHERE phone = $1 AND membership_tier != 'legend'`, [scottPhone]);
+      await client.query(`UPDATE users SET membership_tier = 'legend', first_name = 'Scott', referral_code = 'SCOTT699' WHERE phone = $1`, [scottPhone]);
+      // Reset to temp password if still using the old Neon hash (user hasn't changed it yet)
+      await client.query(`UPDATE users SET password_hash = '$2b$10$WkqjSdvKC9EZlVrP3Je6wuDWlgLvK4ONDg7sfe9bmTQcqq2oxAMu.' WHERE phone = $1 AND password_hash = '$2b$10$c/Wpwe4dfQebNTYaHGja3edrkQESNeamelffoP77hnjRTSGd.setG'`, [scottPhone]);
     }
 
     // Seed Moe's real account (Legend)
@@ -740,6 +742,7 @@ export async function runStartupMigration() {
       console.log("[migration] Seeded Moe account");
     } else {
       await client.query(`UPDATE users SET membership_tier = 'legend', first_name = 'Moe' WHERE phone = $1 AND membership_tier != 'legend'`, [moePhone]);
+      await client.query(`UPDATE users SET password_hash = '$2b$10$WkqjSdvKC9EZlVrP3Je6wuDWlgLvK4ONDg7sfe9bmTQcqq2oxAMu.' WHERE phone = $1 AND password_hash = '$2b$10$c/Wpwe4dfQebNTYaHGja3edrkQESNeamelffoP77hnjRTSGd.setG'`, [moePhone]);
     }
 
     // Seed Ian's real account (Legend)
@@ -764,7 +767,124 @@ export async function runStartupMigration() {
       console.log("[migration] Seeded Ian account");
     } else {
       await client.query(`UPDATE users SET membership_tier = 'legend', first_name = 'Ian' WHERE phone = $1 AND membership_tier != 'legend'`, [ianPhone]);
+      await client.query(`UPDATE users SET password_hash = '$2b$10$WkqjSdvKC9EZlVrP3Je6wuDWlgLvK4ONDg7sfe9bmTQcqq2oxAMu.' WHERE phone = $1 AND password_hash = '$2b$10$c/Wpwe4dfQebNTYaHGja3edrkQESNeamelffoP77hnjRTSGd.setG'`, [ianPhone]);
     }
+
+    // Seed Jose Cuevas account (Legend — joined May 28 2026, phone 3107102317)
+    const josePhone = '3107102317';
+    const joseCheck = await client.query(`SELECT 1 FROM users WHERE phone = $1`, [josePhone]);
+    if (joseCheck.rowCount === 0) {
+      const bcrypt = await import('bcryptjs');
+      const joseHash = await bcrypt.default.hash('BetFans2026!', 10);
+      await client.query(`
+        INSERT INTO users (id, phone, password_hash, first_name, last_name, membership_tier, referral_code, wallet_balance, created_at, updated_at, subscription_paid_until)
+        VALUES (
+          '95987539-6932-417d-b3df-5a5350c2bf1a',
+          '3107102317',
+          $1,
+          'Jose',
+          'Cuevas',
+          'legend',
+          'JOSE171',
+          '0',
+          '2026-05-28T00:00:00Z',
+          NOW(),
+          NOW() + INTERVAL '1 year'
+        )
+      `, [joseHash]);
+      console.log("[migration] Seeded Jose Cuevas account");
+    } else {
+      // Ensure Jose stays legend and has subscription_paid_until set (prevents morningCheck lapse)
+      await client.query(`
+        UPDATE users SET
+          membership_tier = 'legend',
+          first_name = 'Jose',
+          last_name = COALESCE(NULLIF(last_name, ''), 'Cuevas'),
+          subscription_paid_until = GREATEST(COALESCE(subscription_paid_until, NOW()), NOW() + INTERVAL '1 year')
+        WHERE phone = $1
+      `, [josePhone]);
+    }
+    console.log("[migration] Jose Cuevas subscription_paid_until protected");
+
+    // Seed Jim Campanis account (Legend)
+    const jimPhone = '9515295444';
+    const jimCheck = await client.query(`SELECT 1 FROM users WHERE phone = $1`, [jimPhone]);
+    if (jimCheck.rowCount === 0) {
+      const bcrypt = await import('bcryptjs');
+      const jimHash = await bcrypt.default.hash('BetFans2026!', 10);
+      await client.query(`
+        INSERT INTO users (id, phone, password_hash, first_name, last_name, membership_tier, referral_code, wallet_balance, created_at, updated_at, subscription_paid_until)
+        VALUES (
+          gen_random_uuid(),
+          '9515295444',
+          $1,
+          'Jim',
+          'Campanis',
+          'legend',
+          'JIMCAMPANIS',
+          '0',
+          NOW(),
+          NOW(),
+          NOW() + INTERVAL '1 year'
+        )
+      `, [jimHash]);
+      console.log("[migration] Seeded Jim Campanis account");
+    } else {
+      await client.query(`
+        UPDATE users SET
+          membership_tier = 'legend',
+          first_name = 'Jim',
+          last_name = COALESCE(NULLIF(last_name, ''), 'Campanis'),
+          subscription_paid_until = GREATEST(COALESCE(subscription_paid_until, NOW()), NOW() + INTERVAL '1 year')
+        WHERE phone = $1
+      `, [jimPhone]);
+    }
+    console.log("[migration] Jim Campanis subscription_paid_until protected");
+
+    // Seed Bryant Nelson account (Legend)
+    const bryantPhone = '4803950299';
+    const bryantCheck = await client.query(`SELECT 1 FROM users WHERE phone = $1`, [bryantPhone]);
+    if (bryantCheck.rowCount === 0) {
+      const bcrypt = await import('bcryptjs');
+      const bryantHash = await bcrypt.default.hash('BetFans2026!', 10);
+      await client.query(`
+        INSERT INTO users (id, phone, password_hash, first_name, last_name, membership_tier, referral_code, wallet_balance, created_at, updated_at, subscription_paid_until)
+        VALUES (
+          '0ddcc724-0000-0000-0000-000000000000',
+          '4803950299',
+          $1,
+          'Bryant',
+          'Nelson',
+          'legend',
+          'BRYANTNELSON',
+          '0',
+          NOW(),
+          NOW(),
+          NOW() + INTERVAL '1 year'
+        )
+      `, [bryantHash]);
+      console.log("[migration] Seeded Bryant Nelson account");
+    } else {
+      await client.query(`
+        UPDATE users SET
+          membership_tier = 'legend',
+          first_name = 'Bryant',
+          last_name = COALESCE(NULLIF(last_name, ''), 'Nelson'),
+          subscription_paid_until = GREATEST(COALESCE(subscription_paid_until, NOW()), NOW() + INTERVAL '1 year')
+        WHERE phone = $1
+      `, [bryantPhone]);
+    }
+    console.log("[migration] Bryant Nelson subscription_paid_until protected");
+
+    // Ensure all manually-managed members have subscription_paid_until set so morningCheck
+    // never downgrades them (affects any member without a real PayPal subscription ID)
+    await client.query(`
+      UPDATE users
+      SET subscription_paid_until = GREATEST(COALESCE(subscription_paid_until, NOW()), NOW() + INTERVAL '1 year')
+      WHERE phone IN ('2138724448', '8182314634', '3107367905', '2482757932', '3107102317', '9515295444', '4803950299')
+        AND (subscription_paid_until IS NULL OR subscription_paid_until < NOW() + INTERVAL '30 days')
+    `);
+    console.log("[migration] subscription_paid_until extended for all seeded members");
 
     // Seed historical leaderboard for Scott and Moe (real YTD stats)
     const scottId = '550e8400-e29b-41d4-a716-446655440001';
@@ -879,6 +999,23 @@ export async function runStartupMigration() {
         VALUES (68, 'migration_restore', '29b670b7-5296-44dc-a0a0-aec0d878ef9b', '2026-04-19T00:00:00Z')
       `);
       console.log("[migration] Restored $68 prize pool balance from real PayPal payments");
+    }
+
+    // GUARANTEE minimum pool balance — the founder sets this after each manual payout.
+    // If the pool ever drops below $125 on a restart (e.g. admin_adjust rows lost),
+    // this top-up row brings it back. It never fires if the pool has grown past $125 organically.
+    const POOL_FLOOR = 125;
+    const poolTotalRes = await client.query(
+      `SELECT COALESCE(SUM(amount::numeric), 0) AS total FROM prize_pool_contributions`
+    );
+    const poolTotal = Number(poolTotalRes.rows?.[0]?.total ?? 0);
+    if (poolTotal < POOL_FLOOR) {
+      const topUp = POOL_FLOOR - poolTotal;
+      await client.query(`
+        INSERT INTO prize_pool_contributions (amount, source, user_id, created_at)
+        VALUES ($1, 'admin_floor', NULL, NOW())
+      `, [topUp]);
+      console.log(`[migration] Prize pool floor top-up: +$${topUp} → $${POOL_FLOOR}`);
     }
 
     // CLEANUP: Remove seeded historical games that landed in the last 14 days.
