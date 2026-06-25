@@ -94,13 +94,6 @@ export default function GameDetail() {
             </div>
 
             <div className="flex flex-col gap-3 min-w-[200px]">
-              <div className="bg-primary/10 border border-primary/20 rounded-lg p-4 text-center">
-                <div className="text-xs text-primary uppercase font-bold tracking-wider mb-1">Spider Pick</div>
-                <div className="text-2xl font-bold font-display text-primary" data-testid="text-spider-pick">
-                  {game.isProLocked ? "🔒 Pro Only" : game.spiderPick}
-                </div>
-                <div className="text-xs text-muted-foreground mt-1">Confidence: {game.spiderConfidence}%</div>
-              </div>
               <PlaceBetModal 
                 trigger={
                   <Button className="w-full shadow-[0_0_15px_rgba(34,197,94,0.3)]" data-testid="button-place-prediction">Place Prediction</Button>
@@ -198,31 +191,6 @@ export default function GameDetail() {
           </div>
 
           <div className="space-y-6">
-            <Card className="bg-primary/5 border-primary/20">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-primary">
-                  <Shield size={20} />
-                  Pro Analysis
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <p className="text-sm leading-relaxed">
-                  Spider AI analysis for this matchup with {game.spiderConfidence}% confidence.
-                </p>
-                {!game.isProLocked && game.spiderPick && (
-                  <p className="text-sm leading-relaxed font-medium text-primary">
-                    Pick: {game.spiderPick}
-                  </p>
-                )}
-                <div className="pt-4 border-t border-primary/20">
-                  <div className="flex justify-between text-sm mb-1">
-                    <span className="text-muted-foreground">Model Confidence</span>
-                    <span className="font-bold text-primary">{game.spiderConfidence}%</span>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
             <Card className="bg-card/30 border-white/5">
               <CardHeader>
                 <CardTitle>Game Lines</CardTitle>
