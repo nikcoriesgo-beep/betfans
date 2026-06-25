@@ -3,7 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { RefreshCw, Bot, Lock, Check, Trophy } from "lucide-react";
+import { RefreshCw, Flame, Lock, Check, Trophy } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { Link } from "wouter";
@@ -60,6 +60,15 @@ function QuickPickButtons({ game, userPicks }: { game: any; userPicks: Record<nu
       <div className="flex items-center gap-1 text-xs">
         <span className="font-mono text-yellow-400">{game.homeScore} - {game.awayScore}</span>
         <Badge className="bg-red-500/20 text-red-400 text-[10px] px-1 py-0 animate-pulse border-0">LIVE</Badge>
+      </div>
+    );
+  }
+
+  // Lock picks once game time has passed even if status hasn't updated yet
+  if (game.gameTime && new Date(game.gameTime) <= new Date()) {
+    return (
+      <div className="flex items-center gap-1 text-xs text-muted-foreground/50">
+        <span className="text-[10px]">Picks locked</span>
       </div>
     );
   }
@@ -155,8 +164,8 @@ export function DailyPredictions() {
       <CardHeader className="flex flex-row items-center justify-between pb-4">
         <div>
           <CardTitle className="flex items-center gap-2 font-display text-xl" data-testid="text-spider-ai-title">
-            <Bot className="text-primary" />
-            Spider AI Feed
+            <Flame className="text-primary" />
+            Daily Picks Feed
           </CardTitle>
           <CardDescription>Pick your winners — tap a team to lock in your prediction</CardDescription>
         </div>
@@ -187,10 +196,8 @@ export function DailyPredictions() {
             <div className="hidden md:grid grid-cols-12 gap-2 px-6 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider bg-black/20">
               <div className="col-span-2">Time</div>
               <div className="col-span-1">Lge</div>
-              <div className="col-span-4">Matchup</div>
-              <div className="col-span-2 text-center">Pick Winner</div>
-              <div className="col-span-2 text-right">Spider Pick</div>
-              <div className="col-span-1 text-right">Conf</div>
+              <div className="col-span-5">Matchup</div>
+              <div className="col-span-4 text-center">Pick Winner</div>
             </div>
 
             {isLoading ? (
@@ -201,12 +208,12 @@ export function DailyPredictions() {
               games.map((game: any) => (
                 <Link key={game.id} href={`/game/${game.id}`}>
                   {/* Desktop row */}
-                  <div className="hidden md:grid grid-cols-12 gap-2 px-6 py-3 items-center hover:bg-white/5 transition-colors group cursor-pointer relative overflow-hidden" data-testid={`card-game-${game.id}`}>
+                  <div className="hidden md:grid grid-cols-12 gap-2 px-6 py-3 items-center hover:bg-white/5 transition-colors group cursor-pointer relative overflow-hidden" data-testid={`card-game-${game.id}`} style={{gridTemplateColumns: 'repeat(12, minmax(0, 1fr))' }}>
                     
                     {game.isProLocked && (
                       <div className="absolute inset-0 z-10 bg-background/60 backdrop-blur-[2px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                         <Button size="sm" className="gap-2 bg-primary text-primary-foreground shadow-[0_0_15px_rgba(34,197,94,0.4)]" data-testid={`button-unlock-${game.id}`}>
-                          <Lock size={14} /> Unlock with Pro
+                          <Lock size={14} /> Legend Members Only
                         </Button>
                       </div>
                     )}
@@ -227,35 +234,13 @@ export function DailyPredictions() {
                       </Badge>
                     </div>
 
-                    <div className="col-span-4 flex flex-col justify-center text-sm">
+                    <div className="col-span-5 flex flex-col justify-center text-sm">
                       <div className="font-medium text-xs leading-tight">{game.awayTeam}</div>
                       <div className="text-muted-foreground text-xs leading-tight">@ {game.homeTeam}</div>
                     </div>
 
-                    <div className="col-span-2 flex items-center justify-center relative z-20">
+                    <div className="col-span-4 flex items-center justify-center relative z-20">
                       <QuickPickButtons game={game} userPicks={userPicks} />
-                    </div>
-
-                    <div className="col-span-2 text-right flex items-center justify-end gap-1">
-                      {game.isProLocked ? (
-                        <div className="flex items-center gap-1 text-muted-foreground filter blur-sm select-none">
-                          <Lock size={10} />
-                          <span className="font-mono font-bold text-xs">LOCKED</span>
-                        </div>
-                      ) : (
-                        <span className="font-mono font-bold text-primary text-xs">{game.spiderPick}</span>
-                      )}
-                    </div>
-
-                    <div className="col-span-1 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <div className="text-xs font-mono">{game.spiderConfidence}%</div>
-                        <div className={cn(
-                          "w-1.5 h-1.5 rounded-full",
-                          game.spiderConfidence > 80 ? "bg-primary shadow-[0_0_8px_rgba(34,197,94,0.8)]" : 
-                          game.spiderConfidence > 60 ? "bg-yellow-500" : "bg-red-500"
-                        )} />
-                      </div>
                     </div>
                   </div>
 
@@ -264,7 +249,7 @@ export function DailyPredictions() {
                     {game.isProLocked && (
                       <div className="absolute inset-0 z-10 bg-background/60 backdrop-blur-[2px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                         <Button size="sm" className="gap-2 bg-primary text-primary-foreground shadow-[0_0_15px_rgba(34,197,94,0.4)]">
-                          <Lock size={14} /> Unlock with Pro
+                          <Lock size={14} /> Legend Members Only
                         </Button>
                       </div>
                     )}
@@ -281,14 +266,6 @@ export function DailyPredictions() {
                           <Badge variant="outline" className="text-[10px] px-1 py-0 border-white/10">Final</Badge>
                         )}
                       </div>
-                      <div className="flex items-center gap-1.5">
-                        <div className={cn(
-                          "w-1.5 h-1.5 rounded-full",
-                          game.spiderConfidence > 80 ? "bg-primary shadow-[0_0_8px_rgba(34,197,94,0.8)]" : 
-                          game.spiderConfidence > 60 ? "bg-yellow-500" : "bg-red-500"
-                        )} />
-                        <span className="text-[11px] font-mono">{game.spiderConfidence}%</span>
-                      </div>
                     </div>
                     <div className="flex items-center justify-between">
                       <div className="flex-1 min-w-0 mr-3">
@@ -300,17 +277,6 @@ export function DailyPredictions() {
                           <QuickPickButtons game={game} userPicks={userPicks} />
                         </div>
                       </div>
-                    </div>
-                    <div className="flex items-center justify-between mt-2 pt-2 border-t border-white/5">
-                      <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Spider Pick</span>
-                      {game.isProLocked ? (
-                        <div className="flex items-center gap-1 text-muted-foreground filter blur-sm select-none">
-                          <Lock size={9} />
-                          <span className="font-mono font-bold text-[11px]">LOCKED</span>
-                        </div>
-                      ) : (
-                        <span className="font-mono font-bold text-primary text-[12px]">{game.spiderPick}</span>
-                      )}
                     </div>
                   </div>
                 </Link>
