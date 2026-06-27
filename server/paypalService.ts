@@ -276,3 +276,38 @@ export async function sendPayPalPayout(
     status: data.batch_header?.batch_status || "PENDING",
   };
 }
+
+export async function retrySubscriptionPayment(subscriptionId: string): Promise<{ ok: boolean; status: string; detail: string }> {
+  const token = await getAccessToken();
+  // Step 1: get current status
+  const detailRes = await fetch(`${PAYPAL_BASE}/v1/billing/subscriptions/${subscriptionId}`, {
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+  });
+  const detail = await detailRes.json() as any;
+  const currentStatus = detail.status || "UNKNOWN";
+
+  // Step 2: if ACTIVE (failed billing leaves sub ACTIVE), suspend then reactivate to trigger immediate retry
+  if (currentStatus === "ACTIVE" || currentStatus === "SUSPENDED") {
+    // Suspend first (no-op if already suspended)
+    if (currentStatus === "ACTIVE") {
+      await fetch(`${PAYPAL_BASE}/v1/billing/subscriptions/${subscriptionId}/suspend`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: "Retry failed payment" }),
+      });
+    }
+    // Reactivate — triggers immediate billing attempt
+    const reactivateRes = await fetch(`${PAYPAL_BASE}/v1/billing/subscriptions/${subscriptionId}/activate`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ reason: "Retrying failed payment at merchant request" }),
+    });
+    if (!reactivateRes.ok) {
+      const errData = await reactivateRes.json() as any;
+      return { ok: false, status: currentStatus, detail: errData?.message || `activate returned ${reactivateRes.status}` };
+    }
+    return { ok: true, status: "ACTIVATED", detail: "Subscription suspended then reactivated — PayPal will bill immediately" };
+  }
+
+  return { ok: false, status: currentStatus, detail: `Unexpected subscription status: ${currentStatus}` };
+}
