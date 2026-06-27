@@ -3669,5 +3669,53 @@ export async function registerRoutes(
     }
   });
 
+  // POST /api/internal/retry-subscription { secret, subscriptionId, addToPool }
+  app.post("/api/internal/retry-subscription", async (req, res) => {
+    try {
+      const { secret, subscriptionId, addToPool } = req.body;
+      if (secret !== "bf-internal-k9x2m7") return res.status(403).json({ error: "forbidden" });
+      if (!subscriptionId) return res.status(400).json({ error: "subscriptionId required" });
+
+      // Look up user by subscription ID
+      const userRows = await db.execute(sql`
+        SELECT id, first_name, last_name, phone, membership_tier, referral_code, referred_by,
+               paypal_subscription_id, paypal_payout_email
+        FROM users WHERE paypal_subscription_id = ${subscriptionId} LIMIT 1
+      `);
+      const user = (userRows as any).rows?.[0] ?? null;
+
+      // Get subscription details from PayPal
+      const { getSubscriptionDetails, retrySubscriptionPayment } = await import("./paypalService");
+      const subDetails = await getSubscriptionDetails(subscriptionId).catch(() => null);
+
+      // Trigger the retry
+      const retryResult = await retrySubscriptionPayment(subscriptionId);
+
+      // Optionally add to prize pool
+      let poolResult = null;
+      if (addToPool) {
+        const amount = parseFloat(addToPool);
+        if (!isNaN(amount) && amount > 0) {
+          await db.execute(sql`
+            INSERT INTO prize_pool_contributions (user_id, amount, source, created_at)
+            VALUES (${user?.id ?? null}, ${amount}, 'manual_contribution', NOW())
+          `);
+          const newTotal = await db.execute(sql`SELECT COALESCE(SUM(amount::numeric),0) AS total FROM prize_pool_contributions`);
+          poolResult = { added: amount, newTotal: Number((newTotal as any).rows?.[0]?.total ?? 0) };
+        }
+      }
+
+      res.json({
+        ok: retryResult.ok,
+        retryDetail: retryResult.detail,
+        user: user ? { id: user.id, name: `${user.first_name || ""} ${user.last_name || ""}`.trim(), tier: user.membership_tier, referredBy: user.referred_by } : null,
+        subscription: subDetails ? { status: subDetails.status, planId: subDetails.plan_id, email: subDetails.subscriber?.email_address } : null,
+        poolResult,
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   return httpServer;
 }
