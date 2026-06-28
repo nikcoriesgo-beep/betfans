@@ -3024,19 +3024,21 @@ export async function registerRoutes(
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
-  // POST /api/internal/update-user { secret, phone, firstName, lastName, createdAt, membershipTier }
+  // POST /api/internal/update-user { secret, phone|userId, firstName, lastName, createdAt, membershipTier, subscriptionPaidUntil }
   app.post("/api/internal/update-user", async (req, res) => {
     try {
-      const { secret, phone, firstName, lastName, createdAt, membershipTier } = req.body;
+      const { secret, phone, userId, firstName, lastName, createdAt, membershipTier, subscriptionPaidUntil } = req.body;
       if (secret !== "bf-internal-k9x2m7") return res.status(403).json({ error: "forbidden" });
       const cleanPhone = (phone || "").replace(/\D/g, "");
-      if (!cleanPhone) return res.status(400).json({ error: "phone required" });
+      if (!cleanPhone && !userId) return res.status(400).json({ error: "phone or userId required" });
+      const whereClause = userId ? sql`id = ${userId}` : sql`phone = ${cleanPhone}`;
       let updated = 0;
-      if (firstName !== undefined) { const r = await db.execute(sql`UPDATE users SET first_name = ${firstName} WHERE phone = ${cleanPhone}`); updated += (r as any).rowCount ?? 0; }
-      if (lastName !== undefined)  { const r = await db.execute(sql`UPDATE users SET last_name = ${lastName} WHERE phone = ${cleanPhone}`); updated += (r as any).rowCount ?? 0; }
-      if (createdAt !== undefined) { const dt = new Date(createdAt); const r = await db.execute(sql`UPDATE users SET created_at = ${dt} WHERE phone = ${cleanPhone}`); updated += (r as any).rowCount ?? 0; }
-      if (membershipTier !== undefined) { const r = await db.execute(sql`UPDATE users SET membership_tier = ${membershipTier} WHERE phone = ${cleanPhone}`); updated += (r as any).rowCount ?? 0; }
-      res.json({ ok: true, phone: cleanPhone, updated });
+      if (firstName !== undefined) { const r = await db.execute(sql`UPDATE users SET first_name = ${firstName} WHERE ${whereClause}`); updated += (r as any).rowCount ?? 0; }
+      if (lastName !== undefined)  { const r = await db.execute(sql`UPDATE users SET last_name = ${lastName} WHERE ${whereClause}`); updated += (r as any).rowCount ?? 0; }
+      if (createdAt !== undefined) { const dt = new Date(createdAt); const r = await db.execute(sql`UPDATE users SET created_at = ${dt} WHERE ${whereClause}`); updated += (r as any).rowCount ?? 0; }
+      if (membershipTier !== undefined) { const r = await db.execute(sql`UPDATE users SET membership_tier = ${membershipTier} WHERE ${whereClause}`); updated += (r as any).rowCount ?? 0; }
+      if (subscriptionPaidUntil !== undefined) { const dt = new Date(subscriptionPaidUntil); const r = await db.execute(sql`UPDATE users SET subscription_paid_until = ${dt} WHERE ${whereClause}`); updated += (r as any).rowCount ?? 0; }
+      res.json({ ok: true, identifier: userId || cleanPhone, updated });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
