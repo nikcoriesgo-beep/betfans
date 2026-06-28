@@ -2,7 +2,7 @@ import { Navbar } from "@/components/layout/Navbar";
 import { AdBannerTop, AdBannerInline } from "@/components/AdBanner";
 import { PrizePoolQualRule } from "@/components/PrizePoolQualRule";
 import { Button } from "@/components/ui/button";
-import { Check, Star, Crown, Clock, Trophy, Calendar, Lock, Users, Gift, DollarSign, X, ArrowRight, Copy, ExternalLink } from "lucide-react";
+import { Check, Star, Crown, Clock, Trophy, Calendar, Lock, Users, Gift, DollarSign, X, ArrowRight, Copy, ExternalLink, FileText, AlertCircle, Building2, Gem } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -11,8 +11,10 @@ import { useQuery } from "@tanstack/react-query";
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { PayPalSubscribeButton } from "@/components/PayPalSubscribeButton";
+import { PayPalCorporateButton } from "@/components/PayPalCorporateButton";
+import { PayPalPremiumCorporateButton } from "@/components/PayPalPremiumCorporateButton";
 
-type Tier = "rookie" | "pro" | "legend";
+type Tier = "legend" | "corporate" | "premium_corporate";
 
 export default function Membership() {
   const { user, isAuthenticated } = useAuth();
@@ -23,6 +25,7 @@ export default function Membership() {
   const [referrerTier, setReferrerTier] = useState<string | null>(null);
   const [checkoutTier, setCheckoutTier] = useState<Tier | null>(null);
   const [subscriptionSuccess, setSubscriptionSuccess] = useState(false);
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
 
   useEffect(() => {
     const savedCode = localStorage.getItem("betfans_affiliate_code");
@@ -34,16 +37,6 @@ export default function Membership() {
     } else if (urlCode) {
       setAffiliateCode(urlCode);
       localStorage.setItem("betfans_affiliate_code", urlCode);
-    } else {
-      fetch("/api/referral/founder-code")
-        .then(res => res.json())
-        .then(data => {
-          if (data.code) {
-            setFounderCode(data.code);
-            setAffiliateCode(data.code);
-          }
-        })
-        .catch(() => {});
     }
 
     if (urlParams.get("login_error") === "true") {
@@ -58,16 +51,28 @@ export default function Membership() {
     }
   }, [isAuthenticated, affiliateCode]);
 
-  // Auto-open checkout when returning from signup with a saved tier
+  // Auto-open checkout when returning from signup with a saved tier,
+  // OR when a free-tier user lands here (they must pay to proceed)
   useEffect(() => {
     if (!isAuthenticated) return;
     const savedTier = localStorage.getItem("betfans_checkout_tier") as Tier | null;
-    if (savedTier && ["rookie", "pro", "legend"].includes(savedTier)) {
+    if (savedTier === "legend") {
       localStorage.removeItem("betfans_checkout_tier");
-      // Small delay so the page and auth state fully settle
-      setTimeout(() => handleUpgrade(savedTier), 600);
+      setTimeout(() => handleUpgrade("legend"), 600);
+    } else if (!savedTier && user?.membershipTier === "free") {
+      setTimeout(() => handleUpgrade("legend"), 800);
     }
   }, [isAuthenticated]);
+
+  const { data: myCodeData } = useQuery<{ code: string }>({
+    queryKey: ["/api/referral/code"],
+    queryFn: async () => {
+      const res = await fetch("/api/referral/code", { credentials: "include" });
+      return res.json();
+    },
+    enabled: isAuthenticated,
+  });
+  const myReferralCode = myCodeData?.code || "";
 
   useEffect(() => {
     if (!affiliateCode.trim()) { setReferrerTier(null); return; }
@@ -75,7 +80,7 @@ export default function Membership() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ code: affiliateCode, selectedTier: "legend" }),
-    })
+    })  
       .then(r => r.json())
       .then(d => setReferrerTier(d.referrerTier || null))
       .catch(() => setReferrerTier(null));
@@ -105,12 +110,12 @@ export default function Membership() {
       return;
     }
 
-    if (affiliateCode.trim() && tier === "legend") {
+    if (affiliateCode.trim() && (tier === "legend" || tier === "corporate" || tier === "premium_corporate")) {
       try {
         const checkRes = await fetch("/api/referral/check-tier", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ code: affiliateCode, selectedTier: "legend" }),
+          body: JSON.stringify({ code: affiliateCode, selectedTier: tier }),
         });
         const checkData = await checkRes.json();
         if (!checkData.allowed) {
@@ -167,9 +172,9 @@ export default function Membership() {
   const isFounder = user?.referralCode === "NIKCOX";
 
   const tierLabel: Record<Tier, string> = {
-    rookie: "Rookie — $19/mo",
-    pro: "Pro — $29/mo",
     legend: "Legend — $99/mo",
+    corporate: "Corporate Partnership — $1,200/yr",
+    premium_corporate: "Premium Corporate Partnership — $12,000/yr",
   };
 
   const copyCode = (code: string) => {
@@ -189,43 +194,36 @@ export default function Membership() {
             Unlock Your Full Potential
           </h1>
           <p className="text-xl text-muted-foreground">
-            Join the elite community of sports analysts. Make picks, compete for daily prize pools, and earn instant payouts + residual income for every member you refer — $5 to $50/month per referral.
+            Join the elite community of sports analysts. Make picks, compete for daily prize pools, and earn $50/month residual income for every member you refer.
           </p>
         </div>
 
-        {/* 50% Winners Pool */}
+        {/* Daily Prize Competition */}
         <div className="mb-20">
           <div className="bg-gradient-to-r from-primary/10 via-primary/5 to-transparent border border-primary/20 rounded-2xl p-8 md:p-12 relative overflow-hidden">
             <div className="absolute top-0 right-0 p-32 bg-primary/20 blur-[100px] rounded-full pointer-events-none" />
             <div className="text-center max-w-2xl mx-auto mb-8">
               <span className="text-primary font-bold tracking-wider text-sm uppercase mb-2 block">How We Reward Winners</span>
-              <h2 className="text-3xl md:text-4xl font-display font-bold mb-4">50% Winners Payout Pool</h2>
+              <h2 className="text-3xl md:text-4xl font-display font-bold mb-4">Play For Daily Prizes</h2>
               <p className="text-muted-foreground">
-                We believe in rewarding the best predictors. Half of all membership fees go directly back to the community prize pool.
+                We reward the best predictors. Compete every day for available cash prizes — subject to availability and change at any time.
               </p>
             </div>
             <PrizePoolQualRule className="max-w-2xl mx-auto mb-10 relative z-10" />
-            <div className="grid md:grid-cols-3 gap-6 relative z-10">
+            <div className="grid md:grid-cols-2 gap-6 relative z-10 max-w-2xl mx-auto">
               <div className="bg-background/40 backdrop-blur-md border border-white/10 rounded-xl p-6 text-center hover:border-primary/40 transition-colors">
                 <div className="w-12 h-12 rounded-full bg-primary/20 text-primary flex items-center justify-center mx-auto mb-4"><Clock size={24} /></div>
                 <div className="text-xs text-muted-foreground uppercase tracking-widest mb-1">Daily Winner</div>
-                <div className="text-3xl font-bold font-display text-primary mb-1">10%</div>
+                <div className="text-3xl font-bold font-display text-primary mb-1">Daily</div>
                 <h3 className="font-bold text-base mb-2">One Winner Per Day</h3>
-                <p className="text-xs text-muted-foreground">All tiers compete together. The day's best MLB predictor wins 10% of the prize pool. Tied winners split the 10% equally.</p>
+                <p className="text-xs text-muted-foreground">All members compete together. The day's best MLB predictor wins. Prizes subject to availability.</p>
               </div>
-              <div className="bg-background/40 backdrop-blur-md border border-primary/30 rounded-xl p-6 text-center hover:border-primary/60 transition-colors transform md:-translate-y-4 shadow-xl">
+              <div className="bg-background/40 backdrop-blur-md border border-primary/30 rounded-xl p-6 text-center hover:border-primary/60 transition-colors shadow-xl">
                 <div className="w-14 h-14 rounded-full bg-primary/20 text-primary flex items-center justify-center mx-auto mb-4"><Crown size={28} /></div>
-                <div className="text-xs text-muted-foreground uppercase tracking-widest mb-1">All Tiers</div>
-                <div className="text-5xl font-bold font-display text-primary mb-1">10%</div>
-                <h3 className="font-bold text-lg mb-2">Daily Prize Payout</h3>
-                <p className="text-xs text-muted-foreground">Every member — Rookie, Pro, and Legend — competes on equal footing for the same daily 10% payout.</p>
-              </div>
-              <div className="bg-background/40 backdrop-blur-md border border-white/10 rounded-xl p-6 text-center hover:border-primary/40 transition-colors">
-                <div className="w-12 h-12 rounded-full bg-primary/20 text-primary flex items-center justify-center mx-auto mb-4"><Trophy size={24} /></div>
-                <div className="text-xs text-muted-foreground uppercase tracking-widest mb-1">Year-End</div>
-                <div className="text-4xl font-bold font-display text-primary mb-1">All</div>
-                <h3 className="font-bold text-base mb-2">Annual Grand Prize</h3>
-                <p className="text-xs text-muted-foreground">The annual leaderboard champion claims every dollar remaining in the prize pool at year-end.</p>
+                <div className="text-xs text-muted-foreground uppercase tracking-widest mb-1">All Members</div>
+                <div className="text-4xl font-bold font-display text-primary mb-1">Compete</div>
+                <h3 className="font-bold text-lg mb-2">Equal Footing</h3>
+                <p className="text-xs text-muted-foreground">Every Legend member competes on equal footing for the same daily prize. No guarantees — prizes vary.</p>
               </div>
             </div>
           </div>
@@ -234,16 +232,16 @@ export default function Membership() {
         {/* ── Affiliate Code Section ── */}
         <div className="max-w-2xl mx-auto mb-16">
 
-          {/* FOUNDER view: show their own code + earnings */}
-          {isAuthenticated && isFounder && (
-            <Card className="bg-gradient-to-br from-primary/10 via-card/30 to-card/30 border-primary/30">
+          {/* ALL paid members: show their own affiliate code */}
+          {isAuthenticated && myReferralCode && currentTier !== "free" && (
+            <Card className={`mb-6 ${isFounder ? "bg-gradient-to-br from-primary/10 via-card/30 to-card/30 border-primary/30" : "bg-gradient-to-br from-primary/8 via-card/30 to-card/30 border-primary/20"}`}>
               <CardContent className="p-6 md:p-8">
                 <div className="flex items-center gap-3 mb-5">
                   <div className="w-10 h-10 rounded-xl bg-primary/20 flex items-center justify-center">
-                    <Star size={18} className="text-primary" />
+                    {isFounder ? <Star size={18} className="text-primary" /> : <DollarSign size={18} className="text-primary" />}
                   </div>
                   <div>
-                    <h3 className="font-display font-bold text-lg">Your Founder Code</h3>
+                    <h3 className="font-display font-bold text-lg">{isFounder ? "Your Founder Code" : "Your Affiliate Code"}</h3>
                     <p className="text-xs text-muted-foreground">Share this to earn residual income on every member you bring in</p>
                   </div>
                 </div>
@@ -251,11 +249,11 @@ export default function Membership() {
                 {/* Code display */}
                 <div className="bg-background/60 border border-primary/20 rounded-2xl p-5 mb-5 text-center">
                   <p className="text-xs text-muted-foreground uppercase tracking-widest mb-1">Your Affiliate Code</p>
-                  <p className="text-4xl font-mono font-black text-primary tracking-[0.3em] mb-3" data-testid="text-founder-code">
-                    NIKCOX
+                  <p className="text-4xl font-mono font-black text-primary tracking-[0.3em] mb-3" data-testid="text-member-code">
+                    {myReferralCode}
                   </p>
                   <button
-                    onClick={() => copyCode("NIKCOX")}
+                    onClick={() => copyCode(myReferralCode)}
                     className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary transition-colors"
                     data-testid="button-copy-code"
                   >
@@ -264,18 +262,10 @@ export default function Membership() {
                 </div>
 
                 {/* Earnings breakdown */}
-                <div className="grid grid-cols-3 gap-3 mb-5">
-                  <div className="bg-background/40 rounded-xl p-4 text-center border border-white/5">
-                    <p className="text-xl font-bold text-primary">$5<span className="text-xs font-normal text-muted-foreground">/mo</span></p>
-                    <p className="text-xs text-muted-foreground mt-1">per Rookie referral</p>
-                  </div>
-                  <div className="bg-background/40 rounded-xl p-4 text-center border border-primary/20">
-                    <p className="text-xl font-bold text-primary">$10<span className="text-xs font-normal text-muted-foreground">/mo</span></p>
-                    <p className="text-xs text-muted-foreground mt-1">per Pro referral</p>
-                  </div>
+                <div className="mb-5">
                   <div className="bg-background/40 rounded-xl p-4 text-center border border-yellow-500/20">
-                    <p className="text-xl font-bold text-yellow-400">$50<span className="text-xs font-normal text-muted-foreground">/mo</span></p>
-                    <p className="text-xs text-muted-foreground mt-1">per Legend referral</p>
+                    <p className="text-3xl font-bold text-yellow-400">$50<span className="text-base font-normal text-muted-foreground">/mo</span></p>
+                    <p className="text-xs text-muted-foreground mt-1">per Legend referral — every month they stay active</p>
                   </div>
                 </div>
 
@@ -288,7 +278,7 @@ export default function Membership() {
                     <ExternalLink size={14} /> View Referral Dashboard
                   </a>
                   <button
-                    onClick={() => copyCode(`betfans.us/membership?ref=NIKCOX`)}
+                    onClick={() => copyCode(`betfans.us/?ref=${myReferralCode}`)}
                     className="flex-1 text-center bg-background/40 hover:bg-background/60 border border-white/10 text-muted-foreground hover:text-foreground text-sm font-medium py-2.5 rounded-xl transition-colors flex items-center justify-center gap-2"
                     data-testid="button-copy-link"
                   >
@@ -299,8 +289,8 @@ export default function Membership() {
             </Card>
           )}
 
-          {/* NON-FOUNDER: show affiliate code section */}
-          {(!isAuthenticated || !isFounder) && (
+          {/* Affiliate code entry section (enter someone else's code) */}
+          {!isFounder && (!isAuthenticated || currentTier === "free") && (
             <Card className="bg-card/30 border-white/5">
               <CardContent className="p-6 md:p-8">
                 <div className="flex items-center gap-3 mb-5">
@@ -314,7 +304,7 @@ export default function Membership() {
                 </div>
 
                 {/* If code is applied already */}
-                {((user?.referredBy && user.referredBy !== "NIKCOX") || codeApplied) ? (
+                {(user?.referredBy || codeApplied) ? (
                   <div className="flex items-center gap-2 bg-green-500/10 border border-green-500/20 rounded-xl px-4 py-3">
                     <Check size={16} className="text-green-400" />
                     <span className="text-sm text-green-400 font-medium">Affiliate code applied — your referrer earns every month you're active</span>
@@ -328,7 +318,7 @@ export default function Membership() {
                         {affiliateCode || "NIKCOX"}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        Referrer earns <span className="text-primary font-semibold">$5/mo</span> (Rookie) · <span className="text-primary font-semibold">$10/mo</span> (Pro) · <span className="text-yellow-400 font-semibold">$50/mo</span> (Legend) + an instant bonus
+                        Your referrer earns <span className="text-yellow-400 font-semibold">$50/mo</span> per Legend member they bring in
                       </p>
                     </div>
 
@@ -362,7 +352,7 @@ export default function Membership() {
                       <a href="/referrals" className="text-primary hover:underline">
                         Get your affiliate link
                       </a>{" "}
-                      and earn $5–$50/month residual + instant bonuses for every member you bring in.
+                      and earn $50/month residual income for every Legend member you bring in.
                     </p>
                   </>
                 )}
@@ -371,207 +361,288 @@ export default function Membership() {
           )}
         </div>
 
-        {/* ── Referral Tier Rules ── */}
-        <div className="max-w-6xl mx-auto mb-8">
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
-            <div className="flex items-center gap-2 mb-4">
-              <Crown size={16} className="text-yellow-400" />
-              <p className="text-sm font-display font-bold uppercase tracking-widest">Referral Tier Rules</p>
-            </div>
-            <div className="grid grid-cols-3 gap-3">
-              <div className="rounded-xl bg-yellow-500/5 border border-yellow-500/20 p-3 text-center">
-                <Crown size={18} className="text-yellow-400 mx-auto mb-1" />
-                <p className="text-xs font-bold text-yellow-400 mb-1">Legend</p>
-                <p className="text-[11px] text-muted-foreground leading-snug">Can refer <span className="text-white font-medium">Rookie, Pro & Legend</span> members</p>
-              </div>
-              <div className="rounded-xl bg-primary/5 border border-primary/20 p-3 text-center">
-                <Star size={18} className="text-primary mx-auto mb-1" />
-                <p className="text-xs font-bold text-primary mb-1">Pro</p>
-                <p className="text-[11px] text-muted-foreground leading-snug">Can refer <span className="text-white font-medium">Rookie & Pro</span> members only</p>
-              </div>
-              <div className="rounded-xl bg-white/5 border border-white/10 p-3 text-center">
-                <Users size={18} className="text-muted-foreground mx-auto mb-1" />
-                <p className="text-xs font-bold text-muted-foreground mb-1">Rookie</p>
-                <p className="text-[11px] text-muted-foreground leading-snug">Can refer <span className="text-white font-medium">Rookie</span> members only</p>
+        {/* ── Terms Agreement ── */}
+        <div className="max-w-3xl mx-auto mb-10">
+          <div className={`rounded-2xl border p-5 transition-all duration-200 ${agreedToTerms ? "bg-primary/5 border-primary/40" : "bg-card/40 border-white/10"}`}>
+            <div className="flex items-start gap-4">
+              <button
+                onClick={() => setAgreedToTerms(v => !v)}
+                data-testid="checkbox-agree-terms"
+                aria-label="Agree to Official Rules"
+                className={`mt-0.5 flex-shrink-0 w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all duration-150 ${
+                  agreedToTerms
+                    ? "bg-primary border-primary text-primary-foreground"
+                    : "border-white/30 bg-transparent hover:border-primary/60"
+                }`}
+              >
+                {agreedToTerms && <Check size={14} strokeWidth={3} />}
+              </button>
+              <div className="flex-1">
+                <p className="text-sm font-medium leading-relaxed">
+                  I have read and agree to the{" "}
+                  <a
+                    href="/official-rules"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary font-bold hover:underline inline-flex items-center gap-1"
+                    data-testid="link-official-rules"
+                  >
+                    <FileText size={13} className="inline" /> OFFICIAL RULES
+                  </a>
+                  {" "}& Terms of Participation. I understand that BetFans is a skill-based prediction platform, not a sports betting operator, and that I must be 18+ and eligible in my jurisdiction to participate.
+                </p>
+                {!agreedToTerms && (
+                  <p className="text-xs text-muted-foreground mt-2 flex items-center gap-1.5">
+                    <AlertCircle size={12} className="text-yellow-500" />
+                    You must agree to the Official Rules before selecting a membership tier.
+                  </p>
+                )}
               </div>
             </div>
           </div>
         </div>
 
-        {/* ── Pricing Grid ── */}
-        <div className="grid md:grid-cols-3 gap-8 max-w-6xl mx-auto">
-
-          {/* Rookie */}
-          <Card className="bg-card/30 border-white/5 flex flex-col">
-            <CardHeader>
-              <CardTitle className="text-2xl font-display">Rookie</CardTitle>
-              <CardDescription>For casual predictors</CardDescription>
-            </CardHeader>
-            <CardContent className="flex-1">
-              <div className="text-4xl font-bold mb-2">$19<span className="text-lg text-muted-foreground font-normal">/mo</span></div>
-              <div className="bg-primary/5 border border-primary/20 rounded-xl p-3 mb-5">
-                <p className="text-primary font-display font-bold text-sm flex items-center gap-2">
-                  <DollarSign size={14} /> $5 Instant + $5/mo Per Referral
-                </p>
-                <p className="text-xs text-primary/70 mt-1">
-                  Get <span className="font-bold text-primary">$5 instantly</span> when someone joins + <span className="font-bold text-primary">$5/month</span> residual income while they stay active
-                </p>
-              </div>
-              <ul className="space-y-4">
-                {["Basic Stats Tracking", "Daily Leaderboard Access", "Follow up to 5 Pros", "Community Forum Access"].map((f, i) => (
-                  <li key={i} className="flex items-center gap-3 text-sm">
-                    <Check size={16} className="text-muted-foreground" />
-                    <span className="text-muted-foreground">{f}</span>
-                  </li>
-                ))}
-                <li className="flex items-center gap-3 text-sm">
-                  <Lock size={16} className="text-muted-foreground/50" />
-                  <span className="text-muted-foreground/50">View Members' Daily Picks (Pro+)</span>
-                </li>
-              </ul>
-            </CardContent>
-            <CardFooter className="flex flex-col gap-2">
-              {currentTier === "rookie" ? (
-                <>
-                  <Button variant="outline" className="w-full" disabled data-testid="button-current-plan">Current Plan</Button>
-                  <div className="flex gap-2 w-full">
-                    <Button
-                      size="sm"
-                      className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90 text-xs"
-                      onClick={() => handleUpgrade("pro")}
-                      data-testid="button-rookie-upgrade-pro"
-                    >
-                      Upgrade to Pro — $29/mo
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="flex-1 border-yellow-500/40 text-yellow-400 hover:bg-yellow-500/10 text-xs"
-                      onClick={() => handleUpgrade("legend")}
-                      data-testid="button-rookie-upgrade-legend"
-                    >
-                      Upgrade to Legend — $99/mo
-                    </Button>
-                  </div>
-                </>
-              ) : isPro ? (
-                <Button variant="outline" className="w-full" disabled data-testid="button-rookie-tier">Rookie Tier</Button>
-              ) : (
-                <Button
-                  variant="outline"
-                  className="w-full hover:bg-primary/10 hover:text-primary hover:border-primary/30"
-                  onClick={() => handleUpgrade("rookie")}
-                  data-testid="button-upgrade-rookie"
-                >
-                  Get Rookie — $19/mo
-                </Button>
-              )}
-            </CardFooter>
-          </Card>
-
-          {/* Pro */}
-          <Card className="bg-primary/5 border-primary/30 relative overflow-hidden flex flex-col">
-            <CardHeader>
-              <CardTitle className="text-2xl font-display">Pro</CardTitle>
-              <CardDescription>For serious handicappers</CardDescription>
-            </CardHeader>
-            <CardContent className="flex-1">
-              <div className="text-4xl font-bold mb-2">$29<span className="text-lg text-muted-foreground font-normal">/mo</span></div>
-              <div className="bg-primary/10 border border-primary/30 rounded-xl p-3 mb-5">
-                <p className="text-primary font-display font-bold text-sm flex items-center gap-2">
-                  <DollarSign size={14} /> $10 Instant + $10/mo Per Referral
-                </p>
-                <p className="text-xs text-primary/70 mt-1">
-                  Get <span className="font-bold text-primary">$10 instantly</span> when someone joins + <span className="font-bold text-primary">$10/month</span> residual income while they stay active
-                </p>
-              </div>
-              <ul className="space-y-4">
-                {["Eligible for Prize Pools", "Unlock Spider AI Picks", "View Members' Daily Picks", "Advanced ROI Analytics", "Unlimited Following", "Verified 'Pro' Badge", "Ad-Free Experience"].map((f, i) => (
-                  <li key={i} className="flex items-center gap-3 text-sm font-medium">
-                    <div className="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center text-primary">
-                      <Check size={12} strokeWidth={3} />
-                    </div>
-                    <span>{f}</span>
-                  </li>
-                ))}
-              </ul>
-            </CardContent>
-            <CardFooter className="flex flex-col gap-2">
-              {user?.membershipTier === "pro" ? (
-                <>
-                  <Button className="w-full" disabled>Current Plan</Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="w-full border-yellow-500/40 text-yellow-400 hover:bg-yellow-500/10 text-xs"
-                    onClick={() => handleUpgrade("legend")}
-                    data-testid="button-pro-upgrade-legend"
-                  >
-                    Upgrade to Legend — $99/mo
-                  </Button>
-                </>
-              ) : (
-                <Button
-                  className="w-full bg-primary text-primary-foreground hover:bg-primary/90 h-12 text-base shadow-lg shadow-primary/20"
-                  onClick={() => handleUpgrade("pro")}
-                  data-testid="button-upgrade-pro"
-                >
-                  Upgrade to Pro — $29/mo
-                </Button>
-              )}
-            </CardFooter>
-          </Card>
-
-          {/* Legend */}
-          <Card className="bg-gradient-to-b from-yellow-500/10 via-card/30 to-card/30 border-yellow-500/50 flex flex-col relative overflow-hidden transform md:-translate-y-4 transition-transform shadow-[0_0_30px_rgba(234,179,8,0.15)]">
+        {/* ── Legend Tier (only tier) ── */}
+        <div className="max-w-lg mx-auto">
+          <Card className="bg-gradient-to-b from-yellow-500/10 via-card/30 to-card/30 border-yellow-500/50 flex flex-col relative overflow-hidden shadow-[0_0_40px_rgba(234,179,8,0.2)]">
             <div className="absolute top-0 left-0 right-0 bg-gradient-to-r from-yellow-500 via-yellow-400 to-yellow-500 text-black text-center py-1.5 text-xs font-bold uppercase tracking-widest">
-              Most Popular — $50/mo Per Referral
+              The Only Membership — $50/mo Per Referral
             </div>
-            <CardHeader className="pt-10">
-              <CardTitle className="text-2xl font-display flex items-center gap-2">
-                Legend <Crown size={18} className="text-yellow-500" />
+            <CardHeader className="pt-10 text-center">
+              <CardTitle className="text-3xl font-display flex items-center justify-center gap-2">
+                Legend <Crown size={22} className="text-yellow-500" />
               </CardTitle>
-              <CardDescription>For serious earners & professional syndicates</CardDescription>
+              <CardDescription>For serious predictors & earners</CardDescription>
             </CardHeader>
             <CardContent className="flex-1">
-              <div className="text-4xl font-bold mb-2">$99<span className="text-lg text-muted-foreground font-normal">/mo</span></div>
-              <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-3 mb-6">
-                <p className="text-yellow-400 font-display font-bold text-sm flex items-center gap-2">
-                  <DollarSign size={14} /> 50% Instant Affiliate Payouts
+              <div className="text-5xl font-bold mb-2 text-center">$99<span className="text-xl text-muted-foreground font-normal">/mo</span></div>
+              <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-3 mb-6 text-center">
+                <p className="text-yellow-400 font-display font-bold text-sm flex items-center justify-center gap-2">
+                  <DollarSign size={14} /> $50/mo Residual Income Per Referral
                 </p>
                 <p className="text-xs text-yellow-400/70 mt-1">
-                  Earn <span className="font-bold text-yellow-400">$50/month</span> for every member you refer — 50x more than standard!
+                  Earn <span className="font-bold text-yellow-400">$50/month</span> for every Legend member you refer — month after month
                 </p>
               </div>
               <ul className="space-y-4">
-                {["Everything in Pro", "$50/mo Residual Income Per Referral", "50% Instant Affiliate Payouts", "Double Prize Pool Entries", "1-on-1 Strategy Coaching", "Private Discord Access", "White-label Reports", "Exclusive 'Legend' Badge"].map((f, i) => (
+                {[
+                  "Spider AI Daily Picks",
+                  "Prize Pool Eligibility",
+                  "View All Members' Daily Picks",
+                  "Advanced ROI Analytics",
+                  "$50/mo Residual Income Per Referral",
+                  "Double Prize Pool Entries",
+                  "1-on-1 Strategy Coaching",
+                  "Private Discord Access",
+                  "Exclusive Legend Badge",
+                ].map((f, i) => (
                   <li key={i} className="flex items-center gap-3 text-sm">
-                    <Check size={16} className={i < 3 ? "text-yellow-400" : "text-primary"} />
-                    <span className={i < 3 ? "text-yellow-400 font-medium" : ""}>{f}</span>
+                    <Check size={16} className={i < 2 ? "text-yellow-400" : "text-primary"} />
+                    <span className={i < 2 ? "text-yellow-400 font-medium" : ""}>{f}</span>
                   </li>
                 ))}
               </ul>
             </CardContent>
             <CardFooter>
-              {user?.membershipTier === "legend" ? (
-                <Button className="w-full" disabled>Current Plan</Button>
-              ) : referrerTier && referrerTier !== "legend" && referrerTier !== "founder" ? (
-                <div className="w-full">
-                  <Button className="w-full bg-gray-700 text-gray-400 cursor-not-allowed h-12 text-base" disabled data-testid="button-upgrade-legend-locked">
-                    <Lock size={16} className="mr-2" /> Legend Requires Legend Referrer
-                  </Button>
-                  <p className="text-[11px] text-yellow-400/70 text-center mt-2">Your referrer is a {referrerTier.charAt(0).toUpperCase() + referrerTier.slice(1)} member. Only Legend members can refer Legend signups.</p>
-                </div>
+              {user?.membershipTier === "legend" || (user as any)?.referralCode === "NIKCOX" ? (
+                <Button className="w-full bg-yellow-600/30 text-yellow-300 border border-yellow-500/30" disabled>Active Legend Member</Button>
               ) : (
                 <Button
-                  className="w-full bg-gradient-to-r from-yellow-500 to-yellow-600 text-black hover:from-yellow-400 hover:to-yellow-500 font-bold h-12 text-base shadow-lg shadow-yellow-500/20"
+                  className="w-full bg-gradient-to-r from-yellow-500 to-yellow-600 text-black hover:from-yellow-400 hover:to-yellow-500 font-bold h-12 text-base shadow-lg shadow-yellow-500/20 disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none"
                   onClick={() => handleUpgrade("legend")}
+                  disabled={!agreedToTerms}
                   data-testid="button-upgrade-legend"
                 >
-                  Become a Legend — $99/mo
+                  {isAuthenticated ? "Subscribe — $99/mo" : "Join BetFans — $99/mo"}
                 </Button>
               )}
             </CardFooter>
+          </Card>
+        </div>
+
+        {/* ── Corporate Partnership Tier ── */}
+        <div className="max-w-2xl mx-auto mt-16">
+          <div className="text-center mb-8">
+            <span className="inline-block py-1 px-3 rounded-full bg-yellow-500/10 text-yellow-400 text-xs font-bold uppercase tracking-widest border border-yellow-500/20 mb-3">For Businesses</span>
+            <h2 className="text-2xl md:text-3xl font-display font-bold">Corporate Partnership</h2>
+            <p className="text-muted-foreground mt-2 text-sm">Grow your brand, generate residual income, and fund the community prize pool.</p>
+          </div>
+
+          <Card className="bg-gradient-to-b from-yellow-900/20 via-card/30 to-card/30 border-yellow-600/40 relative overflow-hidden shadow-[0_0_40px_rgba(161,109,8,0.15)]">
+            <div className="absolute top-0 left-0 right-0 bg-gradient-to-r from-yellow-700 via-yellow-600 to-yellow-700 text-black text-center py-1.5 text-xs font-bold uppercase tracking-widest">
+              Annual Partnership · $600 to Prize Pool + $600 to Your Affiliate
+            </div>
+            <div className="grid md:grid-cols-2 gap-0 pt-8">
+              {/* Left: pricing + split */}
+              <CardContent className="p-6 border-b md:border-b-0 md:border-r border-white/5">
+                <div className="flex items-center gap-2 mb-1">
+                  <Building2 size={18} className="text-yellow-500" />
+                  <h3 className="text-xl font-display font-bold">Corporate Partner</h3>
+                </div>
+                <p className="text-xs text-muted-foreground mb-5">For brands, agencies, and businesses</p>
+                <div className="text-4xl font-bold mb-1">$1,200<span className="text-base text-muted-foreground font-normal">/year</span></div>
+                <p className="text-xs text-muted-foreground mb-6">Billed annually · $100/month equivalent</p>
+
+                {/* Split breakdown */}
+                <div className="space-y-3 mb-6">
+                  <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">On signup, your $1,200 splits:</p>
+                  <div className="flex items-center gap-3 bg-primary/10 border border-primary/20 rounded-xl px-4 py-3">
+                    <Trophy size={16} className="text-primary shrink-0" />
+                    <div>
+                      <p className="text-sm font-bold text-primary">$600 → Prize Pool</p>
+                      <p className="text-xs text-muted-foreground">Immediately added to the community prize pool</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 bg-yellow-500/10 border border-yellow-500/20 rounded-xl px-4 py-3">
+                    <DollarSign size={16} className="text-yellow-400 shrink-0" />
+                    <div>
+                      <p className="text-sm font-bold text-yellow-400">$600 → Your Affiliate</p>
+                      <p className="text-xs text-muted-foreground">Instantly paid to whoever referred you</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* CTA */}
+                {currentTier === "corporate" ? (
+                  <Button className="w-full bg-yellow-700/30 text-yellow-400 border border-yellow-600/30" disabled>
+                    Active Corporate Partner
+                  </Button>
+                ) : (
+                  <Button
+                    className="w-full bg-gradient-to-r from-yellow-700 to-yellow-600 text-white hover:from-yellow-600 hover:to-yellow-500 font-bold h-12 text-base disabled:opacity-40 disabled:cursor-not-allowed"
+                    onClick={() => handleUpgrade("corporate")}
+                    disabled={!agreedToTerms}
+                    data-testid="button-upgrade-corporate"
+                  >
+                    {isAuthenticated ? "Partner Up — $1,200/yr" : "Become a Partner — $1,200/yr"}
+                  </Button>
+                )}
+                {!agreedToTerms && (
+                  <p className="text-[10px] text-muted-foreground text-center mt-2">Agree to the Official Rules above to unlock</p>
+                )}
+              </CardContent>
+
+              {/* Right: features */}
+              <CardContent className="p-6">
+                <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-4">What's Included</p>
+                <ul className="space-y-3">
+                  {[
+                    { icon: DollarSign, label: "Your own affiliate code", desc: "Earn monthly residual income for every member you refer", accent: true },
+                    { icon: Crown, label: "Full Legend access", desc: "Spider AI picks, prize pool eligibility, all member picks" },
+                    { icon: Trophy, label: "$600 funds the prize pool", desc: "Half your fee goes directly to daily community prizes" },
+                    { icon: Users, label: "Double prize pool entries", desc: "Two entries for every daily competition" },
+                    { icon: Star, label: "Priority partner support", desc: "Dedicated onboarding and account management" },
+                    { icon: ArrowRight, label: "Corporate badge", desc: "Displayed next to your name in the community" },
+                  ].map((f, i) => (
+                    <li key={i} className="flex items-start gap-3 text-sm">
+                      <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${f.accent ? "bg-yellow-500/20" : "bg-primary/10"}`}>
+                        <f.icon size={12} className={f.accent ? "text-yellow-400" : "text-primary"} />
+                      </div>
+                      <div>
+                        <p className={`font-semibold ${f.accent ? "text-yellow-400" : ""}`}>{f.label}</p>
+                        <p className="text-xs text-muted-foreground">{f.desc}</p>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+                <div className="mt-5 p-3 bg-background/40 border border-white/5 rounded-xl text-center">
+                  <p className="text-xs text-muted-foreground">Questions? <a href="mailto:nikcox@betfans.us" className="text-primary hover:underline font-semibold">nikcox@betfans.us</a></p>
+                </div>
+              </CardContent>
+            </div>
+          </Card>
+        </div>
+
+        {/* ── Premium Corporate Partnership Tier ── */}
+        <div className="max-w-2xl mx-auto mt-12">
+          <div className="text-center mb-8">
+            <span className="inline-block py-1 px-3 rounded-full bg-purple-500/10 text-purple-400 text-xs font-bold uppercase tracking-widest border border-purple-500/20 mb-3">Premium · For Major Brands</span>
+            <h2 className="text-2xl md:text-3xl font-display font-bold">Premium Corporate Partnership</h2>
+            <p className="text-muted-foreground mt-2 text-sm">Your logo on betfans.us, the biggest impact on the prize pool, and the highest affiliate commissions in the platform.</p>
+          </div>
+
+          <Card className="bg-gradient-to-b from-purple-900/20 via-card/30 to-card/30 border-purple-500/40 relative overflow-hidden shadow-[0_0_50px_rgba(168,85,247,0.15)]">
+            <div className="absolute top-0 left-0 right-0 bg-gradient-to-r from-purple-700 via-purple-500 to-purple-700 text-white text-center py-1.5 text-xs font-bold uppercase tracking-widest">
+              Premium Annual Partnership · $6,000 to Prize Pool + $6,000 to Your Affiliate
+            </div>
+            <div className="grid md:grid-cols-2 gap-0 pt-8">
+              {/* Left: pricing + split */}
+              <CardContent className="p-6 border-b md:border-b-0 md:border-r border-white/5">
+                <div className="flex items-center gap-2 mb-1">
+                  <Gem size={18} className="text-purple-400" />
+                  <h3 className="text-xl font-display font-bold">Premium Partner</h3>
+                </div>
+                <p className="text-xs text-muted-foreground mb-5">For major brands & enterprise sponsors</p>
+                <div className="text-4xl font-bold mb-1">$12,000<span className="text-base text-muted-foreground font-normal">/year</span></div>
+                <p className="text-xs text-muted-foreground mb-6">Billed annually · $1,000/month equivalent</p>
+
+                {/* Split breakdown */}
+                <div className="space-y-3 mb-6">
+                  <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">On signup, your $12,000 splits:</p>
+                  <div className="flex items-center gap-3 bg-primary/10 border border-primary/20 rounded-xl px-4 py-3">
+                    <Trophy size={16} className="text-primary shrink-0" />
+                    <div>
+                      <p className="text-sm font-bold text-primary">$6,000 → Prize Pool</p>
+                      <p className="text-xs text-muted-foreground">Immediately added to the community prize pool</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 bg-yellow-500/10 border border-yellow-500/20 rounded-xl px-4 py-3">
+                    <DollarSign size={16} className="text-yellow-400 shrink-0" />
+                    <div>
+                      <p className="text-sm font-bold text-yellow-400">$6,000 → Your Affiliate</p>
+                      <p className="text-xs text-muted-foreground">Instantly paid to whoever referred you</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* CTA */}
+                {currentTier === "premium_corporate" ? (
+                  <Button className="w-full bg-purple-700/30 text-purple-300 border border-purple-500/30" disabled>
+                    Active Premium Partner
+                  </Button>
+                ) : (
+                  <Button
+                    className="w-full bg-gradient-to-r from-purple-700 to-purple-500 text-white hover:from-purple-600 hover:to-purple-400 font-bold h-12 text-base disabled:opacity-40 disabled:cursor-not-allowed"
+                    onClick={() => handleUpgrade("premium_corporate")}
+                    disabled={!agreedToTerms}
+                    data-testid="button-upgrade-premium-corporate"
+                  >
+                    {isAuthenticated ? "Partner Up — $12,000/yr" : "Become a Premium Partner — $12,000/yr"}
+                  </Button>
+                )}
+                {!agreedToTerms && (
+                  <p className="text-[10px] text-muted-foreground text-center mt-2">Agree to the Official Rules above to unlock</p>
+                )}
+              </CardContent>
+
+              {/* Right: features */}
+              <CardContent className="p-6">
+                <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-4">What's Included</p>
+                <ul className="space-y-3">
+                  {[
+                    { icon: Gem, label: "Logo on betfans.us", desc: "Your brand displayed to the entire BetFans community", accent: true },
+                    { icon: DollarSign, label: "Your own affiliate code", desc: "Earn monthly residual income for every member you refer", accent: true },
+                    { icon: Crown, label: "Full Legend access", desc: "Spider AI picks, prize pool eligibility, all member picks" },
+                    { icon: Trophy, label: "$6,000 funds the prize pool", desc: "Half your fee goes directly to daily community prizes" },
+                    { icon: Users, label: "Double prize pool entries", desc: "Two entries for every daily competition" },
+                    { icon: Star, label: "Premium partner badge", desc: "Displayed next to your name — highest status on the platform" },
+                  ].map((f, i) => (
+                    <li key={i} className="flex items-start gap-3 text-sm">
+                      <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${f.accent ? "bg-purple-500/20" : "bg-primary/10"}`}>
+                        <f.icon size={12} className={f.accent ? "text-purple-400" : "text-primary"} />
+                      </div>
+                      <div>
+                        <p className={`font-semibold ${f.accent ? "text-purple-300" : ""}`}>{f.label}</p>
+                        <p className="text-xs text-muted-foreground">{f.desc}</p>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+                <div className="mt-5 p-3 bg-purple-500/5 border border-purple-500/20 rounded-xl text-center">
+                  <p className="text-xs text-muted-foreground">After subscribing, email your logo + company details to <a href="mailto:nikcox@betfans.us" className="text-purple-400 hover:underline font-semibold">nikcox@betfans.us</a> to go live.</p>
+                </div>
+              </CardContent>
+            </div>
           </Card>
         </div>
 
@@ -627,19 +698,69 @@ export default function Membership() {
               {/* What you get */}
               <div className="bg-background/40 rounded-xl p-4 border border-white/5">
                 <p className="text-sm font-semibold mb-2">What you get:</p>
-                {checkoutTier === "rookie" && <p className="text-sm text-muted-foreground">Stats tracking, leaderboard access, community forum + <span className="text-primary font-semibold">$5 instant payout</span> + <span className="text-primary font-semibold">$5/mo residual income</span> per referral.</p>}
-                {checkoutTier === "pro" && <p className="text-sm text-muted-foreground">Everything in Rookie + Spider AI picks, Pro badge, and <span className="text-primary font-semibold">$10 instant payout</span> + <span className="text-primary font-semibold">$10/mo residual income</span> per referral.</p>}
-                {checkoutTier === "legend" && <p className="text-sm text-muted-foreground">Everything in Pro + <span className="text-yellow-400 font-semibold">$50/mo per Legend referral</span>, double prize pool entries, 1-on-1 coaching, and private Discord.</p>}
+                {checkoutTier === "premium_corporate" ? (
+                  <>
+                    <p className="text-sm text-muted-foreground">Logo advertising on betfans.us, full Legend access, your own affiliate code, and an immediate <span className="text-yellow-400 font-semibold">$6,000 boost</span> to the prize pool + <span className="text-primary font-semibold">$6,000 to your referring affiliate</span>.</p>
+                    <div className="mt-3 flex items-center gap-2 text-xs text-yellow-400/80 bg-yellow-500/10 rounded-lg px-3 py-2 border border-yellow-500/20">
+                      <Gem size={12} className="shrink-0" />
+                      Annual billing · $12,000 charged once per year · Logo goes live after you email nikcox@betfans.us
+                    </div>
+                  </>
+                ) : checkoutTier === "corporate" ? (
+                  <>
+                    <p className="text-sm text-muted-foreground">Full Legend-level platform access, your own affiliate code for monthly residual income, and an immediate <span className="text-yellow-400 font-semibold">$600 boost</span> to the prize pool + <span className="text-primary font-semibold">$600 to your referring affiliate</span>.</p>
+                    <div className="mt-3 flex items-center gap-2 text-xs text-yellow-400/80 bg-yellow-500/10 rounded-lg px-3 py-2 border border-yellow-500/20">
+                      <Building2 size={12} className="shrink-0" />
+                      Annual billing · $1,200 charged once per year
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Spider AI daily picks, prize pool eligibility, all member picks, <span className="text-yellow-400 font-semibold">$50/mo per referral</span>, double prize pool entries, 1-on-1 coaching, and private Discord.</p>
+                )}
+              </div>
+
+              {/* Terms agreement confirmation */}
+              <div className="flex items-center gap-2 bg-primary/5 border border-primary/20 rounded-xl px-4 py-3">
+                <Check size={14} className="text-primary flex-shrink-0" />
+                <p className="text-xs text-muted-foreground">
+                  You agreed to the{" "}
+                  <a
+                    href="/official-rules"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary font-semibold hover:underline"
+                    data-testid="link-checkout-official-rules"
+                  >
+                    Official Rules
+                  </a>
+                  {" "}& Terms of Participation.
+                </p>
               </div>
 
               {/* PayPal Button */}
               <div>
-                <p className="text-xs text-muted-foreground text-center mb-3">Secure payment via PayPal · Cancel anytime</p>
-                <PayPalSubscribeButton
-                  tier={checkoutTier}
-                  onSuccess={handlePayPalSuccess}
-                  onError={handlePayPalError}
-                />
+                <p className="text-xs text-muted-foreground text-center mb-3">
+                  {(checkoutTier === "corporate" || checkoutTier === "premium_corporate")
+                    ? "Secure annual payment via PayPal · Cancel anytime"
+                    : "Secure payment via PayPal · Cancel anytime"}
+                </p>
+                {checkoutTier === "premium_corporate" ? (
+                  <PayPalPremiumCorporateButton
+                    onSuccess={handlePayPalSuccess}
+                    onError={handlePayPalError}
+                  />
+                ) : checkoutTier === "corporate" ? (
+                  <PayPalCorporateButton
+                    onSuccess={handlePayPalSuccess}
+                    onError={handlePayPalError}
+                  />
+                ) : (
+                  <PayPalSubscribeButton
+                    tier={checkoutTier}
+                    onSuccess={handlePayPalSuccess}
+                    onError={handlePayPalError}
+                  />
+                )}
               </div>
             </div>
           </div>
