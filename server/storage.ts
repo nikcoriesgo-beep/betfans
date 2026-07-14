@@ -22,6 +22,7 @@ export interface IStorage {
   getUser(id: string): Promise<User | null>;
   getUserByStripeCustomerId(customerId: string): Promise<User | null>;
   getUserByPaypalSubscriptionId(subscriptionId: string): Promise<User | null>;
+  getUserByEmail(email: string): Promise<User | null>;
   getActivePaypalSubscribers(): Promise<User[]>;
   updateUser(id: string, data: Partial<User>): Promise<User | null>;
 
@@ -135,6 +136,11 @@ export class DatabaseStorage implements IStorage {
 
   async getUserByPaypalSubscriptionId(subscriptionId: string): Promise<User | null> {
     const [user] = await db.select().from(users).where(eq(users.paypalSubscriptionId, subscriptionId));
+    return user || null;
+  }
+
+  async getUserByEmail(email: string): Promise<User | null> {
+    const [user] = await db.select().from(users).where(eq(users.email, email));
     return user || null;
   }
 
