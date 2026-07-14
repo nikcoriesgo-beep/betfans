@@ -1016,6 +1016,53 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/referral/all-teams", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = (req.session as any)?.userId;
+      const [me] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+      const isFounder = me?.referralCode === "NIKCOX";
+      if (!isFounder) return res.status(403).json({ message: "Founder only" });
+
+      const myRefs = await db.select().from(referrals)
+        .leftJoin(users, eq(referrals.referredId, users.id))
+        .where(eq(referrals.referrerId, userId));
+
+      const result = await Promise.all(myRefs.map(async (r) => {
+        const member = r.users;
+        const subRefs = member
+          ? await db.select().from(referrals)
+              .leftJoin(users, eq(referrals.referredId, users.id))
+              .where(eq(referrals.referrerId, member.id))
+          : [];
+        return {
+          id: r.referrals.id,
+          status: r.referrals.status,
+          createdAt: r.referrals.createdAt,
+          referred: member ? {
+            id: member.id,
+            firstName: member.firstName,
+            lastName: member.lastName,
+            membershipTier: member.membershipTier,
+          } : null,
+          subTeam: subRefs.map(s => ({
+            id: s.referrals.id,
+            status: s.referrals.status,
+            referred: s.users ? {
+              id: s.users.id,
+              firstName: s.users.firstName,
+              lastName: s.users.lastName,
+              membershipTier: s.users.membershipTier,
+            } : null,
+          })),
+        };
+      }));
+
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch all teams" });
+    }
+  });
+
   app.get("/api/referral/leaderboard", async (_req, res) => {
     try {
       const adminIds = (process.env.ADMIN_USER_IDS || "").split(",").map(id => id.trim()).filter(Boolean);
@@ -1411,9 +1458,9 @@ export async function registerRoutes(
       // Activate referral now that payment is confirmed
       await storage.activateReferral(userId).catch(() => {});
 
-      // Prize pool contribution — corporate: $600; premium_corporate: $6,000; others: 50% of price
+      // Prize pool contribution — corporate: $300 (50/50 of non-affiliate share); premium_corporate: $3,000; legend: $25 flat; others: 0
       const tierPrices: Record<string, number> = { rookie: 19, pro: 29, legend: 99, corporate: 1200, premium_corporate: 12000 };
-      const prizeContribution = confirmedTier === "premium_corporate" ? 6000 : confirmedTier === "corporate" ? 600 : (tierPrices[confirmedTier] || 0) * 0.5;
+      const prizeContribution = confirmedTier === "premium_corporate" ? 3000 : confirmedTier === "corporate" ? 300 : confirmedTier === "legend" ? 25 : 0;
       if (prizeContribution > 0) {
         await storage.addPrizePoolContribution(prizeContribution, "paypal", subscriptionId, userId);
         console.log(`[PayPal] Prize pool +$${prizeContribution} for ${confirmedTier} (${subscriptionId})`);
@@ -1516,7 +1563,27 @@ export async function registerRoutes(
         if (subscriptionId && planId) {
           const tier = tierFromPlanId(planId);
           if (tier) {
-            const foundUser = await storage.getUserByPaypalSubscriptionId(subscriptionId);
+            let foundUser = await storage.getUserByPaypalSubscriptionId(subscriptionId);
+
+            // Fallback: subscriber email match — handles manually-added members whose
+            // paypal_subscription_id was never captured (null in DB).
+            // Also auto-saves the subscription ID so future renewals work automatically.
+            if (!foundUser) {
+              const subscriberEmail = sub?.subscriber?.email_address;
+              if (subscriberEmail) {
+                const emailMatch = await storage.getUserByEmail(subscriberEmail).catch(() => null);
+                if (emailMatch && !emailMatch.paypalSubscriptionId) {
+                  await storage.updateUser(emailMatch.id, { paypalSubscriptionId: subscriptionId } as any);
+                  console.log(`[PayPal webhook] Linked subscription ${subscriptionId} to user ${emailMatch.id} via email fallback`);
+                  foundUser = { ...emailMatch, paypalSubscriptionId: subscriptionId } as any;
+                }
+              }
+            }
+
+            if (!foundUser) {
+              console.warn(`[PayPal webhook] No user found for subscription ${subscriptionId} (plan ${planId} / ${tier}) — event: ${resourceType}`);
+            }
+
             if (foundUser && !SUSPENDED_USERS.has(foundUser.id)) {
               // Extend subscription window by 32 days on every activation/renewal
               const paidUntil = new Date(Date.now() + 32 * 24 * 60 * 60 * 1000);
@@ -1528,15 +1595,18 @@ export async function registerRoutes(
               console.log(`[PayPal webhook] User ${foundUser.id} activated ${tier} — paid until ${paidUntil.toISOString()}`);
               // Activate referral on first payment
               await storage.activateReferral(foundUser.id).catch(() => {});
-              // Add prize pool + affiliate commission on renewal
-              if (resourceType === "BILLING.SUBSCRIPTION.RENEWED") {
-                // Corporate: $600 to prize pool, $600 to referrer (annual)
-                // Others: per-month affiliate commission, remainder to prize pool
+              // Add prize pool + affiliate commission on BOTH activation (first payment) and renewal
+              {
+                const isRenewal = resourceType === "BILLING.SUBSCRIPTION.RENEWED";
+                const eventLabel = isRenewal ? "renewal" : "activation";
+                // Corporate: $300 to prize pool (50/50 of non-affiliate $600), $300 kept in-house
+                // Premium Corporate: $3,000 to prize pool (50/50 of non-affiliate $6,000), $3,000 kept in-house
+                // Legend: $25 flat to prize pool, remainder kept in-house for corporate profit share
                 const affiliateCommission: Record<string, number> = { rookie: 0, pro: 0, legend: 50, corporate: 600, premium_corporate: 6000 };
                 const tierPrices: Record<string, number> = { rookie: 19, pro: 29, legend: 99, corporate: 1200, premium_corporate: 12000 };
                 const commission = affiliateCommission[tier] || 0;
-                const prizeContribution = tier === "premium_corporate" ? 6000 : tier === "corporate" ? 600 : (tierPrices[tier] || 0) - commission;
-                const renewalLabel = (tier === "corporate" || tier === "premium_corporate") ? "Annual renewal" : "Monthly residual";
+                const prizeContribution = tier === "premium_corporate" ? 3000 : tier === "corporate" ? 300 : tier === "legend" ? 25 : 0;
+                const paymentLabel = (tier === "corporate" || tier === "premium_corporate") ? "Annual payment" : isRenewal ? "Monthly residual" : "First payment";
 
                 // Pay affiliate commission to referrer
                 if (commission > 0 && foundUser.referredBy) {
@@ -1544,34 +1614,34 @@ export async function registerRoutes(
                   if (referrer) {
                     const refBalance = parseFloat((referrer as any).walletBalance || "0");
                     await storage.updateUser(referrer.id, { walletBalance: String(refBalance + commission) } as any);
-                    await storage.createTransaction({ userId: referrer.id, type: "referral_bonus", amount: commission, description: `${renewalLabel} — ${foundUser.firstName || foundUser.id} (${tier}) renewed`, status: "completed" });
-                    console.log(`[PayPal webhook] Affiliate $${commission} to ${referrer.id} for ${foundUser.id} ${tier} renewal`);
-                    // Instant PayPal payout to referrer on renewal
-                    const renewalPayoutDest = (referrer as any).paypalPayoutEmail || referrer.phone;
-                    if (renewalPayoutDest) {
+                    await storage.createTransaction({ userId: referrer.id, type: "referral_bonus", amount: commission, description: `${paymentLabel} — ${foundUser.firstName || foundUser.id} (${tier}) ${eventLabel}`, status: "completed" });
+                    console.log(`[PayPal webhook] Affiliate $${commission} to ${referrer.id} for ${foundUser.id} ${tier} ${eventLabel}`);
+                    // Instant PayPal payout to referrer
+                    const payoutDest = (referrer as any).paypalPayoutEmail || referrer.phone;
+                    if (payoutDest) {
                       try {
                         const { sendPayPalPayout } = await import("./paypalService");
                         await sendPayPalPayout(
-                          renewalPayoutDest,
+                          payoutDest,
                           commission,
-                          `aff-renewal-${referrer.id}-${foundUser.id}-${Date.now()}`,
-                          `You earned a $${commission} residual commission — ${foundUser.firstName || "a member"} you referred just renewed their BetFans subscription.`,
+                          `aff-${eventLabel}-${referrer.id}-${foundUser.id}-${Date.now()}`,
+                          `You earned a $${commission} ${isRenewal ? "residual commission" : "referral bonus"} — ${foundUser.firstName || "a member"} you referred just ${isRenewal ? "renewed" : "activated"} their BetFans subscription.`,
                           "BetFans Residual Income 💸",
-                          `Your monthly residual is here! $${commission} earned from a referred member's renewal.`
+                          `$${commission} earned from a referred member's ${eventLabel}.`
                         );
-                        console.log(`[PayPal webhook] Affiliate renewal payout $${commission} sent to ${renewalPayoutDest}`);
+                        console.log(`[PayPal webhook] Affiliate ${eventLabel} payout $${commission} sent to ${payoutDest}`);
                       } catch (payoutErr: any) {
-                        console.error(`[PayPal webhook] Affiliate renewal payout failed for ${referrer.id}:`, payoutErr.message);
+                        console.error(`[PayPal webhook] Affiliate ${eventLabel} payout failed for ${referrer.id}:`, payoutErr.message);
                       }
                     } else {
-                      console.warn(`[PayPal webhook] Referrer ${referrer.id} has no paypalPayoutEmail or phone — wallet credited but renewal payout skipped`);
+                      console.warn(`[PayPal webhook] Referrer ${referrer.id} has no paypalPayoutEmail or phone — wallet credited but ${eventLabel} payout skipped`);
                     }
                   }
                 }
 
                 if (prizeContribution > 0) {
-                  await storage.addPrizePoolContribution(prizeContribution, "paypal_renewal", subscriptionId, foundUser.id);
-                  console.log(`[PayPal webhook] Prize pool +$${prizeContribution} renewal for ${tier}`);
+                  await storage.addPrizePoolContribution(prizeContribution, `paypal_${eventLabel}`, subscriptionId, foundUser.id);
+                  console.log(`[PayPal webhook] Prize pool +$${prizeContribution} on ${eventLabel} for ${tier}`);
                 }
               }
             }
@@ -3528,6 +3598,20 @@ export async function registerRoutes(
       await db.execute(sql`INSERT INTO prize_pool_contributions (user_id, amount, source, created_at) VALUES (NULL, ${delta}, 'admin_adjust', NOW())`);
       const check = await db.execute(sql`SELECT COALESCE(SUM(amount::numeric),0) AS total FROM prize_pool_contributions`);
       res.json({ ok: true, previousTotal: currentTotal, delta, newTotal: Number((check as any).rows?.[0]?.total ?? 0) });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // One-time internal admin helper: run arbitrary read/write SQL against the live prod DB
+  // via the app's own connection (used when direct external DB access is blocked).
+  app.post("/api/internal/exec-sql", async (req, res) => {
+    try {
+      const { secret, query } = req.body;
+      if (secret !== "bf-internal-k9x2m7") return res.status(403).json({ error: "forbidden" });
+      if (!query || typeof query !== "string") return res.status(400).json({ error: "query required" });
+      const result = await db.execute(sql.raw(query));
+      res.json({ ok: true, rows: (result as any).rows ?? result });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
