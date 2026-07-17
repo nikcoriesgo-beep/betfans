@@ -9,12 +9,39 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   Users, Gift, Copy, Check, DollarSign, UserPlus, Loader2, Share2,
   TrendingUp, Repeat, Crown, Rocket, Twitter, Facebook, Instagram, MessageSquare,
-  Trophy, Medal,
+  Trophy, Medal, Mail, AlertCircle, ExternalLink, ChevronDown, ChevronUp, ShieldCheck,
 } from "lucide-react";
+import { useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
+
+const AFFILIATE_NAMES = ["Scott Lunny", "Ian C Glover", "Moe McCoy", "Bryant Nelson"];
+
+function RotatingNames({ names, interval = 2500 }: { names: string[]; interval?: number }) {
+  const [idx, setIdx] = useState(0);
+  const [visible, setVisible] = useState(true);
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setVisible(false);
+      setTimeout(() => {
+        setIdx(i => (i + 1) % names.length);
+        setVisible(true);
+      }, 350);
+    }, interval);
+    return () => clearInterval(timer);
+  }, [names.length, interval]);
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 text-primary font-bold transition-opacity duration-300"
+      style={{ opacity: visible ? 1 : 0 }}
+    >
+      <Crown size={11} />
+      {names[idx]}
+    </span>
+  );
+}
 
 function TikTokIcon({ size = 13 }: { size?: number }) {
   return (
@@ -41,24 +68,6 @@ function StatCard({ icon: Icon, label, value, sub, color }: { icon: any; label: 
   );
 }
 
-const rookieMilestones = [
-  { members: 10, monthly: "$50", instant: "$50", icon: "🔥" },
-  { members: 100, monthly: "$500", instant: "$500", icon: "💰" },
-  { members: 1000, monthly: "$5,000", instant: "$5,000", icon: "🚀" },
-  { members: 10000, monthly: "$50,000", instant: "$50,000", icon: "💎" },
-  { members: 100000, monthly: "$500,000", instant: "$500,000", icon: "👑" },
-  { members: 1000000, monthly: "$5,000,000", instant: "$5,000,000", icon: "🏆" },
-];
-
-const proMilestones = [
-  { members: 10, monthly: "$100", instant: "$100", icon: "🔥" },
-  { members: 100, monthly: "$1,000", instant: "$1,000", icon: "💰" },
-  { members: 1000, monthly: "$10,000", instant: "$10,000", icon: "🚀" },
-  { members: 10000, monthly: "$100,000", instant: "$100,000", icon: "💎" },
-  { members: 100000, monthly: "$1,000,000", instant: "$1,000,000", icon: "👑" },
-  { members: 1000000, monthly: "$10,000,000", instant: "$10,000,000", icon: "🏆" },
-];
-
 const legendMilestones = [
   { members: 10, monthly: "$500", instant: "$500", icon: "🔥" },
   { members: 100, monthly: "$5,000", instant: "$5,000", icon: "💰" },
@@ -80,7 +89,7 @@ const rankIcons: Record<number, string> = {
   3: "🥉",
 };
 
-type TabId = "affiliate" | "leaderboard";
+type TabId = "affiliate" | "leaderboard" | "all-members";
 
 export default function Referrals() {
   const { user, isAuthenticated } = useAuth();
@@ -89,6 +98,32 @@ export default function Referrals() {
   const [copied, setCopied] = useState(false);
   const [applyCode, setApplyCode] = useState("");
   const [activeTab, setActiveTab] = useState<TabId>("affiliate");
+  const [expandedMembers, setExpandedMembers] = useState<Set<string>>(new Set());
+  const [payoutEmailInput, setPayoutEmailInput] = useState("");
+  const [payoutEmailSaved, setPayoutEmailSaved] = useState(false);
+
+  const savePayoutEmailMutation = useMutation({
+    mutationFn: async (email: string) => {
+      const res = await fetch("/api/user/payout-email", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      if (!res.ok) {
+        const d = await res.json();
+        throw new Error(d.message || "Failed to save email");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      setPayoutEmailSaved(true);
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+      toast({ title: "PayPal email saved!", description: "Your affiliate payouts will now be sent automatically." });
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
 
   const { data: codeData } = useQuery<{ code: string }>({
     queryKey: ["/api/referral/code"],
@@ -103,6 +138,16 @@ export default function Referrals() {
   const { data: referralList = [] } = useQuery<any[]>({
     queryKey: ["/api/referral/list"],
     enabled: isAuthenticated,
+  });
+
+  const { data: allTeams = [] } = useQuery<any[]>({
+    queryKey: ["/api/referral/all-teams"],
+    enabled: isAuthenticated,
+  });
+
+  const { data: founderOverview = [], isLoading: overviewLoading } = useQuery<any[]>({
+    queryKey: ["/api/referral/founder-overview"],
+    enabled: isAuthenticated && (stats?.isFounder || false),
   });
 
   const { data: leaderboard = [] } = useQuery<any[]>({
@@ -136,14 +181,13 @@ export default function Referrals() {
   const referralLink = referralCode ? `${window.location.origin}?ref=${referralCode}` : "";
 
   const isLegend = user?.membershipTier === "legend";
-  const isPro = user?.membershipTier === "pro";
   const isFounder = stats?.isFounder || false;
-  const perReferral = (isLegend || isFounder) ? 50 : isPro ? 10 : 5;
+  const perReferral = 50;
   const activeReferrals = stats?.completedCount || 0;
   const monthlyIncome = stats?.monthlyIncome ?? (activeReferrals * perReferral);
-  const milestones = (isLegend || isFounder) ? legendMilestones : isPro ? proMilestones : rookieMilestones;
+  const milestones = legendMilestones;
 
-  const totalMonthlyPayout = leaderboard.reduce((sum: number, e: any) => sum + (e.monthlyIncome ?? e.activeReferrals * 5), 0);
+  const totalMonthlyPayout = leaderboard.reduce((sum: number, e: any) => sum + (e.monthlyIncome ?? e.activeReferrals * 50), 0);
   const totalReferrals = leaderboard.reduce((sum: number, e: any) => sum + e.activeReferrals, 0);
 
   const copyToClipboard = (text: string) => {
@@ -191,21 +235,10 @@ export default function Referrals() {
               </div>
             ) : (
               <div className="space-y-2">
-                <div className="inline-flex items-center gap-2 bg-primary/10 border border-primary/30 rounded-xl px-4 py-2">
-                  <Crown size={16} className="text-primary" />
-                  <span className="text-sm font-display font-bold">
-                    {isPro
-                      ? <>1,000,000 affiliates = <span className="text-primary">$10,000,000/month</span> at $10/mo</>
-                      : <>1,000,000 affiliates = <span className="text-primary">$5,000,000/month</span> at $5/mo</>
-                    }
-                  </span>
-                </div>
                 <div className="inline-flex items-center gap-2 bg-yellow-500/5 border border-yellow-500/20 rounded-xl px-4 py-2">
-                  <Crown size={14} className="text-yellow-400" />
-                  <span className="text-xs font-display font-bold text-yellow-400/80">
-                    {isPro
-                      ? "Upgrade to Legend for $50/month per referral — 5x more!"
-                      : "Upgrade to Pro for $10/mo or Legend for $50/mo per referral!"}
+                  <Crown size={16} className="text-yellow-400" />
+                  <span className="text-sm font-display font-bold text-yellow-400">
+                    1,000,000 affiliates = <span className="text-yellow-300">$50,000,000/month</span> at $50/mo
                   </span>
                 </div>
               </div>
@@ -238,6 +271,20 @@ export default function Referrals() {
           >
             <Trophy size={16} /> Leaderboard
           </button>
+          {isFounder && (
+            <button
+              onClick={() => setActiveTab("all-members")}
+              className={cn(
+                "flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-lg font-display font-bold text-sm transition-all",
+                activeTab === "all-members"
+                  ? "bg-yellow-500/20 text-yellow-400 border border-yellow-500/30"
+                  : "text-muted-foreground hover:text-white hover:bg-white/5"
+              )}
+              data-testid="tab-all-members"
+            >
+              <ShieldCheck size={16} /> All Members
+            </button>
+          )}
         </div>
 
         {activeTab === "affiliate" && (
@@ -261,10 +308,47 @@ export default function Referrals() {
                 <div className="w-12 h-12 rounded-full bg-green-500/20 flex items-center justify-center mx-auto mb-3">
                   <Repeat size={20} className="text-green-400" />
                 </div>
-                <h3 className="font-display font-bold mb-1">3. Earn $5–$50/Month Each</h3>
-                <p className="text-xs text-muted-foreground">Rookie: $5/mo · Pro: $10/mo · Legend: $50/mo — plus an instant bonus on every signup</p>
+                <h3 className="font-display font-bold mb-1">3. Earn $50/Month Each</h3>
+                <p className="text-xs text-muted-foreground">Legend: $50/mo per referral — every month they stay active</p>
               </Card>
             </div>
+
+            <Card className="bg-gradient-to-r from-primary/5 via-card/30 to-violet-900/10 border border-primary/20 mb-10">
+              <CardContent className="p-6">
+                <h2 className="font-display font-bold text-lg mb-4 flex items-center gap-2">
+                  <Rocket size={18} className="text-primary" />
+                  Income Milestones
+                </h2>
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                  {milestones.map((m) => (
+                    <div
+                      key={m.members}
+                      className="rounded-xl border bg-card/20 border-white/5 p-3 text-center"
+                    >
+                      <span className="text-2xl">{m.icon}</span>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {m.members.toLocaleString()} referrals
+                      </p>
+                      <p className="font-display font-bold text-sm text-white/70">
+                        {m.monthly}/mo
+                      </p>
+                      <p className="text-[10px] text-muted-foreground">
+                        +{m.instant} instant
+                      </p>
+                    </div>
+                  ))}
+                </div>
+                {!isAuthenticated && (
+                  <div className="mt-6 text-center">
+                    <a href="/auth">
+                      <Button className="gap-2" size="lg" data-testid="button-signin-milestones">
+                        <UserPlus size={16} /> Join BetFans to Start Earning
+                      </Button>
+                    </a>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
 
             {!isAuthenticated ? (
               <Card className="bg-gradient-to-r from-primary/5 via-card/30 to-primary/5 border border-primary/20 mb-8">
@@ -272,7 +356,7 @@ export default function Referrals() {
                   <UserPlus size={40} className="text-primary mx-auto mb-4" />
                   <h2 className="font-display font-bold text-xl mb-2">Sign In to Start Earning</h2>
                   <p className="text-sm text-muted-foreground mb-6 max-w-md mx-auto">
-                    Sign in to get your unique affiliate link, track your referrals, and start earning $5–$50/month for every member you bring in.
+                    Sign in to get your unique affiliate link, track your referrals, and start earning $50/month for every Legend member you bring in.
                   </p>
                   <a href="/auth">
                     <Button className="gap-2" size="lg" data-testid="button-signin-affiliate">
@@ -318,7 +402,7 @@ export default function Referrals() {
                     size="sm"
                     variant="outline"
                     className="gap-1.5 border-white/10 hover:bg-blue-500/20 hover:text-blue-400 hover:border-blue-500/30 h-8"
-                    onClick={() => window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent("Join me on BetFans! Predict sports, compete for prizes, and earn $5–$50/month for every member you refer. Use my code: " + referralCode)}&url=${encodeURIComponent(referralLink)}`, "_blank")}
+                    onClick={() => window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent("Join me on BetFans! Predict sports, compete for daily prizes, and earn $50/month for every Legend you refer. Use my code: " + referralCode)}&url=${encodeURIComponent(referralLink)}`, "_blank")}
                     disabled={!referralLink}
                     data-testid="button-share-twitter"
                   >
@@ -339,7 +423,7 @@ export default function Referrals() {
                     variant="outline"
                     className="gap-1.5 border-white/10 hover:bg-pink-500/20 hover:text-pink-400 hover:border-pink-500/30 h-8"
                     onClick={() => {
-                      navigator.clipboard.writeText(`Join me on BetFans! Predict sports, compete for prizes, and earn $5–$50/month for every member you refer. Use my code: ${referralCode}\n${referralLink}`);
+                      navigator.clipboard.writeText(`Join me on BetFans! Predict sports, compete for daily prizes, and earn $50/month for every Legend you refer. Use my code: ${referralCode}\n${referralLink}`);
                       toast({ title: "Caption copied! Opening Instagram...", description: "Paste the caption into your Instagram post or story." });
                       window.open("https://www.instagram.com/", "_blank");
                     }}
@@ -353,7 +437,7 @@ export default function Referrals() {
                     variant="outline"
                     className="gap-1.5 border-white/10 hover:bg-cyan-500/20 hover:text-cyan-400 hover:border-cyan-500/30 h-8"
                     onClick={() => {
-                      navigator.clipboard.writeText(`Join me on BetFans! Predict sports, compete for prizes, and earn $5–$50/month for every member you refer. Use my code: ${referralCode}\n${referralLink}`);
+                      navigator.clipboard.writeText(`Join me on BetFans! Predict sports, compete for daily prizes, and earn $50/month for every Legend you refer. Use my code: ${referralCode}\n${referralLink}`);
                       toast({ title: "Caption copied! Opening TikTok...", description: "Paste the caption into your TikTok post." });
                       window.open("https://www.tiktok.com/upload", "_blank");
                     }}
@@ -367,7 +451,7 @@ export default function Referrals() {
                     variant="outline"
                     className="gap-1.5 border-white/10 hover:bg-yellow-500/20 hover:text-yellow-400 hover:border-yellow-500/30 h-8"
                     onClick={() => {
-                      const smsText = `Hey! Check out BetFans 🏆 Predict sports, compete for prizes, and earn $5–$50/month for every member you refer. Use my code: ${referralCode}\n\n${referralLink}\n\n#BetFans #SportsPicks #WinningPicks #FreeMoney #ResidualIncome #SportsBetting #AIpicks #SpiderAI`;
+                      const smsText = `Hey! Check out BetFans 🏆 Predict sports, compete for daily prizes, and earn $50/month for every Legend you refer. Use my code: ${referralCode}\n\n${referralLink}\n\n#BetFans #SportsPicks #WinningPicks #SpiderAI #AIpicks`;
                       navigator.clipboard.writeText(smsText);
                       toast({ title: "Text message copied!", description: "Paste into your text messages, WhatsApp, or any messaging app." });
                     }}
@@ -393,6 +477,66 @@ export default function Referrals() {
                 </div>
               </CardContent>
             </Card>
+
+            {/* PayPal payout email prompt */}
+            {isAuthenticated && !user?.paypalPayoutEmail && !payoutEmailSaved && (
+              <div className="rounded-xl border-2 border-orange-400/40 bg-orange-500/10 p-5 mb-6" data-testid="payout-email-prompt">
+                <div className="flex items-start gap-3 mb-3">
+                  <div className="w-9 h-9 rounded-xl bg-orange-500/20 flex items-center justify-center shrink-0">
+                    <AlertCircle size={18} className="text-orange-400" />
+                  </div>
+                  <div>
+                    <p className="font-black text-orange-300 text-sm uppercase tracking-wide mb-0.5">
+                      ⚡ Add Your PayPal to Receive Payouts
+                    </p>
+                    <p className="text-xs text-orange-100/80 leading-relaxed">
+                      Your affiliate bonuses and monthly residuals are paid <strong className="text-orange-200">instantly via PayPal</strong> — but we need your PayPal email first. Without it, earnings are wallet-credited only and not sent out.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <div className="flex-1 relative">
+                    <Mail size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-orange-400/60 pointer-events-none" />
+                    <Input
+                      type="email"
+                      placeholder="your-paypal@email.com"
+                      value={payoutEmailInput}
+                      onChange={(e) => setPayoutEmailInput(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter" && payoutEmailInput.trim()) savePayoutEmailMutation.mutate(payoutEmailInput.trim()); }}
+                      className="pl-8 bg-black/30 border-orange-400/30 focus:border-orange-400/60 text-white placeholder:text-orange-400/40"
+                      data-testid="input-payout-email-referrals"
+                    />
+                  </div>
+                  <Button
+                    onClick={() => savePayoutEmailMutation.mutate(payoutEmailInput.trim())}
+                    disabled={!payoutEmailInput.trim() || savePayoutEmailMutation.isPending}
+                    className="bg-orange-500 hover:bg-orange-400 text-black font-bold shrink-0 gap-1.5"
+                    data-testid="button-save-payout-email-referrals"
+                  >
+                    {savePayoutEmailMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                    Save PayPal Email
+                  </Button>
+                </div>
+                <p className="text-[11px] text-orange-400/50 mt-2">
+                  You can also update this anytime in your{" "}
+                  <a href="/profile" className="underline hover:text-orange-300 inline-flex items-center gap-0.5">
+                    Profile <ExternalLink size={10} />
+                  </a>
+                </p>
+              </div>
+            )}
+
+            {/* PayPal confirmed banner */}
+            {isAuthenticated && (user?.paypalPayoutEmail || payoutEmailSaved) && (
+              <div className="rounded-xl border border-green-400/20 bg-green-500/5 px-4 py-3 mb-6 flex items-center gap-3" data-testid="payout-email-confirmed">
+                <Check size={16} className="text-green-400 shrink-0" />
+                <p className="text-xs text-green-300">
+                  <strong className="text-green-200">PayPal payouts active</strong> — your affiliate bonuses &amp; monthly residuals will be sent automatically to{" "}
+                  <span className="font-mono text-green-400">{user?.paypalPayoutEmail || payoutEmailInput}</span>
+                </p>
+                <a href="/profile" className="ml-auto text-[11px] text-green-400/60 hover:text-green-300 underline shrink-0">Edit</a>
+              </div>
+            )}
 
             <h2 className="font-display font-bold text-lg mb-4 flex items-center gap-2">
               <DollarSign size={18} className="text-primary" />
@@ -420,44 +564,6 @@ export default function Referrals() {
               </div>
             )}
 
-            <Card className="bg-gradient-to-r from-primary/5 via-card/30 to-violet-900/10 border border-primary/20 mb-10">
-              <CardContent className="p-6">
-                <h2 className="font-display font-bold text-lg mb-4 flex items-center gap-2">
-                  <Rocket size={18} className="text-primary" />
-                  Income Milestones
-                </h2>
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-                  {milestones.map((m) => {
-                    const reached = activeReferrals >= m.members;
-                    return (
-                      <div
-                        key={m.members}
-                        className={cn(
-                          "rounded-xl border p-3 text-center transition-all",
-                          reached
-                            ? "bg-primary/10 border-primary/40"
-                            : "bg-card/20 border-white/5 opacity-60"
-                        )}
-                      >
-                        <span className="text-2xl">{m.icon}</span>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {m.members.toLocaleString()} referrals
-                        </p>
-                        <p className={cn(
-                          "font-display font-bold text-sm",
-                          reached ? "text-primary" : "text-white/50"
-                        )}>
-                          {m.monthly}/mo
-                        </p>
-                        <p className="text-[10px] text-muted-foreground">
-                          +{m.instant} instant
-                        </p>
-                      </div>
-                    );
-                  })}
-                </div>
-              </CardContent>
-            </Card>
 
             {(isLegend || isFounder) && (
               <Card className="bg-gradient-to-r from-yellow-500/10 via-yellow-600/5 to-yellow-500/10 border border-yellow-500/30 mb-10 overflow-hidden relative">
@@ -505,10 +611,14 @@ export default function Referrals() {
 
             <div className="grid md:grid-cols-2 gap-8">
               <div>
-                <h2 className="font-display font-bold text-lg mb-4 flex items-center gap-2">
+                <h2 className="font-display font-bold text-lg mb-2 flex items-center gap-2">
                   <Users size={18} className="text-primary" />
                   Your Affiliate Members
                 </h2>
+                <div className="flex items-center gap-2 text-sm text-muted-foreground mb-4">
+                  <span>Active:</span>
+                  <RotatingNames names={AFFILIATE_NAMES} interval={2200} />
+                </div>
                 {referralList.length === 0 ? (
                   <Card className="bg-card/30 border-white/5">
                     <CardContent className="p-8 text-center">
@@ -518,49 +628,102 @@ export default function Referrals() {
                     </CardContent>
                   </Card>
                 ) : (
-                  <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
-                    {referralList.map((ref: any) => {
+                  <Card className="bg-card/30 border-white/10 overflow-hidden">
+                    <div className="grid grid-cols-3 bg-white/5 border-b border-white/10 px-4 py-2.5">
+                      <span className="text-xs font-bold text-muted-foreground uppercase tracking-wide">Member</span>
+                      <span className="text-xs font-bold text-muted-foreground uppercase tracking-wide text-center">Status</span>
+                      <span className="text-xs font-bold text-muted-foreground uppercase tracking-wide text-right">Earns</span>
+                    </div>
+                    {referralList.map((ref: any, i: number) => {
                       const name = ref.referred
                         ? `${ref.referred.firstName || ""} ${ref.referred.lastName || ""}`.trim() || "Member"
                         : "Member";
-                      const avatar = ref.referred?.profileImageUrl;
                       const isActive = ref.status === "active";
+                      const isInactive = ref.status === "inactive";
+                      const amt = isActive ? ((isLegend || isFounder || ref.referred?.membershipTier === "legend") ? 50 : perReferral) : 0;
                       return (
-                        <Card key={ref.id} className="bg-card/30 border-white/5" data-testid={`card-referral-${ref.id}`}>
-                          <CardContent className="p-4 flex items-center gap-3">
-                            <Avatar className="h-10 w-10 border border-white/10">
-                              <AvatarImage src={avatar} />
-                              <AvatarFallback>{name[0]}</AvatarFallback>
-                            </Avatar>
-                            <div className="flex-1 min-w-0">
-                              <p className="font-medium text-sm truncate">{name}</p>
-                              <p className="text-[10px] text-muted-foreground">
-                                Joined {ref.createdAt ? new Date(ref.createdAt).toLocaleDateString() : "Recently"}
-                              </p>
-                            </div>
-                            <div className="text-right">
-                              <Badge className={cn(
-                                "text-[10px]",
-                                isActive
-                                  ? "bg-green-500/20 text-green-400 border-green-500/30"
-                                  : "bg-yellow-500/20 text-yellow-400 border-yellow-500/30"
-                              )}>
-                                {isActive ? "Active" : "Pending"}
-                              </Badge>
-                              <p className="text-xs text-green-400 font-mono mt-1">
-                                {isActive ? (() => {
-                                  const refTier = ref.referred?.membershipTier;
-                                  const amt = (isLegend || isFounder || refTier === "legend") ? 50 : perReferral;
-                                  return `$${amt.toFixed(2)}/mo`;
-                                })() : "$0.00/mo"}
-                              </p>
-                            </div>
-                          </CardContent>
-                        </Card>
+                        <div
+                          key={ref.id}
+                          className={cn("grid grid-cols-3 items-center px-4 py-3", i < referralList.length - 1 && "border-b border-white/5")}
+                          data-testid={`row-referral-${ref.id}`}
+                        >
+                          <span className="text-sm font-medium">{name}</span>
+                          <div className="flex items-center justify-center gap-1.5">
+                            <span className={cn("w-2.5 h-2.5 rounded-full shrink-0", isActive ? "bg-green-500" : isInactive ? "bg-white/20" : "bg-yellow-500")} />
+                            <span className={cn("text-xs", isActive ? "text-green-400" : isInactive ? "text-white/40" : "text-yellow-400")}>
+                              {isActive ? "Active" : isInactive ? "Inactive" : "Pending"}
+                            </span>
+                          </div>
+                          <span className={cn("text-sm font-mono text-right", isActive ? "text-green-400" : "text-white/30")}>
+                            {isActive ? `$${amt}/mo` : "$0/mo"}
+                          </span>
+                        </div>
                       );
                     })}
+                    <div className="grid grid-cols-3 items-center px-4 py-3 bg-white/5 border-t border-white/10">
+                      <span className="text-xs text-muted-foreground font-bold">Total</span>
+                      <span />
+                      <span className="text-sm font-bold font-mono text-right text-primary">
+                        ${referralList.filter((r: any) => r.status === "active").reduce((sum: number, r: any) => sum + ((isLegend || isFounder || r.referred?.membershipTier === "legend") ? 50 : perReferral), 0)}/mo
+                      </span>
+                    </div>
+                  </Card>
+                )}
+
+                {/* Sub-team panels — founder view only */}
+                {isFounder && allTeams.filter((m: any) => m.subTeam?.length > 0).length > 0 && (
+                  <div className="mt-6 space-y-4">
+                    <h3 className="font-display font-bold text-sm flex items-center gap-2">
+                      <Users size={14} className="text-primary" />
+                      Your Team's Teams
+                    </h3>
+                    {allTeams
+                      .filter((m: any) => m.subTeam?.length > 0)
+                      .map((m: any) => {
+                        const memberName = m.referred
+                          ? `${m.referred.firstName || ""} ${m.referred.lastName || ""}`.trim() || "Member"
+                          : "Member";
+                        const activeSubCount = m.subTeam.filter((s: any) => s.status === "active").length;
+                        return (
+                          <Card key={m.id} className="bg-card/30 border-white/10 overflow-hidden">
+                            <div className="flex items-center justify-between bg-white/5 border-b border-white/10 px-4 py-2.5">
+                              <div className="flex items-center gap-2">
+                                <span className="w-2 h-2 rounded-full bg-green-500" />
+                                <span className="text-sm font-bold">{memberName}'s Team</span>
+                              </div>
+                              <span className="text-xs text-primary font-mono font-bold">${activeSubCount * 50}/mo</span>
+                            </div>
+                            <div className="grid grid-cols-3 bg-white/5 border-b border-white/5 px-4 py-1.5">
+                              <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">Member</span>
+                              <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide text-center">Status</span>
+                              <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide text-right">Earns</span>
+                            </div>
+                            {m.subTeam.map((sub: any, i: number) => {
+                              const subName = sub.referred
+                                ? `${sub.referred.firstName || ""} ${sub.referred.lastName || ""}`.trim() || "Member"
+                                : "Member";
+                              const subActive = sub.status === "active";
+                              return (
+                                <div key={sub.id} className={cn("grid grid-cols-3 items-center px-4 py-2.5", i < m.subTeam.length - 1 && "border-b border-white/5")}>
+                                  <span className="text-xs font-medium">{subName}</span>
+                                  <div className="flex items-center justify-center gap-1.5">
+                                    <span className={cn("w-2 h-2 rounded-full shrink-0", subActive ? "bg-green-500" : "bg-white/20")} />
+                                    <span className={cn("text-[10px]", subActive ? "text-green-400" : "text-white/40")}>
+                                      {subActive ? "Active" : sub.status === "inactive" ? "Inactive" : "Pending"}
+                                    </span>
+                                  </div>
+                                  <span className={cn("text-xs font-mono text-right", subActive ? "text-green-400" : "text-white/30")}>
+                                    {subActive ? "$50/mo" : "$0/mo"}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </Card>
+                        );
+                      })}
                   </div>
                 )}
+
               </div>
 
               <div>
@@ -594,55 +757,18 @@ export default function Referrals() {
                   </CardContent>
                 </Card>
 
-                <Card className="bg-card/30 border-white/10">
-                  <CardContent className="p-5">
-                    <h3 className="font-display font-bold text-sm mb-3 flex items-center gap-2">
-                      <Crown size={14} className="text-yellow-400" />
-                      Referral Tier Rules
-                    </h3>
-                    <div className="space-y-2 text-xs">
-                      <div className="flex items-start gap-3 bg-yellow-500/5 border border-yellow-500/15 rounded-xl p-3">
-                        <Crown size={14} className="text-yellow-400 shrink-0 mt-0.5" />
-                        <div>
-                          <span className="text-yellow-400 font-bold">Legend</span>
-                          <span className="text-muted-foreground"> — can refer </span>
-                          <span className="text-white font-medium">Rookie, Pro & Legend</span>
-                        </div>
-                      </div>
-                      <div className="flex items-start gap-3 bg-primary/5 border border-primary/15 rounded-xl p-3">
-                        <Trophy size={14} className="text-primary shrink-0 mt-0.5" />
-                        <div>
-                          <span className="text-primary font-bold">Pro</span>
-                          <span className="text-muted-foreground"> — can refer </span>
-                          <span className="text-white font-medium">Rookie & Pro</span>
-                          <span className="text-muted-foreground"> only</span>
-                        </div>
-                      </div>
-                      <div className="flex items-start gap-3 bg-white/5 border border-white/10 rounded-xl p-3">
-                        <Users size={14} className="text-muted-foreground shrink-0 mt-0.5" />
-                        <div>
-                          <span className="text-muted-foreground font-bold">Rookie</span>
-                          <span className="text-muted-foreground"> — can refer </span>
-                          <span className="text-white font-medium">Rookie</span>
-                          <span className="text-muted-foreground"> only</span>
-                        </div>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-
                 <Card className="bg-card/30 border-white/5">
                   <CardContent className="p-6">
                     <h3 className="font-display font-bold text-sm mb-3 flex items-center gap-2">
                       <TrendingUp size={14} className="text-primary" />
-                      How Residual Income Works
+                      How Affiliate Income Works
                     </h3>
                     <div className="space-y-3 text-xs text-muted-foreground">
                       <div className="flex gap-2">
                         <div className="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center shrink-0 mt-0.5">
                           <DollarSign size={10} className="text-primary" />
                         </div>
-                        <p>Every BetFans member is an affiliate. You earn an <span className="text-white font-medium">instant payout</span> the moment someone signs up with your code, plus <span className="text-white font-medium">monthly residual income</span> as long as they stay active — $5/$10/$50 depending on your tier.</p>
+                        <p>Every BetFans Legend member is an affiliate. You earn an <span className="text-white font-medium">instant payout</span> the moment someone signs up with your code, plus <span className="text-white font-medium">$50/month</span> as long as they stay active.</p>
                       </div>
                       <div className="flex gap-2">
                         <div className="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center shrink-0 mt-0.5">
@@ -789,6 +915,175 @@ export default function Referrals() {
                 <TrendingUp size={16} /> Start Earning Residual Income
               </Button>
             </div>
+          </>
+        )}
+
+        {activeTab === "all-members" && isFounder && (
+          <>
+            {/* Summary stats */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+              <StatCard icon={Users} label="Total Members" value={founderOverview.length} color="bg-primary/20 text-primary" />
+              <StatCard
+                icon={Check}
+                label="Total Active Affiliates"
+                value={founderOverview.reduce((s: number, m: any) => s + m.activeReferrals, 0)}
+                color="bg-emerald-500/20 text-emerald-400"
+              />
+              <StatCard
+                icon={DollarSign}
+                label="Platform Monthly Income"
+                value={`$${founderOverview.reduce((s: number, m: any) => s + m.monthlyIncome, 0).toLocaleString()}`}
+                color="bg-green-500/20 text-green-400"
+              />
+              <StatCard
+                icon={TrendingUp}
+                label="Platform Yearly"
+                value={`$${(founderOverview.reduce((s: number, m: any) => s + m.monthlyIncome, 0) * 12).toLocaleString()}`}
+                color="bg-blue-500/20 text-blue-400"
+              />
+            </div>
+
+            {overviewLoading ? (
+              <div className="flex items-center justify-center py-20">
+                <Loader2 size={32} className="animate-spin text-primary" />
+              </div>
+            ) : founderOverview.length === 0 ? (
+              <Card className="bg-card/30 border-white/5">
+                <CardContent className="p-12 text-center">
+                  <Users size={48} className="text-muted-foreground/20 mx-auto mb-4" />
+                  <p className="font-display font-bold text-lg">No members yet</p>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="space-y-3">
+                {founderOverview.map((member: any) => {
+                  const name = `${member.firstName || ""} ${member.lastName || ""}`.trim() || "Member";
+                  const isExpanded = expandedMembers.has(member.userId);
+                  const toggleExpanded = () => {
+                    setExpandedMembers(prev => {
+                      const next = new Set(prev);
+                      next.has(member.userId) ? next.delete(member.userId) : next.add(member.userId);
+                      return next;
+                    });
+                  };
+
+                  return (
+                    <Card
+                      key={member.userId}
+                      className={cn(
+                        "border overflow-hidden transition-all",
+                        member.isFounder
+                          ? "bg-gradient-to-r from-yellow-500/10 via-card/30 to-yellow-500/10 border-yellow-500/30"
+                          : "bg-card/30 border-white/10"
+                      )}
+                      data-testid={`card-member-overview-${member.userId}`}
+                    >
+                      {/* Member header row — always visible */}
+                      <button
+                        className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-white/3 transition-colors text-left"
+                        onClick={toggleExpanded}
+                        data-testid={`button-expand-member-${member.userId}`}
+                      >
+                        <Avatar className="h-9 w-9 border border-white/10 shrink-0">
+                          <AvatarImage src={member.profileImageUrl} />
+                          <AvatarFallback className="bg-card text-xs">{name[0]}</AvatarFallback>
+                        </Avatar>
+
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-display font-bold text-sm">{name}</span>
+                            {member.isFounder && (
+                              <Badge className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30 text-[9px]">
+                                <Crown size={8} className="mr-0.5" /> Founder
+                              </Badge>
+                            )}
+                            {member.referralCode && (
+                              <span className="font-mono text-[10px] text-muted-foreground bg-white/5 px-1.5 py-0.5 rounded">
+                                {member.referralCode}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-3 mt-0.5">
+                            <span className="text-[11px] text-muted-foreground">
+                              {member.totalReferred} referred · {member.activeReferrals} active
+                            </span>
+                            {member.monthlyIncome > 0 && (
+                              <span className="text-[11px] text-green-400 font-mono font-bold">
+                                ${member.monthlyIncome}/mo
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-3 shrink-0">
+                          <div className="text-right hidden sm:block">
+                            <p className="text-xs font-mono font-bold text-primary">
+                              ${member.monthlyIncome}/mo
+                            </p>
+                            <p className="text-[10px] text-muted-foreground">
+                              ${(member.monthlyIncome * 12).toLocaleString()}/yr
+                            </p>
+                          </div>
+                          {isExpanded
+                            ? <ChevronUp size={16} className="text-muted-foreground" />
+                            : <ChevronDown size={16} className="text-muted-foreground" />
+                          }
+                        </div>
+                      </button>
+
+                      {/* Expanded: their affiliate member table */}
+                      {isExpanded && (
+                        <div className="border-t border-white/10">
+                          {member.members.length === 0 ? (
+                            <div className="px-4 py-5 text-center">
+                              <p className="text-xs text-muted-foreground">No affiliate members yet</p>
+                            </div>
+                          ) : (
+                            <>
+                              <div className="grid grid-cols-3 bg-white/5 border-b border-white/5 px-4 py-2">
+                                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">Member</span>
+                                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide text-center">Status</span>
+                                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide text-right">Earns</span>
+                              </div>
+                              {member.members.map((m: any, i: number) => {
+                                const isActive = m.status === "active";
+                                return (
+                                  <div
+                                    key={m.id}
+                                    className={cn(
+                                      "grid grid-cols-3 items-center px-4 py-2.5",
+                                      i < member.members.length - 1 && "border-b border-white/5"
+                                    )}
+                                  >
+                                    <span className="text-xs font-medium">{m.name}</span>
+                                    <div className="flex items-center justify-center gap-1.5">
+                                      <span className={cn("w-2 h-2 rounded-full shrink-0", isActive ? "bg-green-500" : "bg-white/20")} />
+                                      <span className={cn("text-[10px]", isActive ? "text-green-400" : "text-white/40")}>
+                                        {isActive ? "Active" : "Inactive"}
+                                      </span>
+                                    </div>
+                                    <span className={cn("text-xs font-mono text-right", isActive ? "text-green-400" : "text-white/30")}>
+                                      {isActive ? "$50/mo" : "$0/mo"}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                              <div className="grid grid-cols-3 items-center px-4 py-2.5 bg-white/5 border-t border-white/10">
+                                <span className="text-xs text-muted-foreground font-bold">Total</span>
+                                <span />
+                                <span className="text-sm font-bold font-mono text-right text-primary">
+                                  ${member.monthlyIncome}/mo
+                                </span>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
           </>
         )}
       </div>
