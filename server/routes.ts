@@ -1083,6 +1083,20 @@ export async function registerRoutes(
           const user = await storage.getUser(r.userId);
           const tier = user?.membershipTier || "rookie";
           const perReferral = tier === "legend" ? 50 : 0;
+
+          // Include all referred members for expandable view
+          const allRefs = await db.select().from(referrals)
+            .leftJoin(users, eq(referrals.referredId, users.id))
+            .where(eq(referrals.referrerId, r.userId));
+
+          const members = allRefs.map(ref => ({
+            id: ref.referrals.id,
+            status: ref.referrals.status,
+            name: ref.users
+              ? `${ref.users.firstName || ""} ${ref.users.lastName || ""}`.trim() || "Member"
+              : "Member",
+          }));
+
           return {
             userId: r.userId,
             activeReferrals: r.activeReferrals,
@@ -1092,6 +1106,7 @@ export async function registerRoutes(
             profileImageUrl: user?.profileImageUrl || null,
             membershipTier: tier,
             isFounder: founderId ? r.userId === founderId : false,
+            members,
           };
         })
       );
