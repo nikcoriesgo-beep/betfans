@@ -844,19 +844,32 @@ export default function Referrals() {
                   const name = entry.firstName && entry.lastName
                     ? `${entry.firstName} ${entry.lastName}`
                     : entry.firstName || entry.lastName || "BetFans Member";
+                  const lbKey = `lb-${entry.userId}`;
+                  const isExpanded = expandedMembers.has(lbKey);
+                  const hasMembers = isFounder && entry.members?.length > 0;
 
                   return (
                     <Card
                       key={entry.userId}
                       className={cn(
-                        "border transition-all",
+                        "border transition-all overflow-hidden",
                         isTop3
                           ? `bg-gradient-to-r ${rankColors[rank]}`
                           : "bg-card/30 border-white/5"
                       )}
                       data-testid={`card-residual-earner-${rank}`}
                     >
-                      <CardContent className="p-4 md:p-5">
+                      <button
+                        className={cn("w-full text-left p-4 md:p-5", hasMembers && "cursor-pointer hover:bg-white/3 transition-colors")}
+                        onClick={() => {
+                          if (!hasMembers) return;
+                          setExpandedMembers(prev => {
+                            const next = new Set(prev);
+                            next.has(lbKey) ? next.delete(lbKey) : next.add(lbKey);
+                            return next;
+                          });
+                        }}
+                      >
                         <div className="flex items-center gap-3 md:gap-4">
                           <div className={cn(
                             "w-9 h-9 md:w-10 md:h-10 rounded-xl flex items-center justify-center font-display font-bold text-base md:text-lg shrink-0",
@@ -890,20 +903,65 @@ export default function Referrals() {
                             </div>
                           </div>
 
-                          <div className="text-right shrink-0">
-                            <div className="flex items-center gap-1 justify-end">
-                              <DollarSign size={14} className="text-green-400" />
-                              <span className="font-display font-bold text-lg md:text-xl text-green-400">
-                                {entryMonthlyIncome.toLocaleString()}
-                              </span>
-                              <span className="text-xs text-muted-foreground">/mo</span>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <div className="text-right">
+                              <div className="flex items-center gap-1 justify-end">
+                                <DollarSign size={14} className="text-green-400" />
+                                <span className="font-display font-bold text-lg md:text-xl text-green-400">
+                                  {entryMonthlyIncome.toLocaleString()}
+                                </span>
+                                <span className="text-xs text-muted-foreground">/mo</span>
+                              </div>
+                              <p className="text-[10px] text-muted-foreground mt-0.5">
+                                ${yearlyIncome.toLocaleString()}/yr projected
+                              </p>
                             </div>
-                            <p className="text-[10px] text-muted-foreground mt-0.5">
-                              ${yearlyIncome.toLocaleString()}/yr projected
-                            </p>
+                            {hasMembers && (
+                              isExpanded
+                                ? <ChevronUp size={16} className="text-muted-foreground" />
+                                : <ChevronDown size={16} className="text-muted-foreground" />
+                            )}
                           </div>
                         </div>
-                      </CardContent>
+                      </button>
+
+                      {/* Expanded affiliate list — founder only */}
+                      {isFounder && isExpanded && entry.members?.length > 0 && (
+                        <div className="border-t border-white/10">
+                          <div className="grid grid-cols-3 bg-white/5 border-b border-white/5 px-4 py-2">
+                            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">Member</span>
+                            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide text-center">Status</span>
+                            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide text-right">Earns</span>
+                          </div>
+                          {entry.members.map((m: any, i: number) => {
+                            const isActive = m.status === "active";
+                            return (
+                              <div
+                                key={m.id}
+                                className={cn("grid grid-cols-3 items-center px-4 py-2.5", i < entry.members.length - 1 && "border-b border-white/5")}
+                              >
+                                <span className="text-xs font-medium">{m.name}</span>
+                                <div className="flex items-center justify-center gap-1.5">
+                                  <span className={cn("w-2 h-2 rounded-full shrink-0", isActive ? "bg-green-500" : "bg-white/20")} />
+                                  <span className={cn("text-[10px]", isActive ? "text-green-400" : "text-white/40")}>
+                                    {isActive ? "Active" : "Inactive"}
+                                  </span>
+                                </div>
+                                <span className={cn("text-xs font-mono text-right", isActive ? "text-green-400" : "text-white/30")}>
+                                  {isActive ? "$50/mo" : "$0/mo"}
+                                </span>
+                              </div>
+                            );
+                          })}
+                          <div className="grid grid-cols-3 items-center px-4 py-2.5 bg-white/5 border-t border-white/10">
+                            <span className="text-xs text-muted-foreground font-bold">Total</span>
+                            <span />
+                            <span className="text-sm font-bold font-mono text-right text-primary">
+                              ${entryMonthlyIncome}/mo
+                            </span>
+                          </div>
+                        </div>
+                      )}
                     </Card>
                   );
                 })}
