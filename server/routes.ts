@@ -1102,6 +1102,60 @@ export async function registerRoutes(
     }
   });
 
+  // Founder-only: every member's affiliate stats + their referred member list
+  app.get("/api/referral/founder-overview", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = (req.session as any)?.userId;
+      const [me] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+      const isFounder = me?.referralCode === "NIKCOX";
+      if (!isFounder) return res.status(403).json({ message: "Founder only" });
+
+      // All non-founder members
+      const allMembers = await db.select().from(users)
+        .where(sql`membership_tier != 'free' OR paypal_subscription_id IS NOT NULL`)
+        .orderBy(users.createdAt);
+
+      const result = await Promise.all(allMembers.map(async (member) => {
+        // Get all referrals made by this member
+        const refs = await db.select().from(referrals)
+          .leftJoin(users, eq(referrals.referredId, users.id))
+          .where(eq(referrals.referrerId, member.id));
+
+        const members = refs.map(r => ({
+          id: r.referrals.id,
+          status: r.referrals.status,
+          name: r.users
+            ? `${r.users.firstName || ""} ${r.users.lastName || ""}`.trim() || "Member"
+            : "Member",
+          membershipTier: r.users?.membershipTier || null,
+        }));
+
+        const activeCount = members.filter(m => m.status === "active").length;
+        const monthlyIncome = activeCount * 50;
+
+        return {
+          userId: member.id,
+          firstName: member.firstName,
+          lastName: member.lastName,
+          membershipTier: member.membershipTier,
+          referralCode: member.referralCode,
+          isFounder: member.referralCode === "NIKCOX",
+          totalReferred: members.length,
+          activeReferrals: activeCount,
+          monthlyIncome,
+          members,
+        };
+      }));
+
+      // Sort: most active first, then alphabetically
+      result.sort((a, b) => b.activeReferrals - a.activeReferrals || (a.firstName || "").localeCompare(b.firstName || ""));
+
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch founder overview" });
+    }
+  });
+
   app.post("/api/referral/apply", isAuthenticated, async (req: any, res) => {
     try {
       const userId = (req.session as any)?.userId;
