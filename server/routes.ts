@@ -764,7 +764,7 @@ export async function registerRoutes(
       let periodEnd!: Date;
       let dateLabel = "";
 
-      for (let daysBack = 1; daysBack <= 7; daysBack++) {
+      for (let daysBack = 0; daysBack <= 7; daysBack++) {
         const dt = new Date();
         dt.setUTCDate(dt.getUTCDate() - daysBack);
         const pstStr = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(dt);
