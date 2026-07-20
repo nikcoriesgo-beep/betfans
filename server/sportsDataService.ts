@@ -144,8 +144,8 @@ const NIKCO_REAL_ID = 'aa5b3efa-fb3e-49b1-9f60-983bcec7d67a';
 // Seed = YTD through end of June 7 PST (before June 8 games).
 // Cutoff = midnight PST June 8 (08:00 UTC) so ALL June 8+ game picks auto-add forever.
 // June 8 MLB games start at ~7 PM PT = 02:00 UTC June 9 which is >= cutoff, so they auto-add.
-const BFB_SEED_WINS   = 604;
-const BFB_SEED_LOSSES = 519;
+const BFB_SEED_WINS   = 703;
+const BFB_SEED_LOSSES = 643;
 const BFB_CUTOFF      = new Date("2026-06-08T08:00:00Z"); // midnight PST June 8 — never needs changing
 
 // After grading an MLB game, recalculate Nikco's BFB YTD record fully automatically.
