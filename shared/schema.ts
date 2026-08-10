@@ -229,3 +229,9 @@ export const siteCounters = pgTable("site_counters", {
   value: integer("value").notNull().default(0),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
+
+export const siteSettings = pgTable("site_settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull().default(""),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
