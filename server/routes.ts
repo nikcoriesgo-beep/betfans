@@ -3815,6 +3815,35 @@ export async function registerRoutes(
     }
   });
 
+  // GET /api/site-settings — returns all site settings as key/value object
+  app.get("/api/site-settings", async (_req, res) => {
+    try {
+      const rows = await db.execute(sql`SELECT key, value FROM site_settings`);
+      const settings: Record<string, string> = {};
+      for (const row of (rows as any).rows ?? []) settings[row.key] = row.value;
+      res.json(settings);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // POST /api/internal/set-setting { secret, key, value }
+  app.post("/api/internal/set-setting", async (req, res) => {
+    try {
+      const { secret, key, value } = req.body;
+      if (secret !== "bf-internal-k9x2m7") return res.status(403).json({ error: "forbidden" });
+      if (!key || value === undefined) return res.status(400).json({ error: "key and value required" });
+      await db.execute(sql`
+        INSERT INTO site_settings (key, value, updated_at)
+        VALUES (${key}, ${String(value)}, NOW())
+        ON CONFLICT (key) DO UPDATE SET value = ${String(value)}, updated_at = NOW()
+      `);
+      res.json({ ok: true, key, value });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.post("/api/views/home", async (_req, res) => {
     try {
       const count = await storage.incrementPageViews("home");
