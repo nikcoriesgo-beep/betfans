@@ -1780,6 +1780,79 @@ export async function registerRoutes(
         }
       }
 
+      // ── Direct PayPal payment received (non-subscription) ──────────────────
+      // Fires when a member pays directly via PayPal (Goods & Services, not a subscription).
+      // Matches sender to a user by paypal_sender_email stored on their profile.
+      // Auto-extends subscription and adds prize pool contribution.
+      if (resourceType === "PAYMENT.CAPTURE.COMPLETED" || resourceType === "PAYMENT.SALE.COMPLETED") {
+        try {
+          const resource = event.resource;
+          // Payer email varies by event type / API version
+          const payerEmail: string | null =
+            resource?.payer?.email_address ??
+            resource?.payer?.payer_info?.email ??
+            null;
+          const payerName: string | null =
+            resource?.payer?.name?.given_name
+              ? `${resource.payer.name.given_name} ${resource.payer.name.surname ?? ""}`.trim()
+              : resource?.payer?.payer_info?.first_name
+                ? `${resource.payer.payer_info.first_name} ${resource.payer.payer_info.last_name ?? ""}`.trim()
+                : null;
+          const captureAmount: number = parseFloat(resource?.amount?.value ?? resource?.amount?.total ?? "0");
+
+          let directUser: any = null;
+
+          // 1) Match by stored paypal_sender_email
+          if (payerEmail) {
+            const rows = await db.execute(sql`SELECT * FROM users WHERE paypal_sender_email = ${payerEmail.toLowerCase().trim()} LIMIT 1`);
+            const r = (rows as any).rows ?? [];
+            if (r.length > 0) directUser = r[0];
+          }
+          // 2) Fallback: match by registered email
+          if (!directUser && payerEmail) {
+            const emailUser = await storage.getUserByEmail(payerEmail).catch(() => null);
+            if (emailUser) directUser = emailUser;
+          }
+
+          if (directUser && !SUSPENDED_USERS.has(directUser.id)) {
+            const currentTier = directUser.membership_tier || directUser.membershipTier || "rookie";
+            const currentPaidUntil = directUser.subscription_paid_until || directUser.subscriptionPaidUntil;
+            const baseDate = currentPaidUntil && new Date(currentPaidUntil) > new Date() ? new Date(currentPaidUntil) : new Date();
+            const paidUntil = new Date(baseDate.getTime() + 32 * 24 * 60 * 60 * 1000);
+
+            await db.execute(sql`
+              UPDATE users
+              SET membership_tier = ${currentTier},
+                  subscription_paid_until = ${paidUntil},
+                  subscription_cancelled_at = NULL
+              WHERE id = ${directUser.id}
+            `);
+
+            const tierPrizeMap: Record<string, number> = { legend: 25, corporate: 300, premium_corporate: 3000, rookie: 0, pro: 0 };
+            const prizeContribution = tierPrizeMap[currentTier] ?? 0;
+
+            await storage.createTransaction({
+              userId: directUser.id,
+              type: "direct_paypal_payment",
+              amount: captureAmount,
+              description: `PayPal direct payment $${captureAmount} — ${currentTier} — paid until ${paidUntil.toDateString()}`,
+              status: "completed",
+            });
+
+            if (prizeContribution > 0) {
+              await storage.addPrizePoolContribution(prizeContribution, "direct_payment", resource?.id ?? "", directUser.id);
+            }
+
+            console.log(`[PayPal webhook] Direct payment $${captureAmount} from ${payerEmail} → user ${directUser.id} (${currentTier}) — prize +$${prizeContribution} — paid until ${paidUntil.toISOString()}`);
+          } else if (!directUser) {
+            // Log unmatched payment for admin awareness
+            console.warn(`[PayPal webhook] ${resourceType} — no user matched for payer email="${payerEmail}" name="${payerName}" amount=$${captureAmount}. Set paypal_sender_email on the user to enable auto-processing.`);
+          }
+        } catch (directErr: any) {
+          console.error(`[PayPal webhook] Direct payment handler error: ${directErr.message}`);
+        }
+      }
+
       // ── Payment failed — PayPal will retry automatically, do NOT downgrade ──
       if (resourceType === "BILLING.SUBSCRIPTION.PAYMENT.FAILED") {
         const sub = event.resource;
@@ -2923,25 +2996,49 @@ export async function registerRoutes(
   });
 
   // POST /api/internal/record-payment
-  // Manually record a payment for a member who paid outside the PayPal subscription system
-  // (e.g. PayPal.me, bank transfer). Sets subscriptionPaidUntil and restores tier.
-  // Body: { secret, userId?, phone?, tier, months }
+  // Record a direct PayPal payment for a member (outside the subscription system).
+  // Extends subscriptionPaidUntil from the later of now or current paid_until — never resets remaining time.
+  // Automatically adds the correct prize pool contribution for the member's tier.
+  // Body: { secret, userId?, phone?, name?, tier?, months?, prizeAmount? }
+  //   userId / phone / name — at least one required to identify the member
+  //   tier        — optional override; defaults to member's current tier
+  //   months      — default 1
+  //   prizeAmount — optional override for prize pool contribution; defaults to tier constant ($25 legend)
   app.post("/api/internal/record-payment", async (req, res) => {
     try {
-      const { secret, userId, phone, tier, months = 1 } = req.body;
+      const { secret, userId, phone, name, tier, months = 1, prizeAmount } = req.body;
       if (secret !== "bf-internal-k9x2m7") return res.status(403).json({ error: "forbidden" });
 
-      let user = userId ? await storage.getUser(userId) : null;
+      // Resolve user — by userId, phone, or name (first + last)
+      let user: any = userId ? await storage.getUser(userId) : null;
       if (!user && phone) {
-        const allUsers = await db.execute(sql`SELECT * FROM users WHERE phone = ${phone} LIMIT 1`);
-        const rows = (allUsers as any).rows ?? (allUsers as any) ?? [];
-        if (rows.length > 0) user = rows[0] as any;
+        const cleanPhone = String(phone).replace(/\D/g, "");
+        const rows = await db.execute(sql`SELECT * FROM users WHERE phone = ${cleanPhone} LIMIT 1`);
+        const r = (rows as any).rows ?? (rows as any) ?? [];
+        if (r.length > 0) user = r[0];
+      }
+      if (!user && name) {
+        const parts = String(name).trim().split(/\s+/);
+        const first = parts[0] || "";
+        const last = parts.slice(1).join(" ") || "";
+        const rows = await db.execute(sql`
+          SELECT * FROM users
+          WHERE (first_name ILIKE ${first + "%"} AND last_name ILIKE ${"%" + last + "%"})
+             OR (first_name ILIKE ${"%" + name + "%"})
+             OR (last_name  ILIKE ${"%" + name + "%"})
+          ORDER BY created_at DESC LIMIT 1`);
+        const r = (rows as any).rows ?? (rows as any) ?? [];
+        if (r.length > 0) user = r[0];
       }
       if (!user) return res.status(404).json({ error: "user not found" });
 
-      const validTiers: Record<string, string> = { rookie: "rookie", pro: "pro", legend: "legend" };
-      const newTier = validTiers[tier] || user.membershipTier || "rookie";
-      const paidUntil = new Date(Date.now() + Number(months) * 31 * 24 * 60 * 60 * 1000);
+      const validTiers: Record<string, string> = { rookie: "rookie", pro: "pro", legend: "legend", corporate: "corporate", premium_corporate: "premium_corporate" };
+      const newTier = validTiers[tier] || (user.membership_tier || user.membershipTier) || "rookie";
+
+      // Extend from the later of now or current paid_until — never resets remaining time
+      const currentPaidUntil = user.subscription_paid_until || user.subscriptionPaidUntil;
+      const baseDate = currentPaidUntil && new Date(currentPaidUntil) > new Date() ? new Date(currentPaidUntil) : new Date();
+      const paidUntil = new Date(baseDate.getTime() + Number(months) * 32 * 24 * 60 * 60 * 1000);
 
       await db.execute(sql`
         UPDATE users
@@ -2951,29 +3048,40 @@ export async function registerRoutes(
         WHERE id = ${user.id}
       `);
 
-      const tierPrices: Record<string, number> = { rookie: 19, pro: 29, legend: 99 };
-      const amount = (tierPrices[newTier] || 0) * Number(months);
+      // Prize pool contribution — flat constants matching subscription webhook ($25 per Legend month)
+      const tierPrizeMap: Record<string, number> = { legend: 25, corporate: 300, premium_corporate: 3000, rookie: 0, pro: 0 };
+      const prizeContribution = prizeAmount !== undefined ? Number(prizeAmount) : (tierPrizeMap[newTier] ?? 0);
+
+      const tierPrices: Record<string, number> = { rookie: 19, pro: 29, legend: 99, corporate: 1200, premium_corporate: 12000 };
+      const paymentAmount = (tierPrices[newTier] || 99) * Number(months);
+
       await storage.createTransaction({
         userId: user.id,
         type: "manual_payment",
-        amount,
-        description: `Manual payment recorded — ${newTier} × ${months} month(s) — paid until ${paidUntil.toDateString()}`,
+        amount: paymentAmount,
+        description: `Direct payment recorded — ${newTier} × ${months} month(s) — paid until ${paidUntil.toDateString()}`,
         status: "completed",
       });
 
-      // Prize pool contribution: half the payment amount
-      if (amount > 0) {
-        await storage.addPrizePoolContribution(amount * 0.5, "manual_payment", user.id, user.id);
+      if (prizeContribution > 0) {
+        await storage.addPrizePoolContribution(prizeContribution, "direct_payment", user.id, user.id);
       }
 
-      console.log(`[record-payment] ${user.firstName} ${user.lastName} (${user.id}) — ${newTier} × ${months}mo — paid until ${paidUntil.toISOString()}`);
+      // Return updated prize pool total
+      const poolRows = await db.execute(sql`SELECT COALESCE(SUM(amount), 0) AS total FROM prize_pool_contributions`);
+      const prizePoolTotal = parseFloat(String((poolRows as any).rows?.[0]?.total ?? 0));
+
+      const displayName = `${user.first_name || user.firstName || ""} ${user.last_name || user.lastName || ""}`.trim();
+      console.log(`[record-payment] ${displayName} (${user.id}) — ${newTier} × ${months}mo — paid until ${paidUntil.toISOString()} — prize +$${prizeContribution}`);
       return res.json({
         ok: true,
         userId: user.id,
-        name: `${user.firstName} ${user.lastName}`,
+        name: displayName,
         tier: newTier,
         months: Number(months),
-        amount,
+        paymentAmount,
+        prizeContribution,
+        prizePoolTotal,
         paidUntil: paidUntil.toISOString(),
       });
     } catch (e: any) {
@@ -3163,10 +3271,10 @@ export async function registerRoutes(
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
-  // POST /api/internal/update-user { secret, phone|userId, firstName, lastName, createdAt, membershipTier, subscriptionPaidUntil }
+  // POST /api/internal/update-user { secret, phone|userId, firstName, lastName, createdAt, membershipTier, subscriptionPaidUntil, paypalSenderEmail, paypalPayoutEmail }
   app.post("/api/internal/update-user", async (req, res) => {
     try {
-      const { secret, phone, userId, firstName, lastName, createdAt, membershipTier, subscriptionPaidUntil } = req.body;
+      const { secret, phone, userId, firstName, lastName, createdAt, membershipTier, subscriptionPaidUntil, paypalSenderEmail, paypalPayoutEmail } = req.body;
       if (secret !== "bf-internal-k9x2m7") return res.status(403).json({ error: "forbidden" });
       const cleanPhone = (phone || "").replace(/\D/g, "");
       if (!cleanPhone && !userId) return res.status(400).json({ error: "phone or userId required" });
@@ -3177,6 +3285,8 @@ export async function registerRoutes(
       if (createdAt !== undefined) { const dt = new Date(createdAt); const r = await db.execute(sql`UPDATE users SET created_at = ${dt} WHERE ${whereClause}`); updated += (r as any).rowCount ?? 0; }
       if (membershipTier !== undefined) { const r = await db.execute(sql`UPDATE users SET membership_tier = ${membershipTier} WHERE ${whereClause}`); updated += (r as any).rowCount ?? 0; }
       if (subscriptionPaidUntil !== undefined) { const dt = new Date(subscriptionPaidUntil); const r = await db.execute(sql`UPDATE users SET subscription_paid_until = ${dt} WHERE ${whereClause}`); updated += (r as any).rowCount ?? 0; }
+      if (paypalSenderEmail !== undefined) { const r = await db.execute(sql`UPDATE users SET paypal_sender_email = ${paypalSenderEmail.toLowerCase().trim()} WHERE ${whereClause}`); updated += (r as any).rowCount ?? 0; }
+      if (paypalPayoutEmail !== undefined) { const r = await db.execute(sql`UPDATE users SET paypal_payout_email = ${paypalPayoutEmail.toLowerCase().trim()} WHERE ${whereClause}`); updated += (r as any).rowCount ?? 0; }
       res.json({ ok: true, identifier: userId || cleanPhone, updated });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
