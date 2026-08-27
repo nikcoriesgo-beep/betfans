@@ -775,7 +775,7 @@ export async function registerRoutes(
         const candidateGames = await db.select().from(games).where(
           sql`${games.gameTime} >= ${start} AND ${games.gameTime} < ${end}
               AND ${games.status} != 'postponed'
-              AND ${games.league} IN ('MLB','NBA','NHL','FIFA_WC','NCAABB')`
+              AND ${games.league} IN ('MLB','NBA','NHL','FIFA_WC','EPL','NCAABB')`
         );
 
         // Check if any of these games are finished (graded)
@@ -806,6 +806,7 @@ export async function registerRoutes(
       const nbaMatchups    = [...matchupGroups.entries()].filter(([k]) => k.startsWith("NBA|"));
       const nhlMatchups    = [...matchupGroups.entries()].filter(([k]) => k.startsWith("NHL|"));
       const wcMatchups     = [...matchupGroups.entries()].filter(([k]) => k.startsWith("FIFA_WC|"));
+      const eplMatchups    = [...matchupGroups.entries()].filter(([k]) => k.startsWith("EPL|"));
       const ncaabbMatchups = [...matchupGroups.entries()].filter(([k]) => k.startsWith("NCAABB|"));
 
       const allDayIds = dayGamesRaw.map(g => g.id);
@@ -843,15 +844,16 @@ export async function registerRoutes(
         const nba    = forSport(nbaMatchups);
         const nhl    = forSport(nhlMatchups);
         const wc     = forSport(wcMatchups);
+        const epl    = forSport(eplMatchups);
         const ncaabb = forSport(ncaabbMatchups);
         const total = {
-          picks:   mlb.picks   + nba.picks   + nhl.picks   + wc.picks   + ncaabb.picks,
-          wins:    mlb.wins    + nba.wins    + nhl.wins    + wc.wins    + ncaabb.wins,
-          losses:  mlb.losses  + nba.losses  + nhl.losses  + wc.losses  + ncaabb.losses,
-          pending: mlb.pending + nba.pending + nhl.pending + wc.pending + ncaabb.pending,
+          picks:   mlb.picks   + nba.picks   + nhl.picks   + wc.picks   + epl.picks   + ncaabb.picks,
+          wins:    mlb.wins    + nba.wins    + nhl.wins    + wc.wins    + epl.wins    + ncaabb.wins,
+          losses:  mlb.losses  + nba.losses  + nhl.losses  + wc.losses  + epl.losses  + ncaabb.losses,
+          pending: mlb.pending + nba.pending + nhl.pending + wc.pending + epl.pending + ncaabb.pending,
         };
         // Only MLB + NHL/NBA required for prize pool qualification.
-        // FIFA_WC and NCAABB are skill-play bonus sports — picks count toward wins/ranking
+        // FIFA_WC, EPL, and NCAABB are skill-play bonus sports — picks count toward wins/ranking
         // but NOT required to qualify (matching payoutService.ts logic exactly).
         const qualified =
           mlb.picks >= mlbMatchups.length &&
@@ -881,7 +883,7 @@ export async function registerRoutes(
           referralCode: u.referralCode || null,
           tier:   u.membershipTier,
           avatar: u.profileImageUrl || null,
-          mlb, nba, nhl, wc, ncaabb, total, qualified,
+          mlb, nba, nhl, wc, epl, ncaabb, total, qualified,
           firstPickAt,
           lastPickAt,
         };
@@ -898,7 +900,7 @@ export async function registerRoutes(
 
       res.json({
         period: { start: periodStart, end: periodEnd, label: dateLabel },
-        games:  { mlb: mlbMatchups.length, nba: nbaMatchups.length, nhl: nhlMatchups.length, wc: wcMatchups.length, ncaabb: ncaabbMatchups.length, total: matchupGroups.size },
+        games:  { mlb: mlbMatchups.length, nba: nbaMatchups.length, nhl: nhlMatchups.length, wc: wcMatchups.length, epl: eplMatchups.length, ncaabb: ncaabbMatchups.length, total: matchupGroups.size },
         members: memberRows,
         winner: winner ? { userId: winner.userId, name: winner.name, wins: winner.total.wins, losses: winner.total.losses } : null,
       });
@@ -2922,7 +2924,7 @@ export async function registerRoutes(
       let totalRegraded = 0;
       for (const g of matchingGames) {
         await db.update(games).set({ homeScore: Number(homeScore), awayScore: Number(awayScore), status: "finished" }).where(eq(games.id, g.id));
-        const graded = await autoGradePredictions(g.id, g.homeTeam, g.awayTeam, Number(homeScore), Number(awayScore), g.spread, g.total).catch(() => 0);
+        const graded = await autoGradePredictions(g.id, g.homeTeam, g.awayTeam, Number(homeScore), Number(awayScore), g.spread, g.total, true).catch(() => 0);
         totalRegraded += graded || 0;
         console.log(`[fix-game-scores] game ${g.id} ${g.awayTeam}@${g.homeTeam} → ${awayScore}-${homeScore}, regraded ${graded} pick(s)`);
       }
