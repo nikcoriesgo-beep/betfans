@@ -6,50 +6,26 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
-  Trophy, Crown, Star, DollarSign, TrendingUp,
-  Clock, Award, Sparkles, ChevronRight,
-  Timer, Zap, Users, ArrowUpRight, BarChart3,
+  Trophy, Crown, Star, DollarSign, Clock,
+  Award, Sparkles, ChevronRight,
+  Timer, Zap, Users, ArrowUpRight,
+  CheckCircle2, XCircle, Shield, Send, Loader2,
 } from "lucide-react";
 import { PrizePoolQualRule } from "@/components/PrizePoolQualRule";
 import { cn } from "@/lib/utils";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
-
-type Period = "daily" | "annual";
+import { ExpertBadge, isExpertAnalyst } from "@/components/ExpertBadge";
+import { useAuth } from "@/hooks/use-auth";
+import { useToast } from "@/hooks/use-toast";
 
 type PrizePoolData = {
   amount: number;
   daily: number;
-  annual: number;
 };
 
 const DAILY_POOL_SHARE = 0.10;
 
-const periodConfig: Record<Period, {
-  title: string;
-  icon: any;
-  gradient: string;
-  border: string;
-  accent: string;
-  label: string;
-}> = {
-  daily: {
-    title: "Daily Winners",
-    icon: Clock,
-    gradient: "from-blue-500 to-cyan-500",
-    border: "border-blue-500/30",
-    accent: "text-blue-400",
-    label: "Today's Champions",
-  },
-  annual: {
-    title: "Annual Winners",
-    icon: Trophy,
-    gradient: "from-yellow-500 to-orange-500",
-    border: "border-yellow-500/30",
-    accent: "text-yellow-400",
-    label: "Year-End Champions",
-  },
-};
 
 const tierConfig: Record<string, { label: string; color: string; bg: string; border: string; icon: any }> = {
   legend: { label: "Legend", color: "text-purple-400", bg: "bg-purple-600/20", border: "border-purple-500/30", icon: Crown },
@@ -58,15 +34,15 @@ const tierConfig: Record<string, { label: string; color: string; bg: string; bor
 };
 
 function TierBadge({ tier }: { tier: string | null }) {
-  if (tier === "legend") return <Badge className="bg-purple-600/20 text-purple-400 border-purple-500/30 text-[10px] gap-0.5 px-1.5 py-0"><Crown size={10} /> Legend</Badge>;
-  if (tier === "pro") return <Badge className="bg-primary/20 text-primary border-primary/30 text-[10px] gap-0.5 px-1.5 py-0"><Star size={10} /> Pro</Badge>;
-  if (tier === "rookie") return <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30 text-[10px] gap-0.5 px-1.5 py-0"><Award size={10} /> Rookie</Badge>;
-  return null;
+  return <Badge className="bg-purple-600/20 text-purple-400 border-purple-500/30 text-[10px] gap-0.5 px-1.5 py-0"><Crown size={10} /> Legend</Badge>;
 }
 
 function WinnerCard({ entry, payout, accentClass }: { entry: any; payout: number; accentClass: string }) {
-  const name = entry.user ? `${entry.user.firstName || ""} ${entry.user.lastName || ""}`.trim() || "Member" : "Member";
-  const winRate = entry.wins + entry.losses > 0 ? ((entry.wins / (entry.wins + entry.losses)) * 100).toFixed(1) : "0";
+  const name = entry.name || "Member";
+  const wins = entry.total?.wins ?? entry.wins ?? 0;
+  const losses = entry.total?.losses ?? entry.losses ?? 0;
+  const avatar = entry.avatar || entry.user?.profileImageUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${entry.userId}`;
+  const tier = entry.tier || entry.user?.membershipTier;
 
   return (
     <Link href={`/winners/${entry.userId}`}>
@@ -74,17 +50,18 @@ function WinnerCard({ entry, payout, accentClass }: { entry: any; payout: number
         <CardContent className="p-4">
           <div className="flex items-center gap-3">
             <Avatar className="h-10 w-10 border-2 border-white/10 shrink-0">
-              <AvatarImage src={entry.user?.profileImageUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${entry.userId}`} />
+              <AvatarImage src={avatar} />
               <AvatarFallback>{name[0]}</AvatarFallback>
             </Avatar>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-1.5 mb-0.5">
                 <span className="font-display font-bold truncate text-sm">{name}</span>
-                <TierBadge tier={entry.user?.membershipTier} />
+                <TierBadge tier={tier} />
               </div>
-              <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                <span className="flex items-center gap-1"><TrendingUp size={11} /> {winRate}% Win Rate</span>
-                <span>{entry.wins}W - {entry.losses}L</span>
+              <div className="font-mono text-sm">
+                <span className="text-green-400">{wins}W</span>
+                <span className="text-muted-foreground/40 mx-1">-</span>
+                <span className="text-red-400">{losses}L</span>
               </div>
             </div>
             <div className="text-right shrink-0">
@@ -100,7 +77,7 @@ function WinnerCard({ entry, payout, accentClass }: { entry: any; payout: number
   );
 }
 
-function useCountdown(period: "daily" | "annual") {
+function useCountdown(period: "daily") {
   const [timeLeft, setTimeLeft] = useState("");
   useEffect(() => {
     const calc = () => {
@@ -132,7 +109,7 @@ function useCountdown(period: "daily" | "annual") {
 
 function fmtMoney(n: number) {
   if (!n || n <= 0) return "—";
-  return "$" + n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return "$" + Math.floor(n).toLocaleString();
 }
 
 function DailyPrizePoolTracker({ poolAmount }: { poolAmount: number }) {
@@ -180,7 +157,7 @@ function DailyPrizePoolTracker({ poolAmount }: { poolAmount: number }) {
           "text-3xl font-mono font-black mb-1 transition-all duration-500 text-blue-400",
           isGrowing && "scale-105 drop-shadow-[0_0_15px_rgba(34,197,94,0.6)]"
         )}>
-          {poolAmount > 0 ? "$" + poolAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "Building..."}
+          {poolAmount > 0 ? "$" + Math.floor(poolAmount).toLocaleString() : "Building..."}
         </div>
         <div className="text-[10px] text-muted-foreground/60 uppercase tracking-wider mb-4">Remaining Prize Pool</div>
 
@@ -199,77 +176,27 @@ function DailyPrizePoolTracker({ poolAmount }: { poolAmount: number }) {
   );
 }
 
-function AnnualPrizePoolTracker({ annualAmount }: { annualAmount: number }) {
-  const countdown = useCountdown("annual");
-
-  return (
-    <Card className="relative overflow-hidden border-yellow-500/30 border" data-testid="tracker-annual">
-      <div className="absolute inset-0 bg-gradient-to-br from-yellow-500 to-orange-500 opacity-10" />
-      <CardContent className="p-5 relative">
-        <div className="flex items-start justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-gradient-to-br from-yellow-500 to-orange-500 shadow-lg">
-              <Trophy size={18} className="text-white" />
-            </div>
-            <div>
-              <h3 className="font-display font-bold text-sm">Annual Grand Prize</h3>
-              <div className="text-[10px] text-muted-foreground">Winner takes all remaining</div>
-            </div>
-          </div>
-          <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-white/5 border border-white/10">
-            <Timer size={12} className="text-muted-foreground" />
-            <span className="text-xs font-mono text-muted-foreground">{countdown}</span>
-          </div>
-        </div>
-
-        <div className="text-3xl font-mono font-black mb-3 text-yellow-400">
-          {annualAmount > 0 ? "$" + annualAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "Building..."}
-        </div>
-        <p className="text-[11px] text-muted-foreground leading-relaxed">
-          All remaining prize pool accumulates here after daily payouts. Awarded to the best MLB predictor(s) of the year on Jan 1st.
-          Tied annual winners split the pool equally.
-        </p>
-        <p className="mt-1.5 text-[10px] text-muted-foreground/50">* All members must predict over 2,000 MLB games to qualify for the annual prize pool payout.</p>
-      </CardContent>
-    </Card>
-  );
-}
 
 function DailyWinners({ poolAmount }: { poolAmount: number }) {
-  const { data: entries = [] } = useQuery<any[]>({
-    queryKey: ["/api/leaderboard", "daily"],
+  const { data: scorecard } = useQuery<any>({
+    queryKey: ["/api/daily-scorecard"],
     queryFn: async () => {
-      const res = await fetch(`/api/leaderboard?period=daily`);
-      if (!res.ok) return [];
+      const res = await fetch("/api/daily-scorecard");
+      if (!res.ok) return null;
       return res.json();
     },
+    refetchInterval: 30000,
   });
 
-  const { data: gameCountData } = useQuery<{ count: number; mlbCount: number; nbaCount: number; nhlCount: number }>({
-    queryKey: ["/api/mlb-game-count"],
-    queryFn: async () => {
-      const res = await fetch(`/api/mlb-game-count`);
-      if (!res.ok) return { count: 0, mlbCount: 0, nbaCount: 0, nhlCount: 0 };
-      return res.json();
-    },
-  });
-  const totalMLBGames = gameCountData?.mlbCount ?? 0;
-  const totalNBAGames = gameCountData?.nbaCount ?? 0;
-  const totalNHLGames = gameCountData?.nhlCount ?? 0;
-
-  const eligible = entries.filter((e) => {
-    const tier = e.user?.membershipTier;
-    if (tier !== "legend" && tier !== "pro" && tier !== "rookie") return false;
-    // Must have picked EVERY available MLB, NBA, and NHL game to qualify
-    if (totalMLBGames > 0 && (e.mlbPicks ?? 0) < totalMLBGames) return false;
-    if (totalNBAGames > 0 && (e.nbaPicks ?? 0) < totalNBAGames) return false;
-    if (totalNHLGames > 0 && (e.nhlPicks ?? 0) < totalNHLGames) return false;
-    return true;
-  });
-  const sorted = [...eligible].sort((a, b) => b.roi - a.roi || b.wins - a.wins);
-  const topRoi = sorted[0]?.roi;
-  const topWins = sorted[0]?.wins;
-  const winners = sorted.length > 0 ? sorted.filter((e) => e.roi === topRoi && e.wins === topWins) : [];
+  const rawMembers: any[] = scorecard?.members ?? [];
+  const sorted = [...rawMembers]
+    .filter((m: any) => m.qualified)
+    .sort((a: any, b: any) => b.total.wins - a.total.wins || a.total.losses - b.total.losses);
+  const topWins = sorted[0]?.total.wins;
+  const topLosses = sorted[0]?.total.losses;
+  const winners = sorted.length > 0
+    ? sorted.filter((m: any) => m.total.wins === topWins && m.total.losses === topLosses)
+    : [];
   const dailyPool = poolAmount * DAILY_POOL_SHARE;
   const perWinner = winners.length > 0 ? dailyPool / winners.length : dailyPool;
 
@@ -317,103 +244,6 @@ function DailyWinners({ poolAmount }: { poolAmount: number }) {
   );
 }
 
-function AnnualWinners({ remainingPool }: { remainingPool: number }) {
-  const { data: entries = [] } = useQuery<any[]>({
-    queryKey: ["/api/leaderboard", "annual"],
-    queryFn: async () => {
-      const res = await fetch(`/api/leaderboard?period=annual`);
-      if (!res.ok) return [];
-      return res.json();
-    },
-  });
-
-  const topEntries = entries.slice(0, 10);
-
-  return (
-    <div className="space-y-5">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-gradient-to-br from-yellow-500 to-orange-500">
-            <Trophy size={20} className="text-white" />
-          </div>
-          <div>
-            <h2 className="text-xl font-display font-bold">Annual Standings</h2>
-            <p className="text-xs text-muted-foreground">Year-End Champions — winner takes all remaining pool</p>
-          </div>
-        </div>
-        <div className="text-right">
-          <div className="text-lg font-bold font-mono text-yellow-400">
-            {fmtMoney(remainingPool)}
-          </div>
-          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Remaining Pool</p>
-        </div>
-      </div>
-
-      {topEntries.length === 0 ? (
-        <Card className="bg-card/20 border-white/5">
-          <CardContent className="p-8 text-center">
-            <Trophy size={36} className="text-muted-foreground/20 mx-auto mb-3" />
-            <p className="text-muted-foreground text-sm">No annual picks yet</p>
-            <p className="text-xs text-muted-foreground/50 mt-1">Start predicting MLB games to claim your share!</p>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="space-y-3">
-          {topEntries.map((entry: any, i: number) => {
-            const isLeader = i === 0;
-            const winRate = entry.wins + entry.losses > 0
-              ? ((entry.wins / (entry.wins + entry.losses)) * 100).toFixed(1)
-              : "0";
-            const name = entry.user ? `${entry.user.firstName || ""} ${entry.user.lastName || ""}`.trim() || "Member" : "Member";
-
-            return (
-              <Link key={entry.userId} href={`/winners/${entry.userId}`}>
-                <Card className={cn(
-                  "transition-all cursor-pointer group hover:scale-[1.02]",
-                  isLeader ? "bg-gradient-to-r from-yellow-500/5 to-orange-500/5 border-yellow-500/30 border" : "bg-card/30 border-white/5 hover:border-white/10"
-                )} data-testid={`card-annual-winner-${i + 1}`}>
-                  <CardContent className="p-4">
-                    <div className="flex items-center gap-3">
-                      <div className={cn(
-                        "w-9 h-9 rounded-full flex items-center justify-center text-sm font-black shrink-0",
-                        isLeader ? "bg-gradient-to-br from-yellow-400 to-orange-500 text-white shadow-lg shadow-yellow-500/30" : "bg-white/5 border border-white/10 text-muted-foreground"
-                      )}>
-                        {isLeader ? <Crown size={16} /> : i + 1}
-                      </div>
-                      <Avatar className="h-9 w-9 border border-white/10 shrink-0">
-                        <AvatarImage src={entry.user?.profileImageUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${entry.userId}`} />
-                        <AvatarFallback>{name[0]}</AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5 mb-0.5">
-                          <span className={cn("font-display font-bold truncate", isLeader ? "text-sm" : "text-xs")}>{name}</span>
-                          <TierBadge tier={entry.user?.membershipTier} />
-                        </div>
-                        <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                          <span>{winRate}% Win Rate</span>
-                          <span>{entry.wins}W - {entry.losses}L</span>
-                        </div>
-                      </div>
-                      {isLeader && (
-                        <div className="text-right shrink-0">
-                          <div className="text-lg font-bold font-mono text-yellow-400">
-                            {fmtMoney(remainingPool)}
-                          </div>
-                          <div className="text-[10px] text-muted-foreground">Prize if year ends now</div>
-                        </div>
-                      )}
-                      <ChevronRight size={16} className="text-muted-foreground/30 group-hover:text-foreground/50 shrink-0 hidden md:block" />
-                    </div>
-                  </CardContent>
-                </Card>
-              </Link>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
 
 function RecordCell({ wins, losses, bold }: { wins: number; losses: number; bold?: boolean }) {
   return (
@@ -425,139 +255,266 @@ function RecordCell({ wins, losses, bold }: { wins: number; losses: number; bold
   );
 }
 
-function SportScorecardTable() {
-  const fetchStats = async (p?: string) => {
-    const url = p ? `/api/sport-stats?period=${p}` : `/api/sport-stats`;
-    const res = await fetch(url);
-    if (!res.ok) return { overall: { wins: 0, losses: 0 }, bySport: [] };
-    return res.json();
-  };
 
-  const FOUNDER_ID = "29b670b7-5296-44dc-a0a0-aec0d878ef9b";
-  const fetchFounderStats = async (p?: string) => {
-    const url = p ? `/api/users/${FOUNDER_ID}/sport-stats?period=${p}` : `/api/users/${FOUNDER_ID}/sport-stats`;
-    const res = await fetch(url);
-    if (!res.ok) return { overall: { wins: 0, losses: 0 }, bySport: [] };
-    return res.json();
-  };
+function SportCell({ wins, losses, picks, total, qualified }: { wins: number; losses: number; picks: number; total: number; qualified: boolean }) {
+  const missing = total - picks;
+  return (
+    <td className="py-3 px-2 text-center align-middle">
+      {total === 0 ? (
+        <span className="text-muted-foreground/30 text-xs">—</span>
+      ) : (
+        <div className="flex flex-col items-center gap-0.5">
+          <div className="font-mono text-sm font-bold tabular-nums">
+            <span className="text-green-400">{wins}</span>
+            <span className="text-muted-foreground/30">-</span>
+            <span className="text-red-400">{losses}</span>
+          </div>
+          <div className={cn("text-[10px] tabular-nums", missing > 0 ? "text-red-400/70" : "text-muted-foreground/50")}>
+            {picks}/{total} picks
+          </div>
+        </div>
+      )}
+    </td>
+  );
+}
 
-  const { data: daily }        = useQuery<any>({ queryKey: ["/api/sport-stats", "last24h"],  queryFn: () => fetchStats("last24h"), refetchInterval: 30000 });
-  const { data: annual }       = useQuery<any>({ queryKey: ["/api/sport-stats", "annual"],   queryFn: () => fetchStats("annual"),  refetchInterval: 60000 });
-  const { data: founderAnnual} = useQuery<any>({ queryKey: ["/api/founder-sport-stats"],     queryFn: () => fetchFounderStats("annual"), refetchInterval: 60000 });
+function DailyMemberScorecard() {
+  const { user } = useAuth() as { user: any };
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const isFounder = user?.referralCode === "NIKCOX" || user?.referralCode === "DAMON822";
 
-  const periodData = [daily, annual];
-
-  const SPORT_ORDER = ["NFL", "NBA", "MLB", "NHL", "NCAAB", "MLS", "NWSL", "WNBA"];
-  const allLeagues = Array.from(
-    new Set(periodData.flatMap(d => (d?.bySport ?? []).map((s: any) => s.league)))
-  ).sort((a, b) => {
-    const ai = SPORT_ORDER.indexOf(a), bi = SPORT_ORDER.indexOf(b);
-    return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+  const { data, isLoading } = useQuery<any>({
+    queryKey: ["/api/daily-scorecard"],
+    queryFn: async () => {
+      const res = await fetch("/api/daily-scorecard");
+      if (!res.ok) return null;
+      return res.json();
+    },
+    refetchInterval: 30000,
   });
 
-  const getSport = (d: any, league: string) =>
-    d?.bySport?.find((s: any) => s.league === league) ?? { wins: 0, losses: 0 };
 
-  const cols = [
-    { label: "Daily",  icon: Clock,   d: daily,  accent: "text-blue-400" },
-    { label: "Annual", icon: Trophy,  d: annual, accent: "text-yellow-400" },
-  ];
+  const payMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/payouts/process", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ period: "daily" }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Payout failed");
+      }
+      return res.json();
+    },
+    onSuccess: (result) => {
+      const detail = result?.results?.[0]?.detail ?? "Done";
+      toast({ title: "Prize Pool Paid", description: detail });
+      queryClient.invalidateQueries({ queryKey: ["/api/daily-scorecard"] });
+    },
+    onError: (e: any) => {
+      toast({ title: "Payout Error", description: e.message, variant: "destructive" });
+    },
+  });
+
+  const games = data?.games ?? { mlb: 0, nba: 0, nhl: 0, wc: 0, epl: 0, ncaabb: 0, total: 0 };
+  const rawMembers: any[] = data?.members ?? [];
+  const label = data?.period?.label ?? "";
+  const winner = data?.winner ?? null;
+
+  // Sort by wins DESC, then losses ASC — same ranking as Top Predictors & Daily Rankings
+  const members = [...rawMembers].sort((a, b) =>
+    b.total.wins - a.total.wins || a.total.losses - b.total.losses
+  );
+
+  // Find all tied winners (same W-L as the winner, all qualified)
+  const tiedWinners = winner
+    ? members.filter((m: any) => m.qualified && m.total.wins === winner.wins && m.total.losses === winner.losses)
+    : [];
+
+  const formattedDate = label
+    ? new Date(label + "T12:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })
+    : "";
 
   return (
-    <div className="max-w-4xl mx-auto mb-10" data-testid="sport-scorecard-table">
-      <div className="flex items-center gap-2 mb-4">
-        <BarChart3 size={16} className="text-primary" />
-        <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground">Platform Pick Scorecard</h2>
+    <div className="max-w-4xl mx-auto mb-10" data-testid="daily-member-scorecard">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <Shield size={16} className="text-primary" />
+          <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground">Yesterday's Final Results</h2>
+          {formattedDate && (
+            <span className="text-xs text-muted-foreground/50 font-mono">{formattedDate}</span>
+          )}
+        </div>
+        <div className="flex items-center gap-2 text-[10px] text-muted-foreground/60 uppercase tracking-wider">
+          {games.mlb > 0 && <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/5">MLB {games.mlb}G</span>}
+          {games.nba > 0 && <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/5">NBA {games.nba}G</span>}
+          {games.nhl > 0 && <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/5">NHL {games.nhl}G</span>}
+          {games.wc > 0 && <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">🌍 WC {games.wc}G</span>}
+           {games.epl > 0 && <span className="px-1.5 py-0.5 rounded bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">⚽ EPL {games.epl}G</span>}
+        </div>
       </div>
 
-      <Card className="bg-card/20 border-white/5 overflow-hidden">
+      {/* Winner Banner — handles both sole winner and tied winners */}
+      {winner && tiedWinners.length === 1 && (
+        <div className="mb-3 rounded-xl bg-gradient-to-r from-yellow-500/10 via-primary/10 to-yellow-500/10 border border-yellow-500/20 px-4 py-3 flex items-center gap-3" data-testid="scorecard-winner-banner">
+          <Trophy size={20} className="text-yellow-400 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <div className="text-xs font-bold uppercase tracking-widest text-yellow-400/80 mb-0.5">Daily Prize Pool Winner</div>
+            <div className="font-display font-black text-lg text-foreground leading-tight flex items-center gap-2">{winner.name}{isExpertAnalyst(winner.referralCode) && <ExpertBadge />}</div>
+          </div>
+          <div className="text-right shrink-0">
+            <div className="font-mono text-2xl font-black tabular-nums">
+              <span className="text-green-400">{winner.wins}</span>
+              <span className="text-white/20">-</span>
+              <span className="text-red-400">{winner.losses}</span>
+            </div>
+            <div className="text-[10px] text-muted-foreground/60 uppercase tracking-wider">W - L</div>
+          </div>
+        </div>
+      )}
+      {winner && tiedWinners.length > 1 && (
+        <div className="mb-3 rounded-xl bg-gradient-to-r from-yellow-500/10 via-primary/10 to-yellow-500/10 border border-yellow-500/20 px-4 py-3" data-testid="scorecard-winner-banner">
+          <div className="flex items-center gap-2 mb-2">
+            <Trophy size={16} className="text-yellow-400" />
+            <div className="text-xs font-bold uppercase tracking-widest text-yellow-400/80">
+              Prize Pool Split — {tiedWinners.length}-Way Tie
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            {tiedWinners.map((w: any) => (
+              <div key={w.userId} className="flex items-center gap-2">
+                <span className="font-display font-black text-base text-foreground">{w.name}</span>
+                {isExpertAnalyst(w.referralCode) && <ExpertBadge />}
+                <span className="font-mono text-sm tabular-nums">
+                  <span className="text-green-400">{w.total.wins}</span>
+                  <span className="text-white/30">-</span>
+                  <span className="text-red-400">{w.total.losses}</span>
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+
+      <Card className="bg-transparent border-white/10 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-white/10">
-                <th className="text-left py-3 px-4 text-[11px] font-bold uppercase tracking-widest text-muted-foreground w-28">Sport</th>
-                {cols.map(({ label, icon: Icon, accent }) => (
-                  <th key={label} className={cn("py-3 px-3 text-[11px] font-bold uppercase tracking-widest text-center", accent)}>
-                    <div className="flex flex-col items-center gap-0.5">
-                      <Icon size={12} />
-                      {label}
-                    </div>
-                  </th>
-                ))}
+              <tr className="border-b border-white/10 bg-white/[0.03]">
+                <th className="text-left py-3 px-4 text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Member</th>
+                <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-blue-400">MLB</th>
+                <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-orange-400">NBA</th>
+                <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-cyan-400">NHL</th>
+                {games.wc > 0 && <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-emerald-400">🌍 WC</th>}
+               {games.epl > 0 && <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-indigo-400">⚽ EPL</th>}
+                <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-foreground">Total W-L</th>
+                <th className="py-3 px-3 text-center text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Status</th>
               </tr>
             </thead>
             <tbody>
-              {allLeagues.map((league, i) => (
-                <tr
-                  key={league}
-                  className={cn("border-b border-white/5 hover:bg-white/[0.02] transition-colors", i % 2 === 0 ? "bg-transparent" : "bg-white/[0.01]")}
-                  data-testid={`row-scorecard-${league}`}
-                >
-                  <td className="py-3 px-4 font-bold text-xs uppercase tracking-widest text-muted-foreground">{league}</td>
-                  {cols.map(({ label, d }) => {
-                    const s = getSport(d, league);
-                    return (
-                      <td key={label} className="py-3 px-3">
-                        <RecordCell wins={s.wins} losses={s.losses} />
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-
-              {allLeagues.length === 0 && (
-                <tr>
-                  <td colSpan={3} className="py-8 text-center text-sm text-muted-foreground">No graded picks recorded yet</td>
-                </tr>
+              {isLoading && (
+                <tr><td colSpan={8} className="py-8 text-center text-sm text-muted-foreground">Loading...</td></tr>
               )}
-
-              {allLeagues.length > 0 && (
-                <tr className="border-t-2 border-primary/30 bg-primary/5" data-testid="row-scorecard-grand-total">
-                  <td className="py-3 px-4 font-black text-primary text-xs uppercase tracking-wider flex items-center gap-1.5">
-                    <Award size={12} className="text-primary" /> Grand Total
-                  </td>
-                  {cols.map(({ label, d }) => (
-                    <td key={label} className="py-3 px-3">
-                      <RecordCell wins={d?.overall?.wins ?? 0} losses={d?.overall?.losses ?? 0} bold />
-                    </td>
-                  ))}
-                </tr>
+              {!isLoading && members.length === 0 && (
+                <tr><td colSpan={8} className="py-8 text-center text-sm text-muted-foreground">No results yet</td></tr>
               )}
-
-              {allLeagues.length > 0 && (() => {
-                const mlb = getSport(founderAnnual, "MLB");
+              {members.map((m: any) => {
+                const isWinner = winner && m.userId === winner.userId;
                 return (
-                  <tr className="border-t-2 border-yellow-400/40 bg-yellow-400/5" data-testid="row-scorecard-betfans-total">
-                    <td colSpan={3} className="py-5 px-4">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1.5">
-                          <Zap size={12} className="text-yellow-400" />
-                          <div>
-                            <span className="font-black text-[10px] uppercase tracking-widest text-yellow-400">BetFans Total</span>
-                            <span className="block text-[9px] text-yellow-400/60 uppercase tracking-widest">MLB Prize Pool Picks</span>
+                  <tr
+                    key={m.userId}
+                    className={cn(
+                      "border-b border-white/5 transition-colors",
+                      isWinner ? "bg-yellow-500/[0.06] hover:bg-yellow-500/[0.09]" : m.qualified ? "bg-green-500/[0.03] hover:bg-white/[0.03]" : "hover:bg-white/[0.02]"
+                    )}
+                    data-testid={`row-scorecard-member-${m.userId}`}
+                  >
+                    <td className="py-3 px-4">
+                      <div className="flex items-center gap-2.5">
+                        {isWinner && <Trophy size={14} className="text-yellow-400 shrink-0" />}
+                        <Avatar className="h-7 w-7 border border-white/10 shrink-0">
+                          <AvatarImage src={m.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${m.userId}`} />
+                          <AvatarFallback className="text-xs">{m.name?.[0] ?? "M"}</AvatarFallback>
+                        </Avatar>
+                        <div className="min-w-0">
+                          <div className={cn("font-bold text-xs flex items-center gap-1 truncate", isWinner && "text-yellow-300")}>
+                            <span className="truncate">{m.name}</span>
+                            {isExpertAnalyst(m.referralCode) && <ExpertBadge />}
                           </div>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <span className="text-xl font-black text-primary tabular-nums">{mlb.wins ?? 0}W</span>
-                          <span className="text-muted-foreground text-sm font-bold">—</span>
-                          <span className="text-xl font-black text-red-400 tabular-nums">{mlb.losses ?? 0}L</span>
-                          <span className="text-[10px] text-muted-foreground uppercase tracking-widest ml-1">All Time</span>
+                          <TierBadge tier={m.tier} />
+                          {m.firstPickAt && (
+                            <div className="font-mono text-[10px] mt-1 space-y-0.5">
+                              <div className="flex items-center gap-1 text-green-400/80">
+                                <Clock size={9} className="shrink-0" />
+                                <span className="font-semibold">{m.firstPickAt}</span>
+                              </div>
+                              {m.lastPickAt && m.lastPickAt !== m.firstPickAt && (
+                                <div className="flex items-center gap-1 text-orange-400/90">
+                                  <Clock size={9} className="shrink-0" />
+                                  <span className="font-semibold">last: {m.lastPickAt}</span>
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </div>
                     </td>
+                    <SportCell wins={m.mlb.wins} losses={m.mlb.losses} picks={m.mlb.picks} total={games.mlb} qualified={m.mlb.picks >= games.mlb} />
+                    <SportCell wins={m.nba.wins} losses={m.nba.losses} picks={m.nba.picks} total={games.nba} qualified={games.nba === 0 || m.nba.picks >= games.nba} />
+                    <SportCell wins={m.nhl.wins} losses={m.nhl.losses} picks={m.nhl.picks} total={games.nhl} qualified={games.nhl === 0 || m.nhl.picks >= games.nhl} />
+                    {games.wc > 0 && <SportCell wins={m.wc?.wins ?? 0} losses={m.wc?.losses ?? 0} picks={m.wc?.picks ?? 0} total={games.wc} qualified={games.wc === 0 || (m.wc?.picks ?? 0) >= games.wc} />}
+                   {games.epl > 0 && <SportCell wins={m.epl?.wins ?? 0} losses={m.epl?.losses ?? 0} picks={m.epl?.picks ?? 0} total={games.epl} qualified />}
+                    {games.ncaabb > 0 && <SportCell wins={m.ncaabb?.wins ?? 0} losses={m.ncaabb?.losses ?? 0} picks={m.ncaabb?.picks ?? 0} total={games.ncaabb} qualified={games.ncaabb === 0 || (m.ncaabb?.picks ?? 0) >= games.ncaabb} />}
+                    <td className="py-3 px-2 text-center align-middle">
+                      <div className={cn("font-mono text-base font-black tabular-nums", isWinner ? "text-yellow-300" : "")}>
+                        <span className="text-green-400">{m.total.wins}</span>
+                        <span className="text-muted-foreground/30 mx-0.5">-</span>
+                        <span className="text-red-400">{m.total.losses}</span>
+                      </div>
+                      <div className="text-[10px] text-muted-foreground/40 tabular-nums">{m.total.picks}/{games.total} picks</div>
+                    </td>
+                    <td className="py-3 px-3 text-center align-middle">
+                      {isWinner ? (
+                        <div className="flex flex-col items-center gap-0.5">
+                          <span className="text-[10px] font-black text-yellow-400 uppercase tracking-wider px-2 py-0.5 bg-yellow-500/10 rounded-full border border-yellow-500/20">Winner</span>
+                        </div>
+                      ) : m.qualified ? (
+                        <div className="flex flex-col items-center gap-0.5">
+                          <CheckCircle2 size={16} className="text-green-400" />
+                          <span className="text-[9px] text-green-400/70 font-bold uppercase tracking-wider">Qualified</span>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-center gap-0.5">
+                          <XCircle size={16} className="text-muted-foreground/30" />
+                          <span className="text-[9px] text-red-400/50 uppercase tracking-wider">
+                            {m.total.picks === 0 ? "No picks" : `${games.total - m.total.picks} missing`}
+                          </span>
+                        </div>
+                      )}
+                    </td>
                   </tr>
                 );
-              })()}
+              })}
             </tbody>
           </table>
+        </div>
+        <div className="px-4 py-2 border-t border-white/5 text-[10px] text-muted-foreground/40 flex items-center gap-1">
+          <Shield size={10} /> Transparent — all members can verify each other's qualifying picks · Auto-refreshes every 30s
         </div>
       </Card>
     </div>
   );
 }
 
-
 function PayoutHistory() {
+  const { user: currentUser } = useAuth();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
   const { data: payoutHistory = [] } = useQuery<any[]>({
     queryKey: ["/api/payouts/history"],
     queryFn: async () => {
@@ -567,15 +524,69 @@ function PayoutHistory() {
     },
   });
 
+  const { data: adminCheck } = useQuery<any>({
+    queryKey: ["/api/admin/members"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/members");
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: !!currentUser,
+    retry: false,
+  });
+  const isAdmin = adminCheck !== null && Array.isArray(adminCheck);
+
+  const sendToCard = useMutation({
+    mutationFn: async (payoutId: number) => {
+      const res = await fetch(`/api/admin/send-to-card/${payoutId}`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to send");
+      return data;
+    },
+    onSuccess: (data) => {
+      toast({ title: "Sent to card!", description: `PayPal payout dispatched to ${data.email}` });
+      queryClient.invalidateQueries({ queryKey: ["/api/payouts/history"] });
+    },
+    onError: (e: any) => {
+      toast({ title: "Send failed", description: e.message, variant: "destructive" });
+    },
+  });
+
+  const markPaid = useMutation({
+    mutationFn: async (payoutId: number) => {
+      const res = await fetch(`/api/admin/mark-paid/${payoutId}`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to mark paid");
+      return data;
+    },
+    onSuccess: (data) => {
+      toast({
+        title: `Marked as paid — $${data.amount}`,
+        description: `Send manually via PayPal to: ${data.recipientInfo}`,
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/payouts/history"] });
+    },
+    onError: (e: any) => {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    },
+  });
+
   if (payoutHistory.length === 0) return null;
 
   const statusColor: Record<string, string> = {
     paid: "text-green-400 bg-green-500/10 border-green-500/20",
-    credited: "text-blue-400 bg-blue-500/10 border-blue-500/20",
-    wallet_credited: "text-green-400 bg-green-500/10 border-green-500/20",
+    credited: "text-green-400 bg-green-500/10 border-green-500/20",
+    wallet_credited: "text-yellow-400 bg-yellow-500/10 border-yellow-500/20",
+    paypal_sent: "text-green-400 bg-green-500/10 border-green-500/20",
     pending: "text-yellow-400 bg-yellow-500/10 border-yellow-500/20",
     failed: "text-red-400 bg-red-500/10 border-red-500/20",
   };
+
+  function statusLabel(status: string) {
+    if (status === "paypal_sent" || status === "paid" || status === "credited") return "Sent to Card";
+    if (status === "wallet_credited") return "Pending Card Send";
+    return status;
+  }
 
   return (
     <Card className="bg-card/20 border-white/5 max-w-3xl mx-auto mt-8" data-testid="card-payout-history">
@@ -586,6 +597,7 @@ function PayoutHistory() {
         <div className="space-y-2">
           {payoutHistory.slice(0, 20).map((p: any) => {
             const name = p.user ? `${p.user.firstName || ""} ${p.user.lastName || ""}`.trim() || "Member" : "Member";
+            const needsSend = p.status === "wallet_credited" || p.status === "pending";
             return (
               <div key={p.id} className="flex items-center gap-3 p-3 rounded-lg bg-white/5 border border-white/5" data-testid={`row-payout-${p.id}`}>
                 <Avatar className="h-8 w-8 border border-white/10">
@@ -595,6 +607,7 @@ function PayoutHistory() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-medium truncate">{name}</span>
+                    {isExpertAnalyst(p.user?.referralCode) && <ExpertBadge />}
                     <Badge variant="outline" className="text-[10px] px-1.5 py-0 capitalize">{p.period}</Badge>
                   </div>
                   <div className="flex items-center gap-2">
@@ -608,13 +621,40 @@ function PayoutHistory() {
                     )}
                   </div>
                 </div>
-                <div className="text-right shrink-0">
-                  <div className="text-sm font-mono font-bold text-primary">
-                    ${p.amount?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                <div className="flex items-center gap-2 shrink-0">
+                  {isAdmin && needsSend && (
+                    <>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-6 text-[10px] px-2 border-primary/40 text-primary hover:bg-primary/10"
+                        onClick={() => sendToCard.mutate(p.id)}
+                        disabled={sendToCard.isPending || markPaid.isPending}
+                        data-testid={`button-send-to-card-${p.id}`}
+                      >
+                        {sendToCard.isPending ? <Loader2 size={10} className="animate-spin" /> : "Send to Card"}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-6 text-[10px] px-2 border-yellow-500/40 text-yellow-400 hover:bg-yellow-500/10"
+                        onClick={() => markPaid.mutate(p.id)}
+                        disabled={sendToCard.isPending || markPaid.isPending}
+                        data-testid={`button-mark-paid-${p.id}`}
+                        title="Mark as manually paid — sends you the recipient info to send via PayPal.com"
+                      >
+                        {markPaid.isPending ? <Loader2 size={10} className="animate-spin" /> : "Mark Paid"}
+                      </Button>
+                    </>
+                  )}
+                  <div className="text-right">
+                    <div className="text-sm font-mono font-bold text-primary">
+                      ${p.amount?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </div>
+                    <Badge className={cn("text-[9px] px-1.5 py-0 border", statusColor[p.status] || statusColor.pending)}>
+                      {statusLabel(p.status)}
+                    </Badge>
                   </div>
-                  <Badge className={cn("text-[9px] px-1.5 py-0 border", statusColor[p.status] || statusColor.pending)}>
-                    {p.status === "wallet_credited" || p.status === "credited" || p.status === "paid" ? "Paid to Wallet" : p.status}
-                  </Badge>
                 </div>
               </div>
             );
@@ -626,7 +666,6 @@ function PayoutHistory() {
 }
 
 export default function Winners() {
-  const [activeTab, setActiveTab] = useState<Period>("daily");
 
   const { data: prizePool } = useQuery<PrizePoolData>({
     queryKey: ["/api/prize-pool"],
@@ -640,12 +679,6 @@ export default function Winners() {
 
   const totalPool = prizePool?.amount || 0;
   const dailyPool = prizePool?.daily || 0;
-  const annualPool = prizePool?.annual || 0;
-
-  const tabs: { period: Period; label: string; icon: any }[] = [
-    { period: "daily", label: "Daily", icon: Clock },
-    { period: "annual", label: "Annual", icon: Trophy },
-  ];
 
   return (
     <div className="min-h-screen bg-background">
@@ -661,50 +694,20 @@ export default function Winners() {
             Hall of Winners
           </h1>
           <p className="text-muted-foreground max-w-xl mx-auto">
-            The best predictors earn real money. Prize pool grows in real time as members join — currently at{" "}
-            <span className="text-primary font-mono font-bold">
-              {totalPool > 0 ? "$" + totalPool.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "growing"}
-            </span>
+            The best predictors earn real money. Compete daily for available prizes — subject to availability and change at any time.
           </p>
         </div>
 
         <PrizePoolQualRule className="max-w-3xl mx-auto mb-8" />
 
-        <SportScorecardTable />
+        <DailyMemberScorecard />
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-10 max-w-3xl mx-auto">
+        <div className="max-w-3xl mx-auto mb-10">
           <DailyPrizePoolTracker poolAmount={totalPool} />
-          <AnnualPrizePoolTracker annualAmount={annualPool} />
-        </div>
-
-        <div className="flex justify-center gap-2 mb-8">
-          {tabs.map((tab) => {
-            const Icon = tab.icon;
-            return (
-              <button
-                key={tab.period}
-                onClick={() => setActiveTab(tab.period)}
-                className={cn(
-                  "flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-medium transition-all",
-                  activeTab === tab.period
-                    ? "bg-primary text-primary-foreground shadow-[0_0_15px_rgba(34,197,94,0.3)]"
-                    : "bg-white/5 text-muted-foreground hover:bg-white/10 hover:text-foreground"
-                )}
-                data-testid={`button-tab-${tab.period}`}
-              >
-                <Icon size={16} />
-                {tab.label}
-              </button>
-            );
-          })}
         </div>
 
         <div className="max-w-3xl mx-auto">
-          {activeTab === "daily" ? (
-            <DailyWinners poolAmount={totalPool} />
-          ) : (
-            <AnnualWinners remainingPool={annualPool} />
-          )}
+          <DailyWinners poolAmount={totalPool} />
         </div>
 
         <Card className="bg-card/20 border-white/5 max-w-3xl mx-auto mt-10">
@@ -721,17 +724,9 @@ export default function Winners() {
                   {fmtMoney(totalPool * DAILY_POOL_SHARE)}
                 </span>
               </div>
-              <div className="flex items-center gap-3">
-                <Trophy size={16} className="text-yellow-400" />
-                <span className="text-sm flex-1">Annual Grand Prize</span>
-                <span className="text-xs text-muted-foreground">All remaining pool</span>
-                <span className="font-mono font-bold text-sm text-yellow-400">
-                  {fmtMoney(annualPool)}
-                </span>
-              </div>
               <div className="border-t border-white/10 pt-3 mt-3 flex items-center gap-3">
                 <DollarSign size={16} className="text-primary" />
-                <span className="text-sm font-bold flex-1">Remaining Prize Pool</span>
+                <span className="text-sm font-bold flex-1">Total Prize Pool</span>
                 <span className="font-mono font-bold text-lg text-primary">
                   {fmtMoney(totalPool)}
                 </span>
@@ -745,16 +740,13 @@ export default function Winners() {
             <div className="mt-3 p-3 rounded-lg bg-white/5 border border-white/5">
               <p className="text-xs text-muted-foreground">
                 <strong className="text-foreground">How it works:</strong> Each day, all members compete together regardless of tier.
-                The best MLB predictor wins 10% of the prize pool. Tied winners split the 10% equally.
-                The remaining 90% accumulates all year for the annual grand prize.
-                On January 1st, the year's top MLB predictor wins the entire remaining pool.
-                Tied annual winners split the pool equally.
+                The best MLB predictor wins the daily prize. Tied winners split equally. Prizes subject to availability.
               </p>
             </div>
             <div className="mt-3 p-3 rounded-lg bg-primary/5 border border-primary/10">
               <p className="text-xs text-muted-foreground">
-                <strong className="text-primary">Payouts:</strong> Winnings are credited directly to your BetFans wallet.
-                Your payout is automatically credited — no extra steps needed.
+                <strong className="text-primary">Payouts:</strong> Winnings are sent directly to your debit card via PayPal.
+                Your payout is dispatched automatically — no extra steps needed.
               </p>
             </div>
             <div className="mt-4">
