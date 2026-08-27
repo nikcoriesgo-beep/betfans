@@ -70,7 +70,7 @@ async function computeScorecardForPeriod(periodStart: Date, periodEnd: Date, log
   const dayGamesRaw = await db.select().from(games).where(
     sql`${games.gameTime} >= ${periodStart} AND ${games.gameTime} < ${periodEnd}
         AND ${games.status} != 'postponed'
-        AND ${games.league} IN ('MLB','NBA','NHL','FIFA_WC','NCAABB')`
+        AND ${games.league} IN ('MLB','NBA','NHL','FIFA_WC','EPL','NCAABB')`
   );
 
   // Deduplicate by (league, homeTeam, awayTeam)
@@ -88,9 +88,10 @@ async function computeScorecardForPeriod(periodStart: Date, periodEnd: Date, log
   const nbaMatchups    = [...matchupGroups.entries()].filter(([k]) => k.startsWith("NBA|"));
   const nhlMatchups    = [...matchupGroups.entries()].filter(([k]) => k.startsWith("NHL|"));
   const wcMatchups     = [...matchupGroups.entries()].filter(([k]) => k.startsWith("FIFA_WC|"));
+  const eplMatchups    = [...matchupGroups.entries()].filter(([k]) => k.startsWith("EPL|"));
   const ncaabbMatchups = [...matchupGroups.entries()].filter(([k]) => k.startsWith("NCAABB|"));
 
-  log(`Scorecard: ${mlbMatchups.length} MLB, ${nbaMatchups.length} NBA, ${nhlMatchups.length} NHL, ${wcMatchups.length} FIFA_WC, ${ncaabbMatchups.length} NCAABB games (${matchupGroups.size} total)`);
+  log(`Scorecard: ${mlbMatchups.length} MLB, ${nbaMatchups.length} NBA, ${nhlMatchups.length} NHL, ${wcMatchups.length} FIFA_WC, ${eplMatchups.length} EPL, ${ncaabbMatchups.length} NCAABB games (${matchupGroups.size} total)`);
 
   const allDayIds = dayGamesRaw.map(g => g.id);
   const dayPreds = allDayIds.length === 0 ? [] : await db.select().from(predictions).where(
@@ -122,12 +123,13 @@ async function computeScorecardForPeriod(periodStart: Date, periodEnd: Date, log
     const nba    = forSport(nbaMatchups);
     const nhl    = forSport(nhlMatchups);
     const wc     = forSport(wcMatchups);
+    const epl    = forSport(eplMatchups);
     const ncaabb = forSport(ncaabbMatchups);
-    const totalWins   = mlb.wins   + nba.wins   + nhl.wins   + wc.wins   + ncaabb.wins;
-    const totalLosses = mlb.losses + nba.losses + nhl.losses + wc.losses + ncaabb.losses;
-    const totalPicks  = mlb.picks  + nba.picks  + nhl.picks  + wc.picks  + ncaabb.picks;
+    const totalWins   = mlb.wins   + nba.wins   + nhl.wins   + wc.wins   + epl.wins   + ncaabb.wins;
+    const totalLosses = mlb.losses + nba.losses + nhl.losses + wc.losses + epl.losses + ncaabb.losses;
+    const totalPicks  = mlb.picks  + nba.picks  + nhl.picks  + wc.picks  + epl.picks  + ncaabb.picks;
     // Only MLB + NHL/NBA are required for prize pool qualification.
-    // FIFA_WC and NCAABB are "skill play" bonus sports — picks count toward wins/ranking
+    // FIFA_WC, EPL, and NCAABB are "skill play" bonus sports — picks count toward wins/ranking
     // but members are NOT required to pick them to qualify.
     const qualified =
       mlb.picks >= mlbMatchups.length &&
@@ -136,7 +138,7 @@ async function computeScorecardForPeriod(periodStart: Date, periodEnd: Date, log
     return { userId: u.id, user: u, wins: totalWins, losses: totalLosses, totalPicks, qualified };
   });
 
-  return { memberRows, mlbCount: mlbMatchups.length, nbaCount: nbaMatchups.length, nhlCount: nhlMatchups.length, wcCount: wcMatchups.length, ncaabbCount: ncaabbMatchups.length, totalCount: matchupGroups.size };
+  return { memberRows, mlbCount: mlbMatchups.length, nbaCount: nbaMatchups.length, nhlCount: nhlMatchups.length, wcCount: wcMatchups.length, eplCount: eplMatchups.length, ncaabbCount: ncaabbMatchups.length, totalCount: matchupGroups.size };
 }
 
 async function processDailyPayout(
@@ -158,8 +160,6 @@ async function processDailyPayout(
     log(`⚠ Pre-payout grade sync failed (continuing anyway): ${e.message}`);
   }
 
-  // Pool = SUM of prize_pool_contributions (positive set rows + negative payout deduction rows)
-  // No separate subtraction needed — negative rows inserted at payout time keep this accurate.
   const poolAmount = await storage.getPrizePoolTotal();
   const dailyShare = Math.floor(poolAmount * 0.10); // whole dollars only
 
@@ -232,14 +232,15 @@ async function processDailyPayout(
 
     await sendAndRecordPayout(payout.id, entry.userId, perWinner, periodLabel, "daily", tied.length, log);
 
-    // Deduct payout from prize pool so the public display reflects the remaining balance
-    await db.execute(sql`
-      INSERT INTO prize_pool_contributions (user_id, amount, source, created_at)
-      VALUES (NULL, ${-perWinner}, ${'daily_payout_' + periodLabel}, NOW())
-    `);
-
     log(`✓ Paid $${perWinner} to ${entry.userId} (daily winner, ${periodLabel})`);
     paid++;
+  }
+
+  // Auto-deduct the total payout from the prize pool so the balance stays current
+  if (paid > 0) {
+    const totalPaid = paid * perWinner;
+    await storage.addPrizePoolContribution(-totalPaid, "daily_payout_deduction", periodLabel, undefined);
+    log(`Prize pool: -$${totalPaid} deducted (daily payout ${periodLabel})`);
   }
 
   return {
@@ -317,12 +318,6 @@ async function processAnnualPayout(
     });
 
     await sendAndRecordPayout(payout.id, entry.userId, perWinnerAmount, periodLabel, "annual", tied.length, log);
-
-    // Deduct payout from prize pool so the public display reflects the remaining balance
-    await db.execute(sql`
-      INSERT INTO prize_pool_contributions (user_id, amount, source, created_at)
-      VALUES (NULL, ${-perWinnerAmount}, ${'annual_payout_' + periodLabel}, NOW())
-    `);
 
     log(`✓ Annual paid $${perWinnerAmount} to ${entry.userId} (${periodLabel})`);
     paid++;
