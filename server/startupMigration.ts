@@ -239,6 +239,17 @@ export async function runStartupMigration() {
 
       // Ensure subscription_paid_until column exists (added May 2026)
       await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_paid_until TIMESTAMP`);
+      // Ensure certified_expert column exists (added Aug 2026)
+      await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS certified_expert BOOLEAN DEFAULT FALSE`);
+      await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS paypal_sender_email TEXT`);
+      // Ensure site_settings table exists (added Aug 2026 for DB-driven announcements)
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS site_settings (
+          key TEXT PRIMARY KEY,
+          value TEXT NOT NULL DEFAULT '',
+          updated_at TIMESTAMP DEFAULT NOW()
+        )
+      `);
 
       // ── Seed known PayPal subscription IDs that were missing in the prod DB ──
       // Scott Lunny and Ian Glover subscribed before their IDs were properly stored.
@@ -794,13 +805,13 @@ export async function runStartupMigration() {
       `, [joseHash]);
       console.log("[migration] Seeded Jose Cuevas account");
     } else {
-      // Ensure Jose stays legend and has subscription_paid_until set (prevents morningCheck lapse)
+      // Keep Jose's tier/name consistent without overwriting a paid-through
+      // date that was set by a real payment or admin update.
       await client.query(`
         UPDATE users SET
           membership_tier = 'legend',
           first_name = 'Jose',
-          last_name = COALESCE(NULLIF(last_name, ''), 'Cuevas'),
-          subscription_paid_until = GREATEST(COALESCE(subscription_paid_until, NOW()), NOW() + INTERVAL '1 year')
+          last_name = COALESCE(NULLIF(last_name, ''), 'Cuevas')
         WHERE phone = $1
       `, [josePhone]);
     }

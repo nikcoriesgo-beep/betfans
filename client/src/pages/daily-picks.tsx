@@ -15,15 +15,18 @@ import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
-const LEAGUES = ["All", "MLB", "NHL", "NBA", "FIFA_WC", "MLS", "EPL", "NCAAB", "NCAABB"];
+const LEAGUES = ["All", "MLB", "NCAAF", "NFL", "NHL", "NBA", "FIFA_WC", "MLS", "EPL", "UCL", "NCAAB", "NCAABB"];
 
 const LEAGUE_COLORS: Record<string, string> = {
   MLB: "bg-red-500/20 text-red-400 border-red-500/30",
+  NCAAF: "bg-amber-500/20 text-amber-400 border-amber-500/30",
+  NFL: "bg-green-500/20 text-green-400 border-green-500/30",
   NHL: "bg-blue-500/20 text-blue-400 border-blue-500/30",
   NBA: "bg-orange-500/20 text-orange-400 border-orange-500/30",
   FIFA_WC: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
   MLS: "bg-sky-500/20 text-sky-400 border-sky-500/30",
   EPL: "bg-indigo-500/20 text-indigo-400 border-indigo-500/30",
+  UCL: "bg-violet-500/20 text-violet-400 border-violet-500/30",
   NCAAB: "bg-purple-500/20 text-purple-400 border-purple-500/30",
   NCAABB: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
 };
@@ -31,11 +34,14 @@ const LEAGUE_COLORS: Record<string, string> = {
 const LEAGUE_ICON: Record<string, string> = {
   All: "🏆",
   MLB: "⚾",
+  NCAAF: "🏈",
+  NFL: "🏈",
   NHL: "🏒",
   NBA: "🏀",
   FIFA_WC: "🌍",
   MLS: "⚽",
   EPL: "⚽",
+  UCL: "🏆",
   NCAAB: "🎓",
   NCAABB: "⚾",
 };
@@ -43,11 +49,14 @@ const LEAGUE_ICON: Record<string, string> = {
 const LEAGUE_LABEL: Record<string, string> = {
   All: "All Sports",
   MLB: "Baseball",
+  NCAAF: "College FBS",
+  NFL: "Pro Football",
   NHL: "Hockey",
   NBA: "Basketball",
   FIFA_WC: "World Cup",
   MLS: "Soccer",
   EPL: "Premier League",
+  UCL: "Champions League",
   NCAAB: "College BB",
   NCAABB: "College Baseball",
 };
@@ -55,17 +64,20 @@ const LEAGUE_LABEL: Record<string, string> = {
 const LEAGUE_ACTIVE_STYLE: Record<string, string> = {
   All: "border-primary bg-primary/10 text-white",
   MLB: "border-red-500 bg-red-500/10 text-red-300",
+  NCAAF: "border-amber-500 bg-amber-500/10 text-amber-300",
+  NFL: "border-green-500 bg-green-500/10 text-green-300",
   NHL: "border-blue-500 bg-blue-500/10 text-blue-300",
   NBA: "border-orange-500 bg-orange-500/10 text-orange-300",
   FIFA_WC: "border-emerald-500 bg-emerald-500/10 text-emerald-300",
   MLS: "border-sky-500 bg-sky-500/10 text-sky-300",
   EPL: "border-indigo-500 bg-indigo-500/10 text-indigo-300",
+  UCL: "border-violet-500 bg-violet-500/10 text-violet-300",
   NCAAB: "border-purple-500 bg-purple-500/10 text-purple-300",
   NCAABB: "border-yellow-500 bg-yellow-500/10 text-yellow-300",
 };
 
 // Skill play leagues do NOT count toward prize pool eligibility
-const SKILL_PLAY_LEAGUES = new Set(["MLS", "EPL", "NCAABB"]);
+const SKILL_PLAY_LEAGUES = new Set(["MLS", "EPL", "UCL", "NCAABB"]);
 
 function isToday(dateStr: string) {
   const d = new Date(dateStr);

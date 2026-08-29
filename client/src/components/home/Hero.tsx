@@ -2,8 +2,32 @@ import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { ArrowRight, Trophy, Target, Users, DollarSign, LogIn } from "lucide-react";
 import heroBg from "@assets/generated_images/futuristic_sports_data_background.png";
-import { HowToPlayBanner } from "@/components/HowToPlayPopup";
 import { Link } from "wouter";
+import { useQuery } from "@tanstack/react-query";
+
+function HeroAnnouncements() {
+  const { data: settings } = useQuery<Record<string, string>>({
+    queryKey: ["/api/site-settings"],
+    queryFn: () => fetch("/api/site-settings").then(r => r.json()),
+    staleTime: 60000,
+  });
+  const announcements: string[] = settings?.announcements ? JSON.parse(settings.announcements) : [
+    "Beginning August 29, 2026: All NCAA Division I FBS 2026™ games must also be selected to qualify for the Prize Pool.",
+    "Beginning September 9, 2026: All NFL 2026™ games must also be selected in addition to all MLB Games for the daily Prize Pool qualification.",
+    "Premier League 2026™ games are now available as Skill Play picks. They count toward rankings but are not required for Prize Pool qualification.",
+  ];
+  if (!announcements.length) return null;
+  return (
+    <div className="w-full bg-primary/10 border border-primary/30 rounded-lg px-4 py-3 mb-4 text-left space-y-1.5">
+      {announcements.map((text, i) => (
+        <div key={i} className="flex items-start gap-2">
+          <span className="text-primary font-bold text-sm shrink-0 mt-0.5">*</span>
+          <p className="text-sm text-primary/90 leading-snug">{text}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export function Hero() {
   return (
@@ -28,14 +52,14 @@ export function Hero() {
             <span className="inline-block py-1 px-3 rounded-full bg-primary/10 text-primary text-sm font-semibold mb-4 border border-primary/20 backdrop-blur-sm">
               The #1 Sports Prediction Platform
             </span>
-            <HowToPlayBanner />
+            <HeroAnnouncements />
             <h1 className="text-5xl md:text-7xl font-display font-bold leading-tight mb-6">
               Predict. Compete. <br/>
               <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-emerald-300">Win. Earn.</span>
             </h1>
             <p className="text-xl text-muted-foreground max-w-2xl mx-auto mb-4 leading-relaxed">
               Join the elite community of sports analysts. Track your stats, compete for daily prize pools, 
-              and earn $1/month residual income for every member you refer.
+              and earn $50/month residual income for every member you refer.
             </p>
             <div className="inline-flex items-center gap-6 text-sm text-muted-foreground mb-4">
               <span className="flex items-center gap-1.5"><Trophy size={14} className="text-primary" /> Daily Prize Pools</span>
@@ -69,10 +93,10 @@ export function Hero() {
             className="grid grid-cols-1 md:grid-cols-4 gap-6 mt-20 text-left"
           >
             {[
-              { icon: Trophy, title: "Daily Rewards", desc: "Compete for daily cash prizes and the annual grand prize from the 50% winners pool." },
+              { icon: Trophy, title: "Daily Prizes", desc: "Compete daily for available cash prizes. The best predictor wins — prizes subject to availability and change at any time." },
               { icon: Target, title: "Spider AI Picks", desc: "Access AI-powered predictions with confidence ratings across all major leagues." },
-              { icon: Users, title: "Pro Community", desc: "Follow top predictors, post on member walls, and compete on the leaderboard." },
-              { icon: DollarSign, title: "Affiliate Income", desc: "Earn $1/month for every member you refer — no caps, no limits, forever." },
+              { icon: Users, title: "Member Community", desc: "Follow top predictors, post on member walls, and compete on the leaderboard." },
+              { icon: DollarSign, title: "Affiliate Income", desc: "Earn $50/month for every member you refer — no caps, no limits, forever." },
             ].map((item, i) => (
               <div key={i} className="p-6 rounded-xl border border-white/5 bg-white/5 backdrop-blur-sm hover:border-primary/30 transition-colors group">
                 <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center text-primary mb-4 group-hover:scale-110 transition-transform">

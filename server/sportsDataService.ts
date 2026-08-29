@@ -3,6 +3,9 @@ import { games, predictions, leaderboardEntries } from "@shared/schema";
 import { eq, and, sql, inArray } from "drizzle-orm";
 
 const ESPN_ENDPOINTS: Record<string, string> = {
+  NFL: "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard",
+  NCAAF: "https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard?groups=80",
+  UCL: "https://site.api.espn.com/apis/site/v2/sports/soccer/uefa.champions/scoreboard",
   MLB: "https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard",
   NBA: "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard",
   NHL: "https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/scoreboard",
@@ -131,10 +134,10 @@ export function gradePick(
     }
   }
 
-  // Team picks on a tied game are pushes for both sides. Check this before
-  // the winner branches so an away-team pick is never treated as a win merely
-  // because the home team did not win.
-  if (homeScore === awayScore && (pickMentionsHome || pickMentionsAway)) return "push";
+  // Per product rules, every recognized team selection on a tied game is a
+  // win. Check this before the winner branches so home and away picks are
+  // handled identically.
+  if (homeScore === awayScore && (pickMentionsHome || pickMentionsAway)) return "win";
   if (pickMentionsHome) return homeWon ? "win" : "loss";
   if (pickMentionsAway) return homeWon ? "loss" : "win";
 
@@ -245,7 +248,12 @@ export async function autoGradePredictions(
   const pending = await db
     .select()
     .from(predictions)
-    .where(and(eq(predictions.gameId, gameId), eq(predictions.result, "pending")));
+    .where(and(
+      eq(predictions.gameId, gameId),
+      confirmedFinal
+        ? sql`${predictions.result} IN ('pending', 'push')`
+        : eq(predictions.result, "pending"),
+    ));
 
   let graded = 0;
   const affectedUsers = new Set<string>();
@@ -396,7 +404,8 @@ async function fetchAndGradeForLeagueDate(league: string, dateStr: string): Prom
   if (!url) return 0;
   let totalGraded = 0;
   try {
-    const resp = await fetch(`${url}?dates=${dateStr}`);
+    const separator = url.includes("?") ? "&" : "?";
+    const resp = await fetch(`${url}${separator}dates=${dateStr}`);
     if (!resp.ok) return 0;
     const data = await resp.json();
     for (const event of (data.events || []) as ESPNEvent[]) {
@@ -464,7 +473,7 @@ export async function gradeStuckGames(): Promise<number> {
   const cutoff = new Date(Date.now() - 2 * 60 * 60 * 1000);
   const oldCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const stuckUpcoming = await db.select().from(games)
-    .where(sql`${games.status} = 'upcoming' AND ${games.gameTime} < ${cutoff} AND ${games.gameTime} > ${oldCutoff} AND ${games.league} IN ('MLB','NBA','NHL','MLS','NCAAB','NCAABB','FIFA_WC','EPL')`);
+    .where(sql`${games.status} = 'upcoming' AND ${games.gameTime} < ${cutoff} AND ${games.gameTime} > ${oldCutoff} AND ${games.league} IN ('MLB','NBA','NHL','MLS','NCAAB','NCAABB','FIFA_WC','EPL','NCAAF','NFL','UCL')`);
 
   if (stuckUpcoming.length > 0) {
     console.log(`[spider] gradeStuckGames: found ${stuckUpcoming.length} upcoming game(s) past start time — fetching ESPN`);
@@ -481,7 +490,7 @@ export async function gradeStuckGames(): Promise<number> {
 
   // ── Pass 2: re-check ALL live games immediately ───────────────────────────
   const liveGames = await db.select().from(games)
-    .where(sql`${games.status} = 'live' AND ${games.league} IN ('MLB','NBA','NHL','MLS','NCAAB','FIFA_WC','EPL')`);
+    .where(sql`${games.status} = 'live' AND ${games.league} IN ('MLB','NBA','NHL','MLS','NCAAB','FIFA_WC','EPL','NCAAF','NFL','UCL')`);
 
   if (liveGames.length > 0) {
     console.log(`[spider] gradeStuckGames: re-checking ${liveGames.length} live game(s) for completion`);
@@ -571,7 +580,7 @@ export async function gradeStuckGames(): Promise<number> {
 
   // ── Pass 5: re-fetch finished games with 0-0 scores (bad/placeholder data) ──
   const zeroScoreFinished = await db.select().from(games)
-    .where(sql`${games.status} = 'finished' AND ${games.homeScore} = 0 AND ${games.awayScore} = 0 AND ${games.league} IN ('MLB','NBA','NHL','MLS','NCAAB','NCAABB','EPL') AND ${games.gameTime} > ${oldCutoff}`);
+    .where(sql`${games.status} = 'finished' AND ${games.homeScore} = 0 AND ${games.awayScore} = 0 AND ${games.league} IN ('MLB','NBA','NHL','MLS','NCAAB','NCAABB','EPL','NCAAF','NFL','UCL') AND ${games.gameTime} > ${oldCutoff}`);
 
   if (zeroScoreFinished.length > 0) {
     console.log(`[spider] gradeStuckGames: found ${zeroScoreFinished.length} finished game(s) with 0-0 score — re-fetching`);
@@ -652,7 +661,7 @@ export async function gradeStuckGames(): Promise<number> {
 async function gradeYesterdayGames(): Promise<void> {
   // Look back 3 days to catch postponed/rescheduled games that finally played
   // West coast games, doubleheaders, and weather postponements all handled
-  const activeLeagues = ["MLB", "NBA", "NHL", "MLS", "NCAAB", "NCAABB", "FIFA_WC", "EPL"];
+  const activeLeagues = ["MLB", "NBA", "NHL", "MLS", "NCAAB", "NCAABB", "FIFA_WC", "EPL", "NCAAF", "NFL", "UCL"];
   for (let daysBack = 1; daysBack <= 3; daysBack++) {
     const d = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
     const dateStr = getETDateStr(d);
@@ -695,6 +704,9 @@ export async function syncSportsData(): Promise<{ synced: number; leagues: strin
   const month = now.getMonth() + 1;
   const year = now.getFullYear();
   const seasonActive: Record<string, boolean> = {
+    NFL: month >= 8 || month <= 2,
+    NCAAF: month >= 8 || month <= 1,
+    UCL: (year === 2026 && month === 9 && now.getDate() >= 8) || month >= 10 || month <= 5,
     MLB: month >= 3 && month <= 10,
     NBA: month >= 10 || month <= 6,
     NHL: month >= 10 || month <= 6,

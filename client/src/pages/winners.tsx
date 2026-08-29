@@ -350,10 +350,13 @@ function DailyMemberScorecard() {
         </div>
         <div className="flex items-center gap-2 text-[10px] text-muted-foreground/60 uppercase tracking-wider">
           {games.mlb > 0 && <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/5">MLB {games.mlb}G</span>}
+          {games.ncaaf > 0 && <span className="px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/20 text-amber-400">🏈 FBS {games.ncaaf}G</span>}
+          {games.nfl > 0 && <span className="px-1.5 py-0.5 rounded bg-green-500/10 border border-green-500/20 text-green-400">🏈 NFL {games.nfl}G</span>}
           {games.nba > 0 && <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/5">NBA {games.nba}G</span>}
           {games.nhl > 0 && <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/5">NHL {games.nhl}G</span>}
           {games.wc > 0 && <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">🌍 WC {games.wc}G</span>}
            {games.epl > 0 && <span className="px-1.5 py-0.5 rounded bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">⚽ EPL {games.epl}G</span>}
+          {games.ucl > 0 && <span className="px-1.5 py-0.5 rounded bg-violet-500/10 border border-violet-500/20 text-violet-400">🏆 UCL {games.ucl}G</span>}
         </div>
       </div>
 
@@ -407,10 +410,13 @@ function DailyMemberScorecard() {
               <tr className="border-b border-white/10 bg-white/[0.03]">
                 <th className="text-left py-3 px-4 text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Member</th>
                 <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-blue-400">MLB</th>
+                {games.ncaaf > 0 && <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-amber-400">🏈 FBS</th>}
+                {games.nfl > 0 && <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-green-400">🏈 NFL</th>}
                 <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-orange-400">NBA</th>
                 <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-cyan-400">NHL</th>
                 {games.wc > 0 && <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-emerald-400">🌍 WC</th>}
                {games.epl > 0 && <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-indigo-400">⚽ EPL</th>}
+                {games.ucl > 0 && <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-violet-400">🏆 UCL</th>}
                 <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-foreground">Total W-L</th>
                 <th className="py-3 px-3 text-center text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Status</th>
               </tr>
@@ -464,10 +470,13 @@ function DailyMemberScorecard() {
                       </div>
                     </td>
                     <SportCell wins={m.mlb.wins} losses={m.mlb.losses} picks={m.mlb.picks} total={games.mlb} qualified={m.mlb.picks >= games.mlb} />
+                    {games.ncaaf > 0 && <SportCell wins={m.ncaaf?.wins ?? 0} losses={m.ncaaf?.losses ?? 0} picks={m.ncaaf?.picks ?? 0} total={games.ncaaf} qualified={(m.ncaaf?.picks ?? 0) >= games.ncaaf} />}
+                    {games.nfl > 0 && <SportCell wins={m.nfl?.wins ?? 0} losses={m.nfl?.losses ?? 0} picks={m.nfl?.picks ?? 0} total={games.nfl} qualified={(m.nfl?.picks ?? 0) >= games.nfl} />}
                     <SportCell wins={m.nba.wins} losses={m.nba.losses} picks={m.nba.picks} total={games.nba} qualified={games.nba === 0 || m.nba.picks >= games.nba} />
                     <SportCell wins={m.nhl.wins} losses={m.nhl.losses} picks={m.nhl.picks} total={games.nhl} qualified={games.nhl === 0 || m.nhl.picks >= games.nhl} />
                     {games.wc > 0 && <SportCell wins={m.wc?.wins ?? 0} losses={m.wc?.losses ?? 0} picks={m.wc?.picks ?? 0} total={games.wc} qualified={games.wc === 0 || (m.wc?.picks ?? 0) >= games.wc} />}
                    {games.epl > 0 && <SportCell wins={m.epl?.wins ?? 0} losses={m.epl?.losses ?? 0} picks={m.epl?.picks ?? 0} total={games.epl} qualified />}
+                    {games.ucl > 0 && <SportCell wins={m.ucl?.wins ?? 0} losses={m.ucl?.losses ?? 0} picks={m.ucl?.picks ?? 0} total={games.ucl} qualified />}
                     {games.ncaabb > 0 && <SportCell wins={m.ncaabb?.wins ?? 0} losses={m.ncaabb?.losses ?? 0} picks={m.ncaabb?.picks ?? 0} total={games.ncaabb} qualified={games.ncaabb === 0 || (m.ncaabb?.picks ?? 0) >= games.ncaabb} />}
                     <td className="py-3 px-2 text-center align-middle">
                       <div className={cn("font-mono text-base font-black tabular-nums", isWinner ? "text-yellow-300" : "")}>

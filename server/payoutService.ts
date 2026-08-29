@@ -70,7 +70,7 @@ async function computeScorecardForPeriod(periodStart: Date, periodEnd: Date, log
   const dayGamesRaw = await db.select().from(games).where(
     sql`${games.gameTime} >= ${periodStart} AND ${games.gameTime} < ${periodEnd}
         AND ${games.status} != 'postponed'
-        AND ${games.league} IN ('MLB','NBA','NHL','FIFA_WC','EPL','NCAABB')`
+        AND ${games.league} IN ('MLB','NBA','NHL','FIFA_WC','EPL','UCL','NCAABB','NCAAF','NFL')`
   );
 
   // Deduplicate by (league, homeTeam, awayTeam)
@@ -89,9 +89,12 @@ async function computeScorecardForPeriod(periodStart: Date, periodEnd: Date, log
   const nhlMatchups    = [...matchupGroups.entries()].filter(([k]) => k.startsWith("NHL|"));
   const wcMatchups     = [...matchupGroups.entries()].filter(([k]) => k.startsWith("FIFA_WC|"));
   const eplMatchups    = [...matchupGroups.entries()].filter(([k]) => k.startsWith("EPL|"));
+  const uclMatchups    = [...matchupGroups.entries()].filter(([k]) => k.startsWith("UCL|"));
   const ncaabbMatchups = [...matchupGroups.entries()].filter(([k]) => k.startsWith("NCAABB|"));
+  const ncaafMatchups  = [...matchupGroups.entries()].filter(([k]) => k.startsWith("NCAAF|"));
+  const nflMatchups    = [...matchupGroups.entries()].filter(([k]) => k.startsWith("NFL|"));
 
-  log(`Scorecard: ${mlbMatchups.length} MLB, ${nbaMatchups.length} NBA, ${nhlMatchups.length} NHL, ${wcMatchups.length} FIFA_WC, ${eplMatchups.length} EPL, ${ncaabbMatchups.length} NCAABB games (${matchupGroups.size} total)`);
+  log(`Scorecard: ${mlbMatchups.length} MLB, ${ncaafMatchups.length} NCAAF, ${nflMatchups.length} NFL, ${nbaMatchups.length} NBA, ${nhlMatchups.length} NHL, ${wcMatchups.length} FIFA_WC, ${eplMatchups.length} EPL, ${uclMatchups.length} UCL, ${ncaabbMatchups.length} NCAABB games (${matchupGroups.size} total)`);
 
   const allDayIds = dayGamesRaw.map(g => g.id);
   const dayPreds = allDayIds.length === 0 ? [] : await db.select().from(predictions).where(
@@ -124,21 +127,28 @@ async function computeScorecardForPeriod(periodStart: Date, periodEnd: Date, log
     const nhl    = forSport(nhlMatchups);
     const wc     = forSport(wcMatchups);
     const epl    = forSport(eplMatchups);
+    const ucl    = forSport(uclMatchups);
     const ncaabb = forSport(ncaabbMatchups);
-    const totalWins   = mlb.wins   + nba.wins   + nhl.wins   + wc.wins   + epl.wins   + ncaabb.wins;
-    const totalLosses = mlb.losses + nba.losses + nhl.losses + wc.losses + epl.losses + ncaabb.losses;
-    const totalPicks  = mlb.picks  + nba.picks  + nhl.picks  + wc.picks  + epl.picks  + ncaabb.picks;
-    // Only MLB + NHL/NBA are required for prize pool qualification.
+    const ncaaf  = forSport(ncaafMatchups);
+    const nfl    = forSport(nflMatchups);
+    const totalWins   = mlb.wins   + ncaaf.wins   + nfl.wins   + nba.wins   + nhl.wins   + wc.wins   + epl.wins   + ucl.wins   + ncaabb.wins;
+    const totalLosses = mlb.losses + ncaaf.losses + nfl.losses + nba.losses + nhl.losses + wc.losses + epl.losses + ucl.losses + ncaabb.losses;
+    const totalPicks  = mlb.picks  + ncaaf.picks  + nfl.picks  + nba.picks  + nhl.picks  + wc.picks  + epl.picks  + ucl.picks  + ncaabb.picks;
+    // FBS is required beginning August 29, 2026; NFL beginning September 9, 2026.
     // FIFA_WC, EPL, and NCAABB are "skill play" bonus sports — picks count toward wins/ranking
     // but members are NOT required to pick them to qualify.
+    const fbsRequired = periodStart >= new Date("2026-08-29T08:00:00.000Z");
+    const nflRequired = periodStart >= new Date("2026-09-09T08:00:00.000Z");
     const qualified =
       mlb.picks >= mlbMatchups.length &&
       (nbaMatchups.length === 0 || nba.picks >= nbaMatchups.length) &&
-      (nhlMatchups.length === 0 || nhl.picks >= nhlMatchups.length);
+      (nhlMatchups.length === 0 || nhl.picks >= nhlMatchups.length) &&
+      (!fbsRequired || ncaaf.picks >= ncaafMatchups.length) &&
+      (!nflRequired || nfl.picks >= nflMatchups.length);
     return { userId: u.id, user: u, wins: totalWins, losses: totalLosses, totalPicks, qualified };
   });
 
-  return { memberRows, mlbCount: mlbMatchups.length, nbaCount: nbaMatchups.length, nhlCount: nhlMatchups.length, wcCount: wcMatchups.length, eplCount: eplMatchups.length, ncaabbCount: ncaabbMatchups.length, totalCount: matchupGroups.size };
+  return { memberRows, mlbCount: mlbMatchups.length, ncaafCount: ncaafMatchups.length, nflCount: nflMatchups.length, nbaCount: nbaMatchups.length, nhlCount: nhlMatchups.length, wcCount: wcMatchups.length, eplCount: eplMatchups.length, uclCount: uclMatchups.length, ncaabbCount: ncaabbMatchups.length, totalCount: matchupGroups.size };
 }
 
 async function processDailyPayout(

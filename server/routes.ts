@@ -724,7 +724,7 @@ export async function registerRoutes(
     }
   });
 
-  // Returns how many MLB/NBA/NHL games are scheduled in the current day's pick window.
+  // Returns how many prize-qualification games are scheduled in the current day's pick window.
   // Uses midnight PST as the day boundary so West Coast late games fall on the correct date.
   app.get("/api/mlb-game-count", async (_req, res) => {
     try {
@@ -732,10 +732,12 @@ export async function registerRoutes(
       const [y, m, d] = pstDateStr.split("-").map(Number);
       const start = new Date(Date.UTC(y, m - 1, d, 8, 0, 0, 0));     // today midnight PST
       const end   = new Date(Date.UTC(y, m - 1, d + 1, 8, 0, 0, 0)); // tomorrow midnight PST
-      const [mlbGames, nbaGames, nhlGames] = await Promise.all([
+      const [mlbGames, nbaGames, nhlGames, ncaafGames, nflGames] = await Promise.all([
         db.select({ id: games.id, homeTeam: games.homeTeam, awayTeam: games.awayTeam, gameTime: games.gameTime }).from(games).where(sql`${games.league} = 'MLB' AND ${games.gameTime} >= ${start} AND ${games.gameTime} < ${end} AND ${games.status} != 'postponed'`),
         db.select({ id: games.id, homeTeam: games.homeTeam, awayTeam: games.awayTeam, gameTime: games.gameTime }).from(games).where(sql`${games.league} = 'NBA' AND ${games.gameTime} >= ${start} AND ${games.gameTime} < ${end} AND ${games.status} != 'postponed'`),
         db.select({ id: games.id, homeTeam: games.homeTeam, awayTeam: games.awayTeam, gameTime: games.gameTime }).from(games).where(sql`${games.league} = 'NHL' AND ${games.gameTime} >= ${start} AND ${games.gameTime} < ${end} AND ${games.status} != 'postponed'`),
+        db.select({ id: games.id, homeTeam: games.homeTeam, awayTeam: games.awayTeam, gameTime: games.gameTime }).from(games).where(sql`${games.league} = 'NCAAF' AND ${games.gameTime} >= ${start} AND ${games.gameTime} < ${end} AND ${games.status} != 'postponed'`),
+        db.select({ id: games.id, homeTeam: games.homeTeam, awayTeam: games.awayTeam, gameTime: games.gameTime }).from(games).where(sql`${games.league} = 'NFL' AND ${games.gameTime} >= ${start} AND ${games.gameTime} < ${end} AND ${games.status} != 'postponed'`),
       ]);
       // Deduplicate using time-bucket so doubleheaders (same matchup at different times) each count
       const dedup = (list: { homeTeam: string; awayTeam: string; gameTime: Date | null }[]) =>
@@ -746,7 +748,12 @@ export async function registerRoutes(
       const mlbCount = dedup(mlbGames);
       const nbaCount = dedup(nbaGames);
       const nhlCount = dedup(nhlGames);
-      res.json({ count: mlbCount + nbaCount + nhlCount, mlbCount, nbaCount, nhlCount, periodStart: start, periodEnd: end });
+      const ncaafCount = dedup(ncaafGames);
+      const nflCount = dedup(nflGames);
+      const fbsRequired = pstDateStr >= "2026-08-29";
+      const nflRequired = pstDateStr >= "2026-09-09";
+      const count = mlbCount + nbaCount + nhlCount + (fbsRequired ? ncaafCount : 0) + (nflRequired ? nflCount : 0);
+      res.json({ count, mlbCount, nbaCount, nhlCount, ncaafCount, nflCount, fbsRequired, nflRequired, periodStart: start, periodEnd: end });
     } catch (e) {
       res.json({ count: 0 });
     }
@@ -775,7 +782,7 @@ export async function registerRoutes(
         const candidateGames = await db.select().from(games).where(
           sql`${games.gameTime} >= ${start} AND ${games.gameTime} < ${end}
               AND ${games.status} != 'postponed'
-              AND ${games.league} IN ('MLB','NBA','NHL','FIFA_WC','EPL','NCAABB')`
+              AND ${games.league} IN ('MLB','NBA','NHL','FIFA_WC','EPL','UCL','NCAABB','NCAAF','NFL')`
         );
 
         // Check if any of these games are finished (graded)
@@ -807,7 +814,10 @@ export async function registerRoutes(
       const nhlMatchups    = [...matchupGroups.entries()].filter(([k]) => k.startsWith("NHL|"));
       const wcMatchups     = [...matchupGroups.entries()].filter(([k]) => k.startsWith("FIFA_WC|"));
       const eplMatchups    = [...matchupGroups.entries()].filter(([k]) => k.startsWith("EPL|"));
+      const uclMatchups    = [...matchupGroups.entries()].filter(([k]) => k.startsWith("UCL|"));
       const ncaabbMatchups = [...matchupGroups.entries()].filter(([k]) => k.startsWith("NCAABB|"));
+      const ncaafMatchups  = [...matchupGroups.entries()].filter(([k]) => k.startsWith("NCAAF|"));
+      const nflMatchups    = [...matchupGroups.entries()].filter(([k]) => k.startsWith("NFL|"));
 
       const allDayIds = dayGamesRaw.map(g => g.id);
 
@@ -845,20 +855,27 @@ export async function registerRoutes(
         const nhl    = forSport(nhlMatchups);
         const wc     = forSport(wcMatchups);
         const epl    = forSport(eplMatchups);
+        const ucl    = forSport(uclMatchups);
         const ncaabb = forSport(ncaabbMatchups);
+        const ncaaf  = forSport(ncaafMatchups);
+        const nfl    = forSport(nflMatchups);
         const total = {
-          picks:   mlb.picks   + nba.picks   + nhl.picks   + wc.picks   + epl.picks   + ncaabb.picks,
-          wins:    mlb.wins    + nba.wins    + nhl.wins    + wc.wins    + epl.wins    + ncaabb.wins,
-          losses:  mlb.losses  + nba.losses  + nhl.losses  + wc.losses  + epl.losses  + ncaabb.losses,
-          pending: mlb.pending + nba.pending + nhl.pending + wc.pending + epl.pending + ncaabb.pending,
+          picks:   mlb.picks   + ncaaf.picks   + nfl.picks   + nba.picks   + nhl.picks   + wc.picks   + epl.picks   + ucl.picks   + ncaabb.picks,
+          wins:    mlb.wins    + ncaaf.wins    + nfl.wins    + nba.wins    + nhl.wins    + wc.wins    + epl.wins    + ucl.wins    + ncaabb.wins,
+          losses:  mlb.losses  + ncaaf.losses  + nfl.losses  + nba.losses  + nhl.losses  + wc.losses  + epl.losses  + ucl.losses  + ncaabb.losses,
+          pending: mlb.pending + ncaaf.pending + nfl.pending + nba.pending + nhl.pending + wc.pending + epl.pending + ucl.pending + ncaabb.pending,
         };
-        // Only MLB + NHL/NBA required for prize pool qualification.
+        // FBS is required beginning August 29, 2026; NFL beginning September 9, 2026.
         // FIFA_WC, EPL, and NCAABB are skill-play bonus sports — picks count toward wins/ranking
         // but NOT required to qualify (matching payoutService.ts logic exactly).
+        const fbsRequired = periodStart >= new Date("2026-08-29T08:00:00.000Z");
+        const nflRequired = periodStart >= new Date("2026-09-09T08:00:00.000Z");
         const qualified =
           mlb.picks >= mlbMatchups.length &&
           (nbaMatchups.length === 0 || nba.picks >= nbaMatchups.length) &&
-          (nhlMatchups.length === 0 || nhl.picks >= nhlMatchups.length);
+          (nhlMatchups.length === 0 || nhl.picks >= nhlMatchups.length) &&
+          (!fbsRequired || ncaaf.picks >= ncaafMatchups.length) &&
+          (!nflRequired || nfl.picks >= nflMatchups.length);
 
         // Pick submission timestamps in PST
         const pickTimes = myPreds
@@ -883,7 +900,7 @@ export async function registerRoutes(
           referralCode: u.referralCode || null,
           tier:   u.membershipTier,
           avatar: u.profileImageUrl || null,
-          mlb, nba, nhl, wc, epl, ncaabb, total, qualified,
+          mlb, ncaaf, nfl, nba, nhl, wc, epl, ucl, ncaabb, total, qualified,
           firstPickAt,
           lastPickAt,
         };
@@ -900,7 +917,7 @@ export async function registerRoutes(
 
       res.json({
         period: { start: periodStart, end: periodEnd, label: dateLabel },
-        games:  { mlb: mlbMatchups.length, nba: nbaMatchups.length, nhl: nhlMatchups.length, wc: wcMatchups.length, epl: eplMatchups.length, ncaabb: ncaabbMatchups.length, total: matchupGroups.size },
+        games:  { mlb: mlbMatchups.length, ncaaf: ncaafMatchups.length, nfl: nflMatchups.length, nba: nbaMatchups.length, nhl: nhlMatchups.length, wc: wcMatchups.length, epl: eplMatchups.length, ucl: uclMatchups.length, ncaabb: ncaabbMatchups.length, total: matchupGroups.size },
         members: memberRows,
         winner: winner ? { userId: winner.userId, name: winner.name, wins: winner.total.wins, losses: winner.total.losses } : null,
       });

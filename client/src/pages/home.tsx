@@ -2,13 +2,113 @@ import { Navbar } from "@/components/layout/Navbar";
 import { Hero } from "@/components/home/Hero";
 import { Leaderboard } from "@/components/dashboard/Leaderboard";
 import { Button } from "@/components/ui/button";
-import { ArrowRight, Check, DollarSign, Users, TrendingUp, Share2, Trophy, Zap, LogIn } from "lucide-react";
-import { AdBannerTop, AdBannerInline, AdMarquee } from "@/components/AdBanner";
+import { ArrowRight, Check, DollarSign, Users, TrendingUp, Share2, Trophy, Zap, LogIn, Building2, Crown, Gem, Star } from "lucide-react";
+import { AdBannerInline, AdMarquee } from "@/components/AdBanner";
 import { QuickShareButton } from "@/components/SharePicksCard";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState, useRef } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { Link } from "wouter";
+
+function AnnouncementBar() {
+  const { data: settings } = useQuery<Record<string, string>>({
+    queryKey: ["/api/site-settings"],
+    queryFn: () => fetch("/api/site-settings").then(r => r.json()),
+    staleTime: 60000,
+  });
+  const announcements: string[] = settings?.announcements ? JSON.parse(settings.announcements) : [
+    "Beginning August 29, 2026: All NCAA Division I FBS 2026™ games must also be selected to qualify for the Prize Pool.",
+    "Beginning September 9, 2026: All NFL 2026™ games must also be selected in addition to all MLB Games for the daily Prize Pool qualification.",
+    "Premier League 2026™ games are now available as Skill Play picks. They count toward rankings but are not required for Prize Pool qualification.",
+  ];
+  if (!announcements.length) return null;
+  return (
+    <div className="w-full bg-primary/10 border-b border-primary/30 px-4 py-2 space-y-1" data-testid="notice-cwbs-rule">
+      {announcements.map((text, i) => (
+        <div key={i} className="flex items-start justify-center gap-1.5">
+          <span className="text-primary font-bold text-[11px] shrink-0 mt-0.5">*</span>
+          <p className="text-[11px] text-primary/90 text-center leading-tight">{text}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function LiveViewsCounter() {
+  const [displayCount, setDisplayCount] = useState<number | null>(null);
+  const [animating, setAnimating] = useState(false);
+  const prevCount = useRef<number | null>(null);
+  const hasCounted = useRef(false);
+
+  const { data } = useQuery<{ count: number }>({
+    queryKey: ["/api/views/home"],
+    queryFn: async () => {
+      const res = await fetch("/api/views/home");
+      return res.json();
+    },
+    refetchInterval: 15000,
+    staleTime: 0,
+  });
+
+  useEffect(() => {
+    if (!hasCounted.current) {
+      hasCounted.current = true;
+      fetch("/api/views/home", { method: "POST" })
+        .then((r) => r.json())
+        .then((d) => {
+          if (d?.count !== undefined) {
+            prevCount.current = d.count - 1;
+            animateTo(d.count);
+          }
+        })
+        .catch(() => {});
+    }
+  }, []);
+
+  useEffect(() => {
+    if (data?.count !== undefined && data.count !== prevCount.current) {
+      animateTo(data.count);
+    }
+  }, [data?.count]);
+
+  function animateTo(target: number) {
+    const start = prevCount.current ?? Math.max(0, target - 1);
+    prevCount.current = target;
+    if (start === target) { setDisplayCount(target); return; }
+    setAnimating(true);
+    const duration = 800;
+    const startTime = performance.now();
+    function tick(now: number) {
+      const elapsed = now - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      const current = Math.round(start + (target - start) * eased);
+      setDisplayCount(current);
+      if (progress < 1) requestAnimationFrame(tick);
+      else { setDisplayCount(target); setAnimating(false); }
+    }
+    requestAnimationFrame(tick);
+  }
+
+  const formatted = displayCount !== null
+    ? displayCount.toLocaleString("en-US")
+    : "—";
+
+  return (
+    <div className="flex flex-col items-center md:items-start gap-1 mt-1" data-testid="live-views-counter">
+      <div className="flex items-center gap-2">
+        <span className={`inline-block w-2 h-2 rounded-full bg-green-400 shadow-[0_0_6px_rgba(74,222,128,0.8)] ${animating ? "scale-125" : ""} transition-transform duration-200`} />
+        <span className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Live Page Views</span>
+      </div>
+      <span
+        className="text-2xl font-bold tabular-nums text-green-400 drop-shadow-[0_0_8px_rgba(74,222,128,0.5)]"
+        data-testid="text-view-count"
+      >
+        {formatted}
+      </span>
+    </div>
+  );
+}
 
 function CaptureReferralCode() {
   useEffect(() => {
@@ -35,8 +135,6 @@ function timeAgo(date: string | Date | null): string {
 }
 
 const TIER_STYLES: Record<string, string> = {
-  rookie: "text-blue-400 border-blue-400/40 bg-blue-400/10",
-  pro: "text-purple-400 border-purple-400/40 bg-purple-400/10",
   legend: "text-yellow-400 border-yellow-400/40 bg-yellow-400/10",
 };
 
@@ -72,8 +170,8 @@ function LiveMemberFeed() {
   const name = m.firstName
     ? `${m.firstName}${m.lastName ? " " + m.lastName[0] + "." : ""}`
     : "New Member";
-  const tier = m.membershipTier || "rookie";
-  const tierStyle = TIER_STYLES[tier] || TIER_STYLES.rookie;
+  const tier = "legend";
+  const tierStyle = TIER_STYLES.legend;
 
   return (
     <section className="py-3 bg-primary/5 border-y border-primary/10">
@@ -129,7 +227,7 @@ function AnimatedCounter({ value, prefix = "" }: { value: number; prefix?: strin
 
 export default function Home() {
   const { user, isLoading: authLoading } = useAuth();
-  const homeTierRank: Record<string, number> = { rookie: 1, pro: 2, legend: 3 };
+  const homeTierRank: Record<string, number> = { legend: 1 };
   const homeCurrentTier = user?.membershipTier || "free";
   const homeCurrentRank = homeTierRank[homeCurrentTier] || 0;
   const homePlanLabel = (planName: string) => {
@@ -169,16 +267,18 @@ export default function Home() {
       <CaptureReferralCode />
       <Navbar />
       {!user && (
-        <Link href="/auth" data-testid="login-banner" className="block mt-16 bg-primary text-primary-foreground py-4 px-4 flex items-center justify-center gap-3 hover:bg-primary/90 transition-colors cursor-pointer">
-          <span className="text-base font-bold tracking-wide font-display">Already a member?</span>
-          <span className="flex items-center gap-1.5 bg-black/25 text-white font-bold text-sm px-5 py-2 rounded-full">
-            <LogIn size={15} /> Log In Now
-          </span>
-        </Link>
+        <div className="pt-14">
+          <Link href="/auth" data-testid="login-banner" className="block bg-primary text-primary-foreground py-4 px-4 flex items-center justify-center gap-3 hover:bg-primary/90 transition-colors cursor-pointer">
+            <span className="text-base font-bold tracking-wide font-display">Already a member?</span>
+            <span className="flex items-center gap-1.5 bg-black/25 text-white font-bold text-sm px-5 py-2 rounded-full">
+              <LogIn size={15} /> Log In Now
+            </span>
+          </Link>
+        </div>
       )}
+      <AnnouncementBar />
       <Hero />
       <LiveMemberFeed />
-      <AdBannerTop />
 
       {/* Live Stats Bar */}
       <section className="py-6 border-y border-primary/20 bg-gradient-to-r from-primary/5 via-primary/10 to-primary/5">
@@ -193,6 +293,9 @@ export default function Home() {
                   <AnimatedCounter value={prizePool} prefix="$" />
                 </div>
                 <div className="text-xs text-muted-foreground uppercase tracking-wider">Prize Pool</div>
+                <div className="text-xs text-yellow-400/80 font-semibold mt-0.5">
+                  Today's Payout: ${Math.floor(prizePool * 0.10).toLocaleString()}
+                </div>
               </div>
             </div>
             <div className="w-px h-12 bg-white/10 hidden md:block" />
@@ -245,55 +348,221 @@ export default function Home() {
             </div>
             <div className="text-left">
               <p className="font-display font-black text-primary text-lg leading-tight">INSTANT PAYOUTS on Every Referral</p>
-              <p className="text-sm text-muted-foreground">Get paid the moment someone joins with your code — plus monthly residual income forever</p>
+              <p className="text-sm text-muted-foreground">Get paid the moment someone joins with your code — $50/month for every active Legend you refer</p>
             </div>
           </div>
 
-          <div className="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
-            {[
-              { name: "Rookie", price: "$19/mo", instant: "$5 Instant", residual: "+ $5/mo Per Referral", features: ["Basic Stats", "Daily Leaderboard", "Follow 5 Pros"] },
-              { name: "Pro", price: "$29/mo", instant: "$10 Instant", residual: "+ $10/mo Per Referral", features: ["Advanced Analytics", "Unlimited Following", "API Access", "Pro Badge"] },
-              { name: "Legend", price: "$99/mo", instant: "$50 Instant", residual: "+ $50/mo Per Referral", features: ["Spider AI Picks", "Private Discord", "White-label Reports", "Legend Badge"], highlight: true },
-            ].map((plan, i) => (
-              <div key={i} className={`p-8 rounded-2xl border ${plan.highlight ? 'bg-yellow-500/5 border-yellow-500/50 relative overflow-hidden transform md:-translate-y-4 transition-transform shadow-[0_0_30px_rgba(234,179,8,0.15)]' : 'bg-card/30 border-white/5'} flex flex-col`}>
-                {plan.highlight && (
-                  <div className="absolute top-0 right-0 bg-gradient-to-r from-yellow-500 to-yellow-400 text-black text-xs font-bold px-3 py-1 rounded-bl-lg">
-                    MOST POPULAR
+          <div className="max-w-md mx-auto">
+            <div className="p-8 rounded-2xl border bg-yellow-500/5 border-yellow-500/50 relative overflow-hidden shadow-[0_0_30px_rgba(234,179,8,0.15)] flex flex-col">
+              <div className="absolute top-0 right-0 bg-gradient-to-r from-yellow-500 to-yellow-400 text-black text-xs font-bold px-3 py-1 rounded-bl-lg">
+                LEGEND ONLY
+              </div>
+              <h3 className="text-2xl font-bold font-display mb-2 text-center">Legend</h3>
+              <div className="text-5xl font-bold mb-4 text-center">$99<span className="text-xl font-normal text-muted-foreground">/mo</span></div>
+              <div className="rounded-xl px-3 py-2.5 mb-5 border bg-yellow-500/10 border-yellow-500/30 flex flex-col gap-1">
+                <div className="flex items-center gap-2 text-sm font-black text-yellow-300">
+                  <Zap size={13} className="shrink-0" />
+                  $50/mo Per Legend Referral
+                </div>
+                <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
+                  <Check size={11} className="shrink-0" />
+                  Residual income every month they stay active
+                </div>
+              </div>
+              <ul className="space-y-4 mb-8 flex-1 text-left">
+                {["Spider AI Daily Picks", "Prize Pool Eligibility", "Private Discord", "Legend Badge", "1-on-1 Coaching"].map((f, j) => (
+                  <li key={j} className="flex items-center gap-3 text-sm text-muted-foreground">
+                    <div className="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center text-primary shrink-0">
+                      <Check size={12} />
+                    </div>
+                    {f}
+                  </li>
+                ))}
+              </ul>
+              <Link href="/membership">
+                <Button className="w-full bg-gradient-to-r from-yellow-500 to-yellow-600 text-black hover:from-yellow-400 hover:to-yellow-500 font-bold">
+                  Join BetFans — $99/mo
+                </Button>
+              </Link>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Corporate Partnership Section */}
+      <section className="py-16 border-t border-yellow-600/20 bg-gradient-to-b from-yellow-900/10 to-transparent">
+        <div className="container mx-auto px-4">
+          <div className="max-w-3xl mx-auto">
+            <div className="text-center mb-8">
+              <span className="inline-block py-1 px-3 rounded-full bg-yellow-500/10 text-yellow-400 text-xs font-bold uppercase tracking-widest border border-yellow-500/20 mb-3">For Businesses</span>
+              <h2 className="text-2xl md:text-3xl font-display font-bold mb-3">Corporate Partnership</h2>
+              <p className="text-muted-foreground text-sm max-w-xl mx-auto">
+                Brands and businesses join at $1,200/year — get your own affiliate code, full Legend access, with your investment split between your affiliate, the community prize pool, and corporate profit share.
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-yellow-600/40 bg-gradient-to-r from-yellow-900/20 via-card/30 to-yellow-900/20 overflow-hidden shadow-[0_0_40px_rgba(161,109,8,0.1)]">
+              {/* Top banner */}
+              <div className="bg-gradient-to-r from-yellow-700 via-yellow-600 to-yellow-700 text-black text-center py-2 text-xs font-bold uppercase tracking-widest">
+                Annual Partnership · $1,200/yr · Billed Once Per Year
+              </div>
+
+              <div className="p-6 md:p-8 grid md:grid-cols-3 gap-6">
+                {/* Split breakdown */}
+                <div className="md:col-span-1 space-y-3">
+                  <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-3">Your $1,200 Splits Instantly</p>
+                  <div className="flex items-center gap-3 bg-yellow-500/10 border border-yellow-500/20 rounded-xl px-4 py-3">
+                    <DollarSign size={18} className="text-yellow-400 shrink-0" />
+                    <div>
+                      <p className="text-sm font-bold text-yellow-400">$600 → Your Affiliate</p>
+                      <p className="text-[11px] text-muted-foreground">Instantly to their wallet</p>
+                    </div>
                   </div>
-                )}
-                <h3 className="text-xl font-bold font-display mb-2">{plan.name}</h3>
-                <div className="text-4xl font-bold mb-4">{plan.price}</div>
-                <div className={`rounded-xl px-3 py-2.5 mb-5 border flex flex-col gap-1 ${plan.highlight ? 'bg-yellow-500/10 border-yellow-500/30' : 'bg-primary/10 border-primary/20'}`}>
-                  <div className={`flex items-center gap-2 text-sm font-black ${plan.highlight ? 'text-yellow-300' : 'text-primary'}`}>
-                    <Zap size={13} className="shrink-0" />
-                    {plan.instant} — paid immediately
+                  <div className="flex items-center gap-3 bg-primary/10 border border-primary/20 rounded-xl px-4 py-3">
+                    <Trophy size={18} className="text-primary shrink-0" />
+                    <div>
+                      <p className="text-sm font-bold text-primary">$300 → Prize Pool</p>
+                      <p className="text-[11px] text-muted-foreground">50/50 corporate prize pool share</p>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
-                    <Check size={11} className="shrink-0" />
-                    {plan.residual}
+                  <div className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-xl px-4 py-3">
+                    <ArrowRight size={18} className="text-muted-foreground shrink-0" />
+                    <div>
+                      <p className="text-sm font-bold text-muted-foreground">$300 → Profit Share</p>
+                      <p className="text-[11px] text-muted-foreground">Retained in-house</p>
+                    </div>
                   </div>
                 </div>
-                <ul className="space-y-4 mb-8 flex-1 text-left">
-                  {plan.features.map((f, j) => (
-                    <li key={j} className="flex items-center gap-3 text-sm text-muted-foreground">
-                      <div className="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center text-primary shrink-0">
-                        <Check size={12} />
-                      </div>
-                      {f}
-                    </li>
-                  ))}
-                </ul>
-                <Link href="/membership">
-                  <Button
-                    className={plan.highlight && !homePlanDisabled(plan.name) ? "w-full bg-gradient-to-r from-yellow-500 to-yellow-600 text-black hover:from-yellow-400 hover:to-yellow-500 font-bold" : "w-full"}
-                    variant={plan.highlight && !homePlanDisabled(plan.name) ? "default" : "outline"}
-                    disabled={homePlanDisabled(plan.name)}
-                  >
-                    {homePlanLabel(plan.name)}
-                  </Button>
-                </Link>
+
+                {/* What you get */}
+                <div className="md:col-span-1">
+                  <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-3">What You Get</p>
+                  <ul className="space-y-2">
+                    {[
+                      { icon: DollarSign, label: "Own affiliate code", sub: "Earn residual income on referrals" },
+                      { icon: Crown, label: "Full Legend access", sub: "Spider AI, picks, analytics" },
+                      { icon: Users, label: "Double prize entries", sub: "Two daily competition entries" },
+                      { icon: Building2, label: "Corporate badge", sub: "Brand recognition in community" },
+                    ].map((f, i) => (
+                      <li key={i} className="flex items-start gap-2 text-xs">
+                        <div className="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center shrink-0 mt-0.5">
+                          <f.icon size={10} className="text-primary" />
+                        </div>
+                        <div>
+                          <span className="font-semibold text-foreground">{f.label}</span>
+                          <span className="text-muted-foreground"> · {f.sub}</span>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                {/* CTA */}
+                <div className="md:col-span-1 flex flex-col justify-center gap-3">
+                  <div className="text-center">
+                    <div className="text-3xl font-bold font-display mb-1">$1,200<span className="text-sm font-normal text-muted-foreground">/yr</span></div>
+                    <p className="text-xs text-muted-foreground">$100/month equivalent</p>
+                  </div>
+                  <Link href="/membership">
+                    <Button className="w-full bg-gradient-to-r from-yellow-700 to-yellow-600 text-white hover:from-yellow-600 hover:to-yellow-500 font-bold" data-testid="button-corporate-home">
+                      <Building2 size={15} className="mr-2" /> Become a Partner
+                    </Button>
+                  </Link>
+                  <a href="mailto:nikcox@betfans.us" className="text-center text-xs text-muted-foreground hover:text-primary transition-colors" data-testid="link-corporate-contact">
+                    Questions? nikcox@betfans.us
+                  </a>
+                </div>
               </div>
-            ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Premium Corporate Partnership Section */}
+      <section className="py-16 border-t border-purple-600/20 bg-gradient-to-b from-purple-900/10 to-transparent">
+        <div className="container mx-auto px-4">
+          <div className="max-w-3xl mx-auto">
+            <div className="text-center mb-8">
+              <span className="inline-block py-1 px-3 rounded-full bg-purple-500/10 text-purple-400 text-xs font-bold uppercase tracking-widest border border-purple-500/20 mb-3">Premium · For Major Brands</span>
+              <h2 className="text-2xl md:text-3xl font-display font-bold mb-3">Premium Corporate Partnership</h2>
+              <p className="text-muted-foreground text-sm max-w-xl mx-auto">
+                Elite brands join at $12,000/year — get your logo displayed on betfans.us, the highest affiliate commissions on the platform, and a massive prize pool contribution that puts your brand at the center of the community.
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-purple-500/40 bg-gradient-to-r from-purple-900/20 via-card/30 to-purple-900/20 overflow-hidden shadow-[0_0_50px_rgba(168,85,247,0.15)]">
+              {/* Top banner */}
+              <div className="bg-gradient-to-r from-purple-700 via-purple-500 to-purple-700 text-white text-center py-2 text-xs font-bold uppercase tracking-widest">
+                Annual Partnership · $12,000/yr · $6,000 to Affiliate · $3,000 Prize Pool · $3,000 Profit Share
+              </div>
+
+              <div className="p-6 md:p-8 grid md:grid-cols-3 gap-6">
+                {/* Split breakdown */}
+                <div className="md:col-span-1 space-y-3">
+                  <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-3">Your $12,000 Splits Instantly</p>
+                  <div className="flex items-center gap-3 bg-yellow-500/10 border border-yellow-500/20 rounded-xl px-4 py-3">
+                    <DollarSign size={18} className="text-yellow-400 shrink-0" />
+                    <div>
+                      <p className="text-sm font-bold text-yellow-400">$6,000 → Your Affiliate</p>
+                      <p className="text-[11px] text-muted-foreground">Instantly to their wallet</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 bg-primary/10 border border-primary/20 rounded-xl px-4 py-3">
+                    <Trophy size={18} className="text-primary shrink-0" />
+                    <div>
+                      <p className="text-sm font-bold text-primary">$3,000 → Prize Pool</p>
+                      <p className="text-[11px] text-muted-foreground">50/50 corporate prize pool share</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-xl px-4 py-3">
+                    <ArrowRight size={18} className="text-muted-foreground shrink-0" />
+                    <div>
+                      <p className="text-sm font-bold text-muted-foreground">$3,000 → Profit Share</p>
+                      <p className="text-[11px] text-muted-foreground">Retained in-house</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* What you get */}
+                <div className="md:col-span-1">
+                  <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-3">What You Get</p>
+                  <ul className="space-y-2">
+                    {[
+                      { icon: Gem, label: "Logo on betfans.us", sub: "Brand visibility across the platform" },
+                      { icon: DollarSign, label: "Own affiliate code", sub: "$6,000 commission on referrals" },
+                      { icon: Crown, label: "Full Legend access", sub: "Spider AI, picks, analytics" },
+                      { icon: Star, label: "Premium partner badge", sub: "Highest status in the community" },
+                    ].map((f, i) => (
+                      <li key={i} className="flex items-start gap-2 text-xs">
+                        <div className="w-5 h-5 rounded-full bg-purple-500/20 flex items-center justify-center shrink-0 mt-0.5">
+                          <f.icon size={10} className="text-purple-400" />
+                        </div>
+                        <div>
+                          <span className="font-semibold text-foreground">{f.label}</span>
+                          <span className="text-muted-foreground"> · {f.sub}</span>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                {/* CTA */}
+                <div className="md:col-span-1 flex flex-col justify-center gap-3">
+                  <div className="text-center">
+                    <div className="text-3xl font-bold font-display mb-1">$12,000<span className="text-sm font-normal text-muted-foreground">/yr</span></div>
+                    <p className="text-xs text-muted-foreground">$1,000/month equivalent</p>
+                  </div>
+                  <Link href="/membership">
+                    <Button className="w-full bg-gradient-to-r from-purple-700 to-purple-500 text-white hover:from-purple-600 hover:to-purple-400 font-bold" data-testid="button-premium-corporate-home">
+                      <Gem size={15} className="mr-2" /> Become a Premium Partner
+                    </Button>
+                  </Link>
+                  <a href="mailto:nikcox@betfans.us" className="text-center text-xs text-muted-foreground hover:text-primary transition-colors" data-testid="link-premium-corporate-contact">
+                    Questions? nikcox@betfans.us
+                  </a>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -305,17 +574,17 @@ export default function Home() {
               Affiliate Program
             </span>
             <h2 className="text-3xl md:text-4xl font-display font-bold mb-4" data-testid="text-affiliate-heading">
-              Earn <span className="text-primary">$5–$50/Month</span> For Every Member You Refer
+              Earn <span className="text-primary">$50/Month</span> For Every Member You Refer
             </h2>
             <p className="text-muted-foreground max-w-2xl mx-auto">
-              No caps. No limits. Every tier earns an instant payout the moment someone signs up with your code, plus monthly residual income — Rookie $5/mo, Pro $10/mo, Legend $50/mo.
+              No caps. No limits. Every Legend member earns $50/month for every person they refer — as long as they stay subscribed.
             </p>
           </div>
           <div className="grid md:grid-cols-3 gap-8 max-w-4xl mx-auto mb-12">
             {[
               { icon: Share2, value: "Share", label: "Your unique referral link", desc: "Every member gets a personal affiliate code to share" },
               { icon: Users, value: "Grow", label: "Build your network", desc: "Refer friends, followers, and sports fans" },
-              { icon: DollarSign, value: "Earn", label: "$5–$50/mo per active member", desc: "Residual income based on your tier — as long as they stay subscribed" },
+              { icon: DollarSign, value: "Earn", label: "$50/mo per active member", desc: "$50/month affiliate income for every member you refer — as long as they stay subscribed" },
             ].map((item, i) => (
               <div key={i} className="text-center p-6 rounded-xl border border-white/5 bg-white/5 backdrop-blur-sm">
                 <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center text-primary mx-auto mb-4">
@@ -335,7 +604,7 @@ export default function Home() {
             </Link>
             <Link href="/referrals">
               <Button size="lg" variant="outline" className="gap-2 border-white/10" data-testid="button-view-residual">
-                <TrendingUp size={16} /> View Residual Income Leaderboard
+                <TrendingUp size={16} /> View Affiliate Leaderboard
               </Button>
             </Link>
           </div>
@@ -349,17 +618,21 @@ export default function Home() {
           <div className="flex flex-col md:flex-row justify-between items-center gap-6">
             <div className="flex flex-col items-center md:items-start gap-2">
               <p className="text-muted-foreground text-sm">&copy; 2026 BetFans. All rights reserved.</p>
-              <a href="mailto:nikcox@betfans.us" className="text-sm text-primary hover:text-primary/80 transition-colors" data-testid="link-contact-email">
+              <a href="mailto:nikcox@betfans.us" className="text-sm text-green-400 font-semibold hover:opacity-80 transition-colors" data-testid="link-contact-email">
                 nikcox@betfans.us
               </a>
+              <a href="tel:+12482757932" className="text-sm text-green-400 font-semibold hover:opacity-80 transition-colors" data-testid="link-contact-phone">
+                248-275-7932
+              </a>
               <p className="text-xs text-muted-foreground">For all inquiries</p>
+              <LiveViewsCounter />
             </div>
             <div className="flex items-center gap-4">
-              <QuickShareButton text="Join BetFans — the sports prediction platform where you predict, compete, win, and earn residual income!" className="text-xs" />
+              <QuickShareButton text="Join BetFans — the sports prediction platform where you predict, compete, and win daily prizes!" className="text-xs" />
               <div className="flex items-center gap-3 text-xs text-muted-foreground">
                 <Link href="/membership"><span className="hover:text-primary cursor-pointer">Membership</span></Link>
                 <Link href="/referrals"><span className="hover:text-primary cursor-pointer">Affiliate Program</span></Link>
-                <Link href="/referrals"><span className="hover:text-primary cursor-pointer">Residual Income</span></Link>
+                <Link href="/referrals"><span className="hover:text-primary cursor-pointer">Affiliate Program</span></Link>
                 <a href="mailto:nikcox@betfans.us" className="hover:text-primary cursor-pointer">Contact</a>
               </div>
             </div>
