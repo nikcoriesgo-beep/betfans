@@ -17,6 +17,7 @@ export function PrizePoolQualRule({ compact = false, className }: Props) {
             You must pick <strong className="text-yellow-200">every MLB game</strong> each day to qualify for payouts. Missing even one game disqualifies you. <strong className="text-yellow-200">MLB picks only</strong> — no other sport counts.
           </p>
           <p className="mt-1.5 text-xs text-yellow-300/50">* All members must predict over 2,000 MLB games to qualify for the annual prize pool payout.</p>
+          <p className="mt-1.5 text-xs text-yellow-100/80">NCAA Division I FBS and NFL games are optional Skill Play picks. They count toward records and rankings but are not required for Prize Pool qualification.</p>
         </div>
       </div>
     );
@@ -47,6 +48,7 @@ export function PrizePoolQualRule({ compact = false, className }: Props) {
           </ul>
           <p className="mt-2 text-xs text-yellow-300/70">Applies to daily and annual prize pool payouts.</p>
           <p className="mt-2 text-xs text-yellow-300/50">* All members must predict over 2,000 MLB games to qualify for the annual prize pool payout.</p>
+          <p className="mt-2 text-xs text-yellow-100/80">NCAA Division I FBS and NFL games are optional Skill Play picks. They count toward records and rankings but are not required for Prize Pool qualification.</p>
         </div>
       </div>
     </div>

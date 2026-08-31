@@ -17,8 +17,8 @@ function AnnouncementBar() {
     staleTime: 60000,
   });
   const announcements: string[] = settings?.announcements ? JSON.parse(settings.announcements) : [
-    "Beginning August 29, 2026: All NCAA Division I FBS 2026™ games must also be selected to qualify for the Prize Pool.",
-    "Beginning September 9, 2026: All NFL 2026™ games must also be selected in addition to all MLB Games for the daily Prize Pool qualification.",
+    "NCAA Division I FBS 2026™ games are optional Skill Play picks. They count toward records and rankings but are not required for Prize Pool qualification.",
+    "NFL 2026™ games are optional Skill Play picks. They count toward records and rankings but are not required for Prize Pool qualification.",
     "Premier League 2026™ games are now available as Skill Play picks. They count toward rankings but are not required for Prize Pool qualification.",
   ];
   if (!announcements.length) return null;

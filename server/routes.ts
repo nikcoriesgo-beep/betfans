@@ -750,10 +750,9 @@ export async function registerRoutes(
       const nhlCount = dedup(nhlGames);
       const ncaafCount = dedup(ncaafGames);
       const nflCount = dedup(nflGames);
-      const fbsRequired = pstDateStr >= "2026-08-29";
-      const nflRequired = pstDateStr >= "2026-09-09";
-      const count = mlbCount + nbaCount + nhlCount + (fbsRequired ? ncaafCount : 0) + (nflRequired ? nflCount : 0);
-      res.json({ count, mlbCount, nbaCount, nhlCount, ncaafCount, nflCount, fbsRequired, nflRequired, periodStart: start, periodEnd: end });
+      // NCAA FBS and NFL are Skill Play: they count toward records but are not required for qualification.
+      const count = mlbCount + nbaCount + nhlCount;
+      res.json({ count, mlbCount, nbaCount, nhlCount, ncaafCount, nflCount, fbsRequired: false, nflRequired: false, periodStart: start, periodEnd: end });
     } catch (e) {
       res.json({ count: 0 });
     }
@@ -865,17 +864,12 @@ export async function registerRoutes(
           losses:  mlb.losses  + ncaaf.losses  + nfl.losses  + nba.losses  + nhl.losses  + wc.losses  + epl.losses  + ucl.losses  + ncaabb.losses,
           pending: mlb.pending + ncaaf.pending + nfl.pending + nba.pending + nhl.pending + wc.pending + epl.pending + ucl.pending + ncaabb.pending,
         };
-        // FBS is required beginning August 29, 2026; NFL beginning September 9, 2026.
-        // FIFA_WC, EPL, and NCAABB are skill-play bonus sports — picks count toward wins/ranking
+        // NCAA FBS, NFL, FIFA_WC, EPL, and NCAABB are skill-play bonus sports — picks count toward wins/ranking
         // but NOT required to qualify (matching payoutService.ts logic exactly).
-        const fbsRequired = periodStart >= new Date("2026-08-29T08:00:00.000Z");
-        const nflRequired = periodStart >= new Date("2026-09-09T08:00:00.000Z");
         const qualified =
           mlb.picks >= mlbMatchups.length &&
           (nbaMatchups.length === 0 || nba.picks >= nbaMatchups.length) &&
-          (nhlMatchups.length === 0 || nhl.picks >= nhlMatchups.length) &&
-          (!fbsRequired || ncaaf.picks >= ncaafMatchups.length) &&
-          (!nflRequired || nfl.picks >= nflMatchups.length);
+          (nhlMatchups.length === 0 || nhl.picks >= nhlMatchups.length);
 
         // Pick submission timestamps in PST
         const pickTimes = myPreds

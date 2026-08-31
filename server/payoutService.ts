@@ -134,17 +134,12 @@ async function computeScorecardForPeriod(periodStart: Date, periodEnd: Date, log
     const totalWins   = mlb.wins   + ncaaf.wins   + nfl.wins   + nba.wins   + nhl.wins   + wc.wins   + epl.wins   + ucl.wins   + ncaabb.wins;
     const totalLosses = mlb.losses + ncaaf.losses + nfl.losses + nba.losses + nhl.losses + wc.losses + epl.losses + ucl.losses + ncaabb.losses;
     const totalPicks  = mlb.picks  + ncaaf.picks  + nfl.picks  + nba.picks  + nhl.picks  + wc.picks  + epl.picks  + ucl.picks  + ncaabb.picks;
-    // FBS is required beginning August 29, 2026; NFL beginning September 9, 2026.
-    // FIFA_WC, EPL, and NCAABB are "skill play" bonus sports — picks count toward wins/ranking
+    // NCAA FBS, NFL, FIFA_WC, EPL, and NCAABB are "skill play" bonus sports — picks count toward wins/ranking
     // but members are NOT required to pick them to qualify.
-    const fbsRequired = periodStart >= new Date("2026-08-29T08:00:00.000Z");
-    const nflRequired = periodStart >= new Date("2026-09-09T08:00:00.000Z");
     const qualified =
       mlb.picks >= mlbMatchups.length &&
       (nbaMatchups.length === 0 || nba.picks >= nbaMatchups.length) &&
-      (nhlMatchups.length === 0 || nhl.picks >= nhlMatchups.length) &&
-      (!fbsRequired || ncaaf.picks >= ncaafMatchups.length) &&
-      (!nflRequired || nfl.picks >= nflMatchups.length);
+      (nhlMatchups.length === 0 || nhl.picks >= nhlMatchups.length);
     return { userId: u.id, user: u, wins: totalWins, losses: totalLosses, totalPicks, qualified };
   });
 
