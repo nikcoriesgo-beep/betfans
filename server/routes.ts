@@ -575,7 +575,10 @@ export async function registerRoutes(
   app.get("/api/games", async (req, res) => {
     try {
       const league = req.query.league as string | undefined;
-      const dbGames = await storage.getGames(league);
+      const includeUpcomingFootball = req.query.includeUpcomingFootball === "true";
+      const dbGames = includeUpcomingFootball && (!league || league === "ALL")
+        ? await storage.getDailyPicksGames()
+        : await storage.getGames(league);
 
       // Enrich MLB games with live probable pitcher data from MLB Stats API
       let pitcherMap = new Map<string, { home: string | null; away: string | null }>();

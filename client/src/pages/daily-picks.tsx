@@ -80,11 +80,8 @@ const LEAGUE_ACTIVE_STYLE: Record<string, string> = {
 const SKILL_PLAY_LEAGUES = new Set(["MLS", "EPL", "UCL", "NCAABB", "NCAAF", "NFL"]);
 
 function isToday(dateStr: string) {
-  const d = new Date(dateStr);
-  const now = new Date();
-  return d.getFullYear() === now.getFullYear() &&
-    d.getMonth() === now.getMonth() &&
-    d.getDate() === now.getDate();
+  const format = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" });
+  return format.format(new Date(dateStr)) === format.format(new Date());
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -111,6 +108,7 @@ interface DraftPick {
 }
 
 const FOUNDER_CODE = "NIKCOX";
+const DAILY_PICKS_GAMES_KEY = ["/api/games?includeUpcomingFootball=true"];
 
 export default function DailyPicks() {
   const { user } = useAuth() as { user: any };
@@ -122,7 +120,7 @@ export default function DailyPicks() {
   const isFounder = user?.referralCode === FOUNDER_CODE;
 
   const { data: allGames = [], isLoading: gamesLoading } = useQuery<any[]>({
-    queryKey: ["/api/games"],
+    queryKey: DAILY_PICKS_GAMES_KEY,
     staleTime: 0,
     refetchOnMount: "always",
   });
@@ -136,7 +134,7 @@ export default function DailyPicks() {
 
   const syncGames = useMutation({
     mutationFn: () => apiRequest("POST", "/api/games/sync"),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/games"] }); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: DAILY_PICKS_GAMES_KEY }); },
   });
 
   useEffect(() => {
@@ -157,7 +155,7 @@ export default function DailyPicks() {
     onError: (e: any) => {
       const msg: string = e.message || "";
       if (msg.includes("reload") || msg.includes("refreshed")) {
-        qc.invalidateQueries({ queryKey: ["/api/games"] });
+        qc.invalidateQueries({ queryKey: DAILY_PICKS_GAMES_KEY });
         toast({ title: "Game list updated", description: "Your picks have been cleared — please reselect and resubmit.", variant: "destructive" });
         setDrafts({});
       } else {
@@ -214,7 +212,7 @@ export default function DailyPicks() {
               <span className="text-xs text-primary/80 font-medium tracking-widest uppercase">Daily Picks</span>
             </div>
             <h1 className="text-3xl md:text-4xl font-display font-bold mb-2" data-testid="text-daily-picks-title">
-              Today's Games
+              Daily & Upcoming Games
             </h1>
             <p className="text-muted-foreground text-sm max-w-xl">
               Tap a team to select your pick. When you're done, hit <strong>Submit Picks</strong> at the bottom.
@@ -365,7 +363,22 @@ export default function DailyPicks() {
                       </div>
                       <div className="flex items-center gap-1 text-[10px] text-muted-foreground/60">
                         <Clock size={9} />
-                        {new Date(game.gameTime).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZoneName: "short" })}
+                        {!isToday(game.gameTime) && (
+                          <span className="font-semibold text-primary/70">
+                            {new Date(game.gameTime).toLocaleDateString("en-US", {
+                              month: "short",
+                              day: "numeric",
+                              timeZone: "America/Los_Angeles",
+                            })}
+                            {" · "}
+                          </span>
+                        )}
+                        {new Date(game.gameTime).toLocaleTimeString("en-US", {
+                          hour: "numeric",
+                          minute: "2-digit",
+                          timeZoneName: "short",
+                          timeZone: "America/Los_Angeles",
+                        })}
                       </div>
                     </div>
 

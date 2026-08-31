@@ -18,6 +18,25 @@ import {
 import { db } from "./db";
 import { eq, desc, and, sql, asc } from "drizzle-orm";
 
+function dedupeGames(rows: Game[]): Game[] {
+  const seen = new Map<string, Game>();
+  for (const game of rows) {
+    const key = game.externalId
+      || `${game.league}|${game.homeTeam}|${game.awayTeam}|${Math.round(new Date(game.gameTime).getTime() / (90 * 60 * 1000))}`;
+    const existing = seen.get(key);
+    if (!existing) {
+      seen.set(key, game);
+      continue;
+    }
+    const existingIsActive = existing.status === "live" || existing.status === "finished";
+    const newIsActive = game.status === "live" || game.status === "finished";
+    if (newIsActive && !existingIsActive) seen.set(key, game);
+  }
+  return Array.from(seen.values()).sort(
+    (a, b) => new Date(a.gameTime).getTime() - new Date(b.gameTime).getTime(),
+  );
+}
+
 export interface IStorage {
   getUser(id: string): Promise<User | null>;
   getUserByStripeCustomerId(customerId: string): Promise<User | null>;
@@ -27,6 +46,7 @@ export interface IStorage {
   updateUser(id: string, data: Partial<User>): Promise<User | null>;
 
   getGames(league?: string): Promise<Game[]>;
+  getDailyPicksGames(): Promise<Game[]>;
   getGame(id: number): Promise<Game | null>;
   createGame(game: InsertGame): Promise<Game>;
 
@@ -176,20 +196,39 @@ export class DatabaseStorage implements IStorage {
     // Deduplicate: protect against exact-duplicate DB rows (same game inserted twice).
     // Key includes game time bucketed to nearest 90 minutes so doubleheaders
     // (same matchup at different times on the same day) both appear.
-    const seen = new Map<string, Game>();
-    for (const g of rows) {
-      const bucket = Math.round(new Date(g.gameTime).getTime() / (90 * 60 * 1000));
-      const key = `${g.league}|${g.homeTeam}|${g.awayTeam}|${bucket}`;
-      if (!seen.has(key)) {
-        seen.set(key, g);
-      } else {
-        const existing = seen.get(key)!;
-        const existingIsActive = existing.status === "live" || existing.status === "finished";
-        const newIsActive = g.status === "live" || g.status === "finished";
-        if (newIsActive && !existingIsActive) seen.set(key, g);
+    return dedupeGames(rows);
+  }
+
+  async getDailyPicksGames(): Promise<Game[]> {
+    const todayGames = await this.getGames();
+    const pstDateStr = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(new Date());
+    const [y, m, d] = pstDateStr.split("-").map(Number);
+    const nextCutoff = new Date(Date.UTC(y, m - 1, d + 1, 8, 0, 0, 0));
+    const horizon = new Date(Date.UTC(y, m - 1, d + 46, 8, 0, 0, 0));
+
+    const upcomingFootball = await db.select().from(games)
+      .where(sql`${games.league} IN ('NFL', 'NCAAF')
+        AND ${games.gameTime} >= ${nextCutoff}
+        AND ${games.gameTime} < ${horizon}
+        AND ${games.status} != 'postponed'`)
+      .orderBy(asc(games.gameTime));
+
+    // Daily Picks should stay manageable: show today's slate plus only the next
+    // scheduled game day for each football league.
+    const firstDateByLeague = new Map<string, string>();
+    const nextSlates = upcomingFootball.filter((game) => {
+      const gameDate = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "America/Los_Angeles",
+      }).format(new Date(game.gameTime));
+      const firstDate = firstDateByLeague.get(game.league);
+      if (!firstDate) {
+        firstDateByLeague.set(game.league, gameDate);
+        return true;
       }
-    }
-    return [...seen.values()].sort((a, b) => new Date(a.gameTime).getTime() - new Date(b.gameTime).getTime());
+      return firstDate === gameDate;
+    });
+
+    return dedupeGames([...todayGames, ...nextSlates]);
   }
 
   async getGame(id: number): Promise<Game | null> {

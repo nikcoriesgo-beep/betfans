@@ -448,6 +448,7 @@ export async function runStartupMigration() {
     await client.query(`
       CREATE TABLE IF NOT EXISTS games (
         id SERIAL PRIMARY KEY,
+        external_id TEXT UNIQUE,
         league TEXT NOT NULL,
         home_team TEXT NOT NULL,
         away_team TEXT NOT NULL,
@@ -467,6 +468,8 @@ export async function runStartupMigration() {
         created_at TIMESTAMP DEFAULT NOW()
       )
     `);
+    await client.query(`ALTER TABLE games ADD COLUMN IF NOT EXISTS external_id TEXT`);
+    await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS games_external_id_unique ON games (external_id)`);
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS predictions (

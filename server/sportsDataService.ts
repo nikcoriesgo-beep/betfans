@@ -298,9 +298,9 @@ function getTodayET(): string {
   return `${parts[2]}${parts[0]}${parts[1]}`; // YYYYMMDD
 }
 
-function getTomorrowET(): string {
+function getETDate(offsetDays = 0): string {
   const d = new Date();
-  d.setDate(d.getDate() + 1);
+  d.setDate(d.getDate() + offsetDays);
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: "America/New_York",
     year: "numeric",
@@ -318,7 +318,13 @@ async function fetchLeagueGames(league: string): Promise<any[]> {
     // not just live/finished ones. Without this, upcoming games are invisible.
     const todayET = getTodayET();
     const separator = url.includes("?") ? "&" : "?";
-    const response = await fetch(`${url}${separator}dates=${todayET}`);
+    // Football is played in weekly slates. Load the next two weeks so Daily Picks
+    // can expose the next FBS/NFL game day even when neither league plays today.
+    const dateParam = league === "NFL" || league === "NCAAF"
+      ? `${todayET}-${getETDate(14)}`
+      : todayET;
+    const limitParam = league === "NFL" || league === "NCAAF" ? "limit=300&" : "";
+    const response = await fetch(`${url}${separator}${limitParam}dates=${dateParam}`);
     if (!response.ok) {
       console.log(`[spider] ESPN ${league} returned ${response.status}`);
       return [];
@@ -326,10 +332,25 @@ async function fetchLeagueGames(league: string): Promise<any[]> {
     const data = await response.json();
     let events: ESPNEvent[] = data.events || [];
 
+    // During long gaps (bye weeks / bowl scheduling), make one wider fallback
+    // request only when the normal two-week football window is empty.
+    const hasFutureFootballEvent = events.some(
+      (event) => new Date(event.date).getTime() > Date.now(),
+    );
+    if ((league === "NFL" || league === "NCAAF") && !hasFutureFootballEvent) {
+      const fallbackDates = `${getETDate(15)}-${getETDate(45)}`;
+      const fallbackResponse = await fetch(`${url}${separator}limit=500&dates=${fallbackDates}`);
+      if (fallbackResponse.ok) {
+        const fallbackData = await fallbackResponse.json();
+        const merged = [...events, ...(fallbackData.events || [])] as ESPNEvent[];
+        events = Array.from(new Map(merged.map((event) => [event.id, event])).values());
+      }
+    }
+
     // For FIFA_WC: also fetch tomorrow's games so late-night games (e.g. 9PM PT = midnight ET next day) appear
     if (league === "FIFA_WC") {
       try {
-        const tomorrowET = getTomorrowET();
+        const tomorrowET = getETDate(1);
         const r2 = await fetch(`${url}${separator}dates=${tomorrowET}`);
         if (r2.ok) {
           const d2 = await r2.json();
@@ -376,6 +397,7 @@ async function fetchLeagueGames(league: string): Promise<any[]> {
       const spider = generateSpiderPick(homeTeam, awayTeam, spread, total, moneylineHome, moneylineAway);
 
       results.push({
+        externalId: `${league}:${event.id}`,
         league, homeTeam, awayTeam,
         gameTime: new Date(event.date),
         status, homeScore, awayScore,
@@ -737,13 +759,20 @@ export async function syncSportsData(): Promise<{ synced: number; leagues: strin
         .select()
         .from(games)
         .where(
-          sql`${games.league} = ${game.league} AND ${games.homeTeam} = ${game.homeTeam} AND ${games.awayTeam} = ${game.awayTeam} AND DATE(${games.gameTime} AT TIME ZONE 'America/Los_Angeles') = DATE(${game.gameTime} AT TIME ZONE 'America/Los_Angeles')`
+          sql`${games.externalId} = ${game.externalId} OR (
+            ${games.league} = ${game.league}
+            AND ${games.homeTeam} = ${game.homeTeam}
+            AND ${games.awayTeam} = ${game.awayTeam}
+            AND DATE(${games.gameTime} AT TIME ZONE 'America/Los_Angeles') = DATE(${game.gameTime} AT TIME ZONE 'America/Los_Angeles')
+          )`
         );
 
       // Match by game time (within 90 minutes) to handle doubleheaders.
       // If no close-time match found → INSERT as a new game even if same matchup exists.
       const gameTimeMs = game.gameTime.getTime();
-      const timeMatch = allSameDay.find(e => Math.abs(new Date(e.gameTime!).getTime() - gameTimeMs) <= 90 * 60 * 1000);
+      const externalMatch = allSameDay.find(e => e.externalId === game.externalId);
+      const timeMatch = externalMatch
+        ?? allSameDay.find(e => !e.externalId && Math.abs(new Date(e.gameTime!).getTime() - gameTimeMs) <= 90 * 60 * 1000);
       const existing = timeMatch ? [timeMatch] : [];
 
       if (existing.length > 0) {
@@ -754,8 +783,8 @@ export async function syncSportsData(): Promise<{ synced: number; leagues: strin
         // MLB series = same teams play 3 days in a row; this is the root cause of
         // the duplicate game / reset-picks bug.
         if (prev.status === "finished" && game.status === "upcoming") {
-          await db.insert(games).values(game);
-          totalSynced++;
+          const inserted = await db.insert(games).values(game).onConflictDoNothing().returning({ id: games.id });
+          totalSynced += inserted.length;
           continue;
         }
 
@@ -765,6 +794,7 @@ export async function syncSportsData(): Promise<{ synced: number; leagues: strin
           : game.status;
 
         await db.update(games).set({
+          externalId: game.externalId,
           gameTime: game.gameTime,
           status: safeStatus,
           homeScore: safeStatus === "upcoming" ? null : game.homeScore,
@@ -814,6 +844,7 @@ export async function syncSportsData(): Promise<{ synced: number; leagues: strin
           // An equivalent game already exists — update it instead of inserting a duplicate
           const existingId = (bucketCheck as any).rows[0].id;
           await db.update(games).set({
+            externalId: game.externalId,
             status: game.status,
             homeScore: game.status === "upcoming" ? null : game.homeScore,
             awayScore: game.status === "upcoming" ? null : game.awayScore,
@@ -821,8 +852,8 @@ export async function syncSportsData(): Promise<{ synced: number; leagues: strin
             spiderConfidence: game.spiderConfidence,
           }).where(eq(games.id, existingId));
         } else {
-          await db.insert(games).values(game);
-          totalSynced++;
+          const inserted = await db.insert(games).values(game).onConflictDoNothing().returning({ id: games.id });
+          totalSynced += inserted.length;
         }
       }
     }

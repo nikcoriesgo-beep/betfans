@@ -20,6 +20,7 @@ export const predictions = pgTable("predictions", {
 
 export const games = pgTable("games", {
   id: serial("id").primaryKey(),
+  externalId: text("external_id").unique(),
   league: text("league").notNull(),
   homeTeam: text("home_team").notNull(),
   awayTeam: text("away_team").notNull(),
