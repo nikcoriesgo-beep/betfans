@@ -172,11 +172,11 @@ export default function DailyPicks() {
 
   const myPicksToday = useMemo(() => {
     const todayGameIds = new Set(todayGames.map((g) => g.id));
-    const todayStr = new Date().toDateString();
-    return myPredictions.filter((p) =>
-      todayGameIds.has(p.gameId) ||
-      (p.createdAt && new Date(p.createdAt).toDateString() === todayStr)
-    );
+    // A prediction belongs in this section only when its game is in the current
+    // Pacific-day slate. Falling back to the prediction's creation date can
+    // pull yesterday's same-matchup pick into today and show a stale result
+    // without a matchup.
+    return myPredictions.filter((p) => todayGameIds.has(p.gameId));
   }, [myPredictions, todayGames]);
 
   const myPickGameIds = new Set(myPicksToday.map((p) => p.gameId));
