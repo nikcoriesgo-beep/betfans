@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useState, useEffect } from "react";
+import { Eye, EyeOff } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
 import { queryClient } from "@/lib/queryClient";
@@ -13,6 +14,7 @@ export default function Auth() {
   const [mode, setMode] = useState<"login" | "signup">(initialMode);
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
@@ -155,16 +157,28 @@ export default function Auth() {
               </div>
               <div>
                 <label className="text-sm text-muted-foreground mb-1 block">Password</label>
-                <Input
-                  data-testid="input-password"
-                  type="password"
-                  placeholder={mode === "signup" ? "Create a password (6+ characters)" : "Enter your password"}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  minLength={6}
-                  className="bg-background/50 border-white/10"
-                />
+                <div className="relative">
+                  <Input
+                    data-testid="input-password"
+                    type={showPassword ? "text" : "password"}
+                    placeholder={mode === "signup" ? "Create a password (6+ characters)" : "Enter your password"}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    minLength={6}
+                    className="bg-background/50 border-white/10 pr-14"
+                  />
+                  <button
+                    type="button"
+                    data-testid="button-toggle-password"
+                    onClick={() => setShowPassword(v => !v)}
+                    className="absolute right-1.5 top-1/2 flex h-9 w-10 -translate-y-1/2 items-center justify-center rounded-md border border-white/15 bg-white/10 text-white hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                    aria-pressed={showPassword}
+                  >
+                    {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                  </button>
+                </div>
               </div>
               {mode === "signup" && (
                 <div>
