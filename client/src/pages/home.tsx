@@ -19,6 +19,7 @@ function AnnouncementBar() {
   const announcements: string[] = settings?.announcements ? JSON.parse(settings.announcements) : [
     "All NFL 2026™, NCAA Division I FBS Top 25™, and WBC Boxing events scheduled for the Pacific payout day must be selected for daily Prize Pool qualification.",
     "Premier League 2026™ games are now available as Skill Play picks. They count toward rankings but are not required for Prize Pool qualification.",
+    "Champions League 2026™ games are available with Spider AI picks as Skill Play. They count toward rankings but are not required for Prize Pool qualification.",
   ];
   if (!announcements.length) return null;
   return (
