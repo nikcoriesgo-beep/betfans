@@ -17,8 +17,8 @@ function AnnouncementBar() {
     staleTime: 60000,
   });
   const announcements: string[] = settings?.announcements ? JSON.parse(settings.announcements) : [
-    "NCAA Division I FBS 2026™ games are optional Skill Play picks. They count toward records and rankings but are not required for Prize Pool qualification.",
-    "NFL 2026™ games are optional Skill Play picks. They count toward records and rankings but are not required for Prize Pool qualification.",
+    "NCAA Division I FBS 2026™ and WBC Boxing events are optional Skill Play picks. They count toward records and rankings but are not required for Prize Pool qualification.",
+    "All NFL 2026™ games scheduled for the Pacific payout day must be selected in addition to all MLB games for daily Prize Pool qualification.",
     "Premier League 2026™ games are now available as Skill Play picks. They count toward rankings but are not required for Prize Pool qualification.",
   ];
   if (!announcements.length) return null;
