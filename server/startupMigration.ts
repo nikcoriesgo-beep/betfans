@@ -243,6 +243,15 @@ export async function runStartupMigration() {
       await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS certified_expert BOOLEAN DEFAULT FALSE`);
       await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS paypal_sender_email TEXT`);
       await client.query(`ALTER TABLE games ADD COLUMN IF NOT EXISTS is_top_25 BOOLEAN DEFAULT FALSE`);
+      // Preserve player-chosen passwords, but make every player account with a
+      // phone number and no password usable with the established temp password.
+      const missingPlayerPasswords = await client.query(`
+        UPDATE users
+        SET password_hash = '$2b$10$WkqjSdvKC9EZlVrP3Je6wuDWlgLvK4ONDg7sfe9bmTQcqq2oxAMu.'
+        WHERE LENGTH(regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g')) >= 10
+          AND (password_hash IS NULL OR password_hash = '')
+      `);
+      console.log(`[migration] Added temporary passwords to ${missingPlayerPasswords.rowCount ?? 0} player account(s) missing one`);
       // Ensure site_settings table exists (added Aug 2026 for DB-driven announcements)
       await client.query(`
         CREATE TABLE IF NOT EXISTS site_settings (

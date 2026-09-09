@@ -154,11 +154,18 @@ export function Navbar() {
                 </Avatar>
               </Link>
             ) : (
-              <Link href="/membership">
-                <Button size="default" className="gap-2 font-display font-bold text-sm px-4 shadow-[0_0_12px_rgba(34,197,94,0.4)]" data-testid="button-signup-mobile">
-                  Join Now
-                </Button>
-              </Link>
+              <>
+                <Link href="/auth">
+                  <Button variant="outline" size="sm" className="h-10 px-3 font-display font-bold border-primary/60 text-primary" data-testid="button-login-mobile">
+                    Log In
+                  </Button>
+                </Link>
+                <Link href="/membership">
+                  <Button size="sm" className="h-10 font-display font-bold text-sm px-3 shadow-[0_0_12px_rgba(34,197,94,0.4)]" data-testid="button-signup-mobile">
+                    Join Now
+                  </Button>
+                </Link>
+              </>
             )}
             <Sheet open={isOpen} onOpenChange={setIsOpen}>
               <SheetTrigger asChild>

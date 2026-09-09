@@ -1,6 +1,6 @@
 import { users, type User, type UpsertUser } from "@shared/models/auth";
 import { db } from "../../db";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 export class AuthStorage {
   async getUser(id: string): Promise<User | null> {
@@ -9,7 +9,10 @@ export class AuthStorage {
   }
 
   async getUserByPhone(phone: string): Promise<User | null> {
-    const [user] = await db.select().from(users).where(eq(users.phone, phone));
+    const cleanPhone = phone.replace(/\D/g, "");
+    const [user] = await db.select().from(users).where(
+      sql`regexp_replace(COALESCE(${users.phone}, ''), '[^0-9]', '', 'g') = ${cleanPhone}`,
+    );
     return user || null;
   }
 
