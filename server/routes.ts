@@ -753,9 +753,10 @@ export async function registerRoutes(
       const nhlCount = dedup(nhlGames);
       const ncaafCount = dedup(ncaafGames);
       const nflCount = dedup(nflGames);
-      // NCAA FBS and NFL are Skill Play: they count toward records but are not required for qualification.
-      const count = mlbCount + nbaCount + nhlCount;
-      res.json({ count, mlbCount, nbaCount, nhlCount, ncaafCount, nflCount, fbsRequired: false, nflRequired: false, periodStart: start, periodEnd: end });
+      // Every NFL game scheduled in the Pacific-day payout window is required.
+      // NCAA FBS remains optional Skill Play.
+      const count = mlbCount + nbaCount + nhlCount + nflCount;
+      res.json({ count, mlbCount, nbaCount, nhlCount, ncaafCount, nflCount, fbsRequired: false, nflRequired: true, periodStart: start, periodEnd: end });
     } catch (e) {
       res.json({ count: 0 });
     }
@@ -867,12 +868,13 @@ export async function registerRoutes(
           losses:  mlb.losses  + ncaaf.losses  + nfl.losses  + nba.losses  + nhl.losses  + wc.losses  + epl.losses  + ucl.losses  + ncaabb.losses,
           pending: mlb.pending + ncaaf.pending + nfl.pending + nba.pending + nhl.pending + wc.pending + epl.pending + ucl.pending + ncaabb.pending,
         };
-        // NCAA FBS, NFL, FIFA_WC, EPL, and NCAABB are skill-play bonus sports — picks count toward wins/ranking
-        // but NOT required to qualify (matching payoutService.ts logic exactly).
+        // NFL is required whenever games are scheduled that Pacific day.
+        // NCAA FBS, FIFA_WC, EPL, and NCAABB remain optional Skill Play.
         const qualified =
           mlb.picks >= mlbMatchups.length &&
           (nbaMatchups.length === 0 || nba.picks >= nbaMatchups.length) &&
-          (nhlMatchups.length === 0 || nhl.picks >= nhlMatchups.length);
+          (nhlMatchups.length === 0 || nhl.picks >= nhlMatchups.length) &&
+          (nflMatchups.length === 0 || nfl.picks >= nflMatchups.length);
 
         // Pick submission timestamps in PST
         const pickTimes = myPreds

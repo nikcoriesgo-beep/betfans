@@ -134,12 +134,13 @@ async function computeScorecardForPeriod(periodStart: Date, periodEnd: Date, log
     const totalWins   = mlb.wins   + ncaaf.wins   + nfl.wins   + nba.wins   + nhl.wins   + wc.wins   + epl.wins   + ucl.wins   + ncaabb.wins;
     const totalLosses = mlb.losses + ncaaf.losses + nfl.losses + nba.losses + nhl.losses + wc.losses + epl.losses + ucl.losses + ncaabb.losses;
     const totalPicks  = mlb.picks  + ncaaf.picks  + nfl.picks  + nba.picks  + nhl.picks  + wc.picks  + epl.picks  + ucl.picks  + ncaabb.picks;
-    // NCAA FBS, NFL, FIFA_WC, EPL, and NCAABB are "skill play" bonus sports — picks count toward wins/ranking
-    // but members are NOT required to pick them to qualify.
+    // NFL is required whenever games are scheduled in this Pacific-day payout
+    // period. NCAA FBS and the other bonus sports remain optional Skill Play.
     const qualified =
       mlb.picks >= mlbMatchups.length &&
       (nbaMatchups.length === 0 || nba.picks >= nbaMatchups.length) &&
-      (nhlMatchups.length === 0 || nhl.picks >= nhlMatchups.length);
+      (nhlMatchups.length === 0 || nhl.picks >= nhlMatchups.length) &&
+      (nflMatchups.length === 0 || nfl.picks >= nflMatchups.length);
     return { userId: u.id, user: u, wins: totalWins, losses: totalLosses, totalPicks, qualified };
   });
 

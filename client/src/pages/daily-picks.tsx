@@ -77,7 +77,7 @@ const LEAGUE_ACTIVE_STYLE: Record<string, string> = {
 };
 
 // Skill play leagues do NOT count toward prize pool eligibility
-const SKILL_PLAY_LEAGUES = new Set(["MLS", "EPL", "UCL", "NCAABB", "NCAAF", "NFL"]);
+const SKILL_PLAY_LEAGUES = new Set(["MLS", "EPL", "UCL", "NCAABB", "NCAAF", "BOXING"]);
 
 function isToday(dateStr: string) {
   const format = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" });

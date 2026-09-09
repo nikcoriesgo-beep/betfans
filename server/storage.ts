@@ -204,31 +204,21 @@ export class DatabaseStorage implements IStorage {
     const pstDateStr = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(new Date());
     const [y, m, d] = pstDateStr.split("-").map(Number);
     const nextCutoff = new Date(Date.UTC(y, m - 1, d + 1, 8, 0, 0, 0));
-    const horizon = new Date(Date.UTC(y, m - 1, d + 46, 8, 0, 0, 0));
+    const footballHorizon = new Date(Date.UTC(y, m - 1, d + 8, 8, 0, 0, 0));
+    const boxingHorizon = new Date(Date.UTC(y, m - 1, d + 46, 8, 0, 0, 0));
 
-    const upcomingFootball = await db.select().from(games)
-      .where(sql`${games.league} IN ('NFL', 'NCAAF')
-        AND ${games.gameTime} >= ${nextCutoff}
-        AND ${games.gameTime} < ${horizon}
+    const upcomingFeaturedEvents = await db.select().from(games)
+      .where(sql`${games.gameTime} >= ${nextCutoff}
+        AND (
+          (${games.league} IN ('NFL', 'NCAAF') AND ${games.gameTime} < ${footballHorizon})
+          OR (${games.league} = 'BOXING' AND ${games.gameTime} < ${boxingHorizon})
+        )
         AND ${games.status} != 'postponed'`)
       .orderBy(asc(games.gameTime));
 
-    // Daily Picks should stay manageable: show today's slate plus only the next
-    // scheduled game day for each football league.
-    const firstDateByLeague = new Map<string, string>();
-    const nextSlates = upcomingFootball.filter((game) => {
-      const gameDate = new Intl.DateTimeFormat("en-CA", {
-        timeZone: "America/Los_Angeles",
-      }).format(new Date(game.gameTime));
-      const firstDate = firstDateByLeague.get(game.league);
-      if (!firstDate) {
-        firstDateByLeague.set(game.league, gameDate);
-        return true;
-      }
-      return firstDate === gameDate;
-    });
-
-    return dedupeGames([...todayGames, ...nextSlates]);
+    // Open the complete upcoming football week for early picks, plus announced
+    // WBC events. Qualification is still evaluated on each game's Pacific day.
+    return dedupeGames([...todayGames, ...upcomingFeaturedEvents]);
   }
 
   async getGame(id: number): Promise<Game | null> {
