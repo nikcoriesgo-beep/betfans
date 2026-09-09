@@ -242,6 +242,7 @@ export async function runStartupMigration() {
       // Ensure certified_expert column exists (added Aug 2026)
       await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS certified_expert BOOLEAN DEFAULT FALSE`);
       await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS paypal_sender_email TEXT`);
+      await client.query(`ALTER TABLE games ADD COLUMN IF NOT EXISTS is_top_25 BOOLEAN DEFAULT FALSE`);
       // Ensure site_settings table exists (added Aug 2026 for DB-driven announcements)
       await client.query(`
         CREATE TABLE IF NOT EXISTS site_settings (

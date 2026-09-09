@@ -739,7 +739,7 @@ export async function registerRoutes(
         db.select({ id: games.id, homeTeam: games.homeTeam, awayTeam: games.awayTeam, gameTime: games.gameTime }).from(games).where(sql`${games.league} = 'MLB' AND ${games.gameTime} >= ${start} AND ${games.gameTime} < ${end} AND ${games.status} != 'postponed'`),
         db.select({ id: games.id, homeTeam: games.homeTeam, awayTeam: games.awayTeam, gameTime: games.gameTime }).from(games).where(sql`${games.league} = 'NBA' AND ${games.gameTime} >= ${start} AND ${games.gameTime} < ${end} AND ${games.status} != 'postponed'`),
         db.select({ id: games.id, homeTeam: games.homeTeam, awayTeam: games.awayTeam, gameTime: games.gameTime }).from(games).where(sql`${games.league} = 'NHL' AND ${games.gameTime} >= ${start} AND ${games.gameTime} < ${end} AND ${games.status} != 'postponed'`),
-        db.select({ id: games.id, homeTeam: games.homeTeam, awayTeam: games.awayTeam, gameTime: games.gameTime }).from(games).where(sql`${games.league} = 'NCAAF' AND ${games.gameTime} >= ${start} AND ${games.gameTime} < ${end} AND ${games.status} != 'postponed'`),
+        db.select({ id: games.id, homeTeam: games.homeTeam, awayTeam: games.awayTeam, gameTime: games.gameTime }).from(games).where(sql`${games.league} = 'NCAAF' AND COALESCE(${games.isTop25}, FALSE) AND ${games.gameTime} >= ${start} AND ${games.gameTime} < ${end} AND ${games.status} != 'postponed'`),
         db.select({ id: games.id, homeTeam: games.homeTeam, awayTeam: games.awayTeam, gameTime: games.gameTime }).from(games).where(sql`${games.league} = 'NFL' AND ${games.gameTime} >= ${start} AND ${games.gameTime} < ${end} AND ${games.status} != 'postponed'`),
         db.select({ id: games.id, homeTeam: games.homeTeam, awayTeam: games.awayTeam, gameTime: games.gameTime }).from(games).where(sql`${games.league} = 'BOXING' AND ${games.gameTime} >= ${start} AND ${games.gameTime} < ${end} AND ${games.status} != 'postponed'`),
       ]);
@@ -786,6 +786,7 @@ export async function registerRoutes(
         const candidateGames = await db.select().from(games).where(
           sql`${games.gameTime} >= ${start} AND ${games.gameTime} < ${end}
               AND ${games.status} != 'postponed'
+              AND (${games.league} != 'NCAAF' OR COALESCE(${games.isTop25}, FALSE))
               AND ${games.league} IN ('MLB','NBA','NHL','FIFA_WC','EPL','UCL','NCAABB','NCAAF','NFL','BOXING')`
         );
 

@@ -186,11 +186,11 @@ export class DatabaseStorage implements IStorage {
     let rows: Game[];
     if (league && league !== "ALL") {
       rows = await db.select().from(games)
-        .where(and(eq(games.league, league), sql`${games.gameTime} >= ${cutoff} AND ${games.gameTime} < ${nextCutoff} AND ${games.status} != 'postponed'`))
+        .where(and(eq(games.league, league), sql`${games.gameTime} >= ${cutoff} AND ${games.gameTime} < ${nextCutoff} AND ${games.status} != 'postponed' AND (${games.league} != 'NCAAF' OR COALESCE(${games.isTop25}, FALSE))`))
         .orderBy(asc(games.gameTime));
     } else {
       rows = await db.select().from(games)
-        .where(sql`${games.gameTime} >= ${cutoff} AND ${games.gameTime} < ${nextCutoff} AND ${games.status} != 'postponed'`)
+        .where(sql`${games.gameTime} >= ${cutoff} AND ${games.gameTime} < ${nextCutoff} AND ${games.status} != 'postponed' AND (${games.league} != 'NCAAF' OR COALESCE(${games.isTop25}, FALSE))`)
         .orderBy(asc(games.gameTime));
     }
     // Deduplicate: protect against exact-duplicate DB rows (same game inserted twice).
@@ -213,7 +213,8 @@ export class DatabaseStorage implements IStorage {
           (${games.league} IN ('NFL', 'NCAAF') AND ${games.gameTime} < ${footballHorizon})
           OR (${games.league} = 'BOXING' AND ${games.gameTime} < ${boxingHorizon})
         )
-        AND ${games.status} != 'postponed'`)
+        AND ${games.status} != 'postponed'
+        AND (${games.league} != 'NCAAF' OR COALESCE(${games.isTop25}, FALSE))`)
       .orderBy(asc(games.gameTime));
 
     // Open the complete upcoming football week for early picks, plus announced

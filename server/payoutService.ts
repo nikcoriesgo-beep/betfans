@@ -70,6 +70,7 @@ async function computeScorecardForPeriod(periodStart: Date, periodEnd: Date, log
   const dayGamesRaw = await db.select().from(games).where(
     sql`${games.gameTime} >= ${periodStart} AND ${games.gameTime} < ${periodEnd}
         AND ${games.status} != 'postponed'
+        AND (${games.league} != 'NCAAF' OR COALESCE(${games.isTop25}, FALSE))
         AND ${games.league} IN ('MLB','NBA','NHL','FIFA_WC','EPL','UCL','NCAABB','NCAAF','NFL','BOXING')`
   );
 

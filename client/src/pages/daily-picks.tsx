@@ -49,7 +49,7 @@ const LEAGUE_ICON: Record<string, string> = {
 const LEAGUE_LABEL: Record<string, string> = {
   All: "All Sports",
   MLB: "Baseball",
-  NCAAF: "College FBS",
+  NCAAF: "College FBS Top 25",
   NFL: "Pro Football",
   NHL: "Hockey",
   NBA: "Basketball",

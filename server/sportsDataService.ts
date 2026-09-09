@@ -25,6 +25,7 @@ interface ESPNEvent {
       homeAway: string;
       team: { displayName: string; abbreviation: string };
       score?: string;
+      curatedRank?: { current?: number };
     }>;
     odds?: Array<{
       details?: string;
@@ -374,6 +375,12 @@ async function fetchLeagueGames(league: string): Promise<any[]> {
 
       const homeTeam = homeComp.team.displayName;
       const awayTeam = awayComp.team.displayName;
+      const homeRank = homeComp.curatedRank?.current;
+      const awayRank = awayComp.curatedRank?.current;
+      const isTop25 = league === "NCAAF" &&
+        ((typeof homeRank === "number" && homeRank >= 1 && homeRank <= 25) ||
+         (typeof awayRank === "number" && awayRank >= 1 && awayRank <= 25));
+      if (league === "NCAAF" && !isTop25) continue;
       const status = mapStatus(event.status.type.state, event.status.type.name);
       const homeScore = homeComp.score ? parseInt(homeComp.score) : null;
       const awayScore = awayComp.score ? parseInt(awayComp.score) : null;
@@ -405,6 +412,7 @@ async function fetchLeagueGames(league: string): Promise<any[]> {
         spiderPick: spider.pick,
         spiderConfidence: spider.confidence,
         isProLocked: spider.isProLocked,
+        isTop25,
       });
     }
     return results;
@@ -753,6 +761,14 @@ export async function syncSportsData(): Promise<{ synced: number; leagues: strin
     const liveGames = await fetchLeagueGames(league);
     if (liveGames.length === 0) continue;
 
+    // Rankings change weekly. Reset future FBS rows after a successful ESPN
+    // fetch, then mark only the current Top 25 matchups below.
+    if (league === "NCAAF") {
+      await db.update(games)
+        .set({ isTop25: false })
+        .where(sql`${games.league} = 'NCAAF' AND ${games.status} IN ('upcoming', 'live')`);
+    }
+
     for (const game of liveGames) {
       // Find all DB records for this matchup on the same PST date
       const allSameDay = await db
@@ -806,6 +822,7 @@ export async function syncSportsData(): Promise<{ synced: number; leagues: strin
           spiderPick: game.spiderPick,
           spiderConfidence: game.spiderConfidence,
           isProLocked: game.isProLocked,
+          isTop25: game.isTop25,
         }).where(eq(games.id, prev.id));
 
         if (
@@ -850,6 +867,7 @@ export async function syncSportsData(): Promise<{ synced: number; leagues: strin
             awayScore: game.status === "upcoming" ? null : game.awayScore,
             spiderPick: game.spiderPick,
             spiderConfidence: game.spiderConfidence,
+            isTop25: game.isTop25,
           }).where(eq(games.id, existingId));
         } else {
           const inserted = await db.insert(games).values(game).onConflictDoNothing().returning({ id: games.id });

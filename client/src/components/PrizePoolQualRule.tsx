@@ -14,7 +14,7 @@ export function PrizePoolQualRule({ compact = false, className }: Props) {
         <div>
           <p className="text-xs text-yellow-100/90 leading-relaxed">
             <span className="font-black text-yellow-300">Prize Pool Rule: </span>
-            You must pick <strong className="text-yellow-200">every MLB, NBA, NHL, NFL, NCAA FBS & WBC Boxing event</strong> scheduled that day to qualify for payouts. Missing even one required event disqualifies you.
+            You must pick <strong className="text-yellow-200">every MLB, NBA, NHL, NFL, NCAA FBS Top 25 & WBC Boxing event</strong> scheduled that day to qualify for payouts. Missing even one required event disqualifies you.
           </p>
           <p className="mt-1.5 text-xs text-yellow-300/50">* All members must predict over 2,000 MLB games to qualify for the annual prize pool payout.</p>
         </div>
@@ -34,7 +34,7 @@ export function PrizePoolQualRule({ compact = false, className }: Props) {
           <ul className="space-y-1.5 text-sm text-yellow-100/90">
             <li className="flex items-center gap-2">
               <CheckCircle2 size={14} className="text-yellow-400 shrink-0" />
-              Pick <strong className="text-yellow-200">every MLB, NBA, NHL, NFL, NCAA FBS & WBC Boxing event</strong> scheduled that day
+              Pick <strong className="text-yellow-200">every MLB, NBA, NHL, NFL, NCAA FBS Top 25 & WBC Boxing event</strong> scheduled that day
             </li>
             <li className="flex items-center gap-2">
               <CheckCircle2 size={14} className="text-yellow-400 shrink-0" />
