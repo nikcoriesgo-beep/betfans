@@ -70,7 +70,7 @@ async function computeScorecardForPeriod(periodStart: Date, periodEnd: Date, log
   const dayGamesRaw = await db.select().from(games).where(
     sql`${games.gameTime} >= ${periodStart} AND ${games.gameTime} < ${periodEnd}
         AND ${games.status} != 'postponed'
-        AND ${games.league} IN ('MLB','NBA','NHL','FIFA_WC','EPL','UCL','NCAABB','NCAAF','NFL')`
+        AND ${games.league} IN ('MLB','NBA','NHL','FIFA_WC','EPL','UCL','NCAABB','NCAAF','NFL','BOXING')`
   );
 
   // Deduplicate by (league, homeTeam, awayTeam)
@@ -93,6 +93,7 @@ async function computeScorecardForPeriod(periodStart: Date, periodEnd: Date, log
   const ncaabbMatchups = [...matchupGroups.entries()].filter(([k]) => k.startsWith("NCAABB|"));
   const ncaafMatchups  = [...matchupGroups.entries()].filter(([k]) => k.startsWith("NCAAF|"));
   const nflMatchups    = [...matchupGroups.entries()].filter(([k]) => k.startsWith("NFL|"));
+  const boxingMatchups = [...matchupGroups.entries()].filter(([k]) => k.startsWith("BOXING|"));
 
   log(`Scorecard: ${mlbMatchups.length} MLB, ${ncaafMatchups.length} NCAAF, ${nflMatchups.length} NFL, ${nbaMatchups.length} NBA, ${nhlMatchups.length} NHL, ${wcMatchups.length} FIFA_WC, ${eplMatchups.length} EPL, ${uclMatchups.length} UCL, ${ncaabbMatchups.length} NCAABB games (${matchupGroups.size} total)`);
 
@@ -131,20 +132,23 @@ async function computeScorecardForPeriod(periodStart: Date, periodEnd: Date, log
     const ncaabb = forSport(ncaabbMatchups);
     const ncaaf  = forSport(ncaafMatchups);
     const nfl    = forSport(nflMatchups);
-    const totalWins   = mlb.wins   + ncaaf.wins   + nfl.wins   + nba.wins   + nhl.wins   + wc.wins   + epl.wins   + ucl.wins   + ncaabb.wins;
-    const totalLosses = mlb.losses + ncaaf.losses + nfl.losses + nba.losses + nhl.losses + wc.losses + epl.losses + ucl.losses + ncaabb.losses;
-    const totalPicks  = mlb.picks  + ncaaf.picks  + nfl.picks  + nba.picks  + nhl.picks  + wc.picks  + epl.picks  + ucl.picks  + ncaabb.picks;
-    // NFL is required whenever games are scheduled in this Pacific-day payout
-    // period. NCAA FBS and the other bonus sports remain optional Skill Play.
+    const boxing = forSport(boxingMatchups);
+    const totalWins   = mlb.wins   + ncaaf.wins   + nfl.wins   + boxing.wins   + nba.wins   + nhl.wins   + wc.wins   + epl.wins   + ucl.wins   + ncaabb.wins;
+    const totalLosses = mlb.losses + ncaaf.losses + nfl.losses + boxing.losses + nba.losses + nhl.losses + wc.losses + epl.losses + ucl.losses + ncaabb.losses;
+    const totalPicks  = mlb.picks  + ncaaf.picks  + nfl.picks  + boxing.picks  + nba.picks  + nhl.picks  + wc.picks  + epl.picks  + ucl.picks  + ncaabb.picks;
+    // NFL, NCAA FBS, and WBC Boxing are required whenever scheduled in this
+    // Pacific-day payout period. Other bonus sports remain optional Skill Play.
     const qualified =
       mlb.picks >= mlbMatchups.length &&
       (nbaMatchups.length === 0 || nba.picks >= nbaMatchups.length) &&
       (nhlMatchups.length === 0 || nhl.picks >= nhlMatchups.length) &&
-      (nflMatchups.length === 0 || nfl.picks >= nflMatchups.length);
+      (ncaafMatchups.length === 0 || ncaaf.picks >= ncaafMatchups.length) &&
+      (nflMatchups.length === 0 || nfl.picks >= nflMatchups.length) &&
+      (boxingMatchups.length === 0 || boxing.picks >= boxingMatchups.length);
     return { userId: u.id, user: u, wins: totalWins, losses: totalLosses, totalPicks, qualified };
   });
 
-  return { memberRows, mlbCount: mlbMatchups.length, ncaafCount: ncaafMatchups.length, nflCount: nflMatchups.length, nbaCount: nbaMatchups.length, nhlCount: nhlMatchups.length, wcCount: wcMatchups.length, eplCount: eplMatchups.length, uclCount: uclMatchups.length, ncaabbCount: ncaabbMatchups.length, totalCount: matchupGroups.size };
+  return { memberRows, mlbCount: mlbMatchups.length, ncaafCount: ncaafMatchups.length, nflCount: nflMatchups.length, boxingCount: boxingMatchups.length, nbaCount: nbaMatchups.length, nhlCount: nhlMatchups.length, wcCount: wcMatchups.length, eplCount: eplMatchups.length, uclCount: uclMatchups.length, ncaabbCount: ncaabbMatchups.length, totalCount: matchupGroups.size };
 }
 
 async function processDailyPayout(

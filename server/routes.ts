@@ -735,12 +735,13 @@ export async function registerRoutes(
       const [y, m, d] = pstDateStr.split("-").map(Number);
       const start = new Date(Date.UTC(y, m - 1, d, 8, 0, 0, 0));     // today midnight PST
       const end   = new Date(Date.UTC(y, m - 1, d + 1, 8, 0, 0, 0)); // tomorrow midnight PST
-      const [mlbGames, nbaGames, nhlGames, ncaafGames, nflGames] = await Promise.all([
+      const [mlbGames, nbaGames, nhlGames, ncaafGames, nflGames, boxingGames] = await Promise.all([
         db.select({ id: games.id, homeTeam: games.homeTeam, awayTeam: games.awayTeam, gameTime: games.gameTime }).from(games).where(sql`${games.league} = 'MLB' AND ${games.gameTime} >= ${start} AND ${games.gameTime} < ${end} AND ${games.status} != 'postponed'`),
         db.select({ id: games.id, homeTeam: games.homeTeam, awayTeam: games.awayTeam, gameTime: games.gameTime }).from(games).where(sql`${games.league} = 'NBA' AND ${games.gameTime} >= ${start} AND ${games.gameTime} < ${end} AND ${games.status} != 'postponed'`),
         db.select({ id: games.id, homeTeam: games.homeTeam, awayTeam: games.awayTeam, gameTime: games.gameTime }).from(games).where(sql`${games.league} = 'NHL' AND ${games.gameTime} >= ${start} AND ${games.gameTime} < ${end} AND ${games.status} != 'postponed'`),
         db.select({ id: games.id, homeTeam: games.homeTeam, awayTeam: games.awayTeam, gameTime: games.gameTime }).from(games).where(sql`${games.league} = 'NCAAF' AND ${games.gameTime} >= ${start} AND ${games.gameTime} < ${end} AND ${games.status} != 'postponed'`),
         db.select({ id: games.id, homeTeam: games.homeTeam, awayTeam: games.awayTeam, gameTime: games.gameTime }).from(games).where(sql`${games.league} = 'NFL' AND ${games.gameTime} >= ${start} AND ${games.gameTime} < ${end} AND ${games.status} != 'postponed'`),
+        db.select({ id: games.id, homeTeam: games.homeTeam, awayTeam: games.awayTeam, gameTime: games.gameTime }).from(games).where(sql`${games.league} = 'BOXING' AND ${games.gameTime} >= ${start} AND ${games.gameTime} < ${end} AND ${games.status} != 'postponed'`),
       ]);
       // Deduplicate using time-bucket so doubleheaders (same matchup at different times) each count
       const dedup = (list: { homeTeam: string; awayTeam: string; gameTime: Date | null }[]) =>
@@ -753,10 +754,10 @@ export async function registerRoutes(
       const nhlCount = dedup(nhlGames);
       const ncaafCount = dedup(ncaafGames);
       const nflCount = dedup(nflGames);
-      // Every NFL game scheduled in the Pacific-day payout window is required.
-      // NCAA FBS remains optional Skill Play.
-      const count = mlbCount + nbaCount + nhlCount + nflCount;
-      res.json({ count, mlbCount, nbaCount, nhlCount, ncaafCount, nflCount, fbsRequired: false, nflRequired: true, periodStart: start, periodEnd: end });
+      const boxingCount = dedup(boxingGames);
+      // Every NFL, NCAA FBS, and WBC Boxing event in the Pacific-day payout window is required.
+      const count = mlbCount + nbaCount + nhlCount + ncaafCount + nflCount + boxingCount;
+      res.json({ count, mlbCount, nbaCount, nhlCount, ncaafCount, nflCount, boxingCount, fbsRequired: true, nflRequired: true, boxingRequired: true, periodStart: start, periodEnd: end });
     } catch (e) {
       res.json({ count: 0 });
     }
@@ -785,7 +786,7 @@ export async function registerRoutes(
         const candidateGames = await db.select().from(games).where(
           sql`${games.gameTime} >= ${start} AND ${games.gameTime} < ${end}
               AND ${games.status} != 'postponed'
-              AND ${games.league} IN ('MLB','NBA','NHL','FIFA_WC','EPL','UCL','NCAABB','NCAAF','NFL')`
+              AND ${games.league} IN ('MLB','NBA','NHL','FIFA_WC','EPL','UCL','NCAABB','NCAAF','NFL','BOXING')`
         );
 
         // Check if any of these games are finished (graded)
@@ -821,6 +822,7 @@ export async function registerRoutes(
       const ncaabbMatchups = [...matchupGroups.entries()].filter(([k]) => k.startsWith("NCAABB|"));
       const ncaafMatchups  = [...matchupGroups.entries()].filter(([k]) => k.startsWith("NCAAF|"));
       const nflMatchups    = [...matchupGroups.entries()].filter(([k]) => k.startsWith("NFL|"));
+      const boxingMatchups = [...matchupGroups.entries()].filter(([k]) => k.startsWith("BOXING|"));
 
       const allDayIds = dayGamesRaw.map(g => g.id);
 
@@ -862,19 +864,22 @@ export async function registerRoutes(
         const ncaabb = forSport(ncaabbMatchups);
         const ncaaf  = forSport(ncaafMatchups);
         const nfl    = forSport(nflMatchups);
+        const boxing = forSport(boxingMatchups);
         const total = {
-          picks:   mlb.picks   + ncaaf.picks   + nfl.picks   + nba.picks   + nhl.picks   + wc.picks   + epl.picks   + ucl.picks   + ncaabb.picks,
-          wins:    mlb.wins    + ncaaf.wins    + nfl.wins    + nba.wins    + nhl.wins    + wc.wins    + epl.wins    + ucl.wins    + ncaabb.wins,
-          losses:  mlb.losses  + ncaaf.losses  + nfl.losses  + nba.losses  + nhl.losses  + wc.losses  + epl.losses  + ucl.losses  + ncaabb.losses,
-          pending: mlb.pending + ncaaf.pending + nfl.pending + nba.pending + nhl.pending + wc.pending + epl.pending + ucl.pending + ncaabb.pending,
+          picks:   mlb.picks   + ncaaf.picks   + nfl.picks   + boxing.picks   + nba.picks   + nhl.picks   + wc.picks   + epl.picks   + ucl.picks   + ncaabb.picks,
+          wins:    mlb.wins    + ncaaf.wins    + nfl.wins    + boxing.wins    + nba.wins    + nhl.wins    + wc.wins    + epl.wins    + ucl.wins    + ncaabb.wins,
+          losses:  mlb.losses  + ncaaf.losses  + nfl.losses  + boxing.losses  + nba.losses  + nhl.losses  + wc.losses  + epl.losses  + ucl.losses  + ncaabb.losses,
+          pending: mlb.pending + ncaaf.pending + nfl.pending + boxing.pending + nba.pending + nhl.pending + wc.pending + epl.pending + ucl.pending + ncaabb.pending,
         };
-        // NFL is required whenever games are scheduled that Pacific day.
-        // NCAA FBS, FIFA_WC, EPL, and NCAABB remain optional Skill Play.
+        // NFL, NCAA FBS, and WBC Boxing are required whenever scheduled that Pacific day.
+        // FIFA_WC, EPL, UCL, and NCAABB remain optional Skill Play.
         const qualified =
           mlb.picks >= mlbMatchups.length &&
           (nbaMatchups.length === 0 || nba.picks >= nbaMatchups.length) &&
           (nhlMatchups.length === 0 || nhl.picks >= nhlMatchups.length) &&
-          (nflMatchups.length === 0 || nfl.picks >= nflMatchups.length);
+          (ncaafMatchups.length === 0 || ncaaf.picks >= ncaafMatchups.length) &&
+          (nflMatchups.length === 0 || nfl.picks >= nflMatchups.length) &&
+          (boxingMatchups.length === 0 || boxing.picks >= boxingMatchups.length);
 
         // Pick submission timestamps in PST
         const pickTimes = myPreds
