@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import { PrizePoolQualRule } from "@/components/PrizePoolQualRule";
+import { PicksSessionRecovery } from "@/components/PicksSessionRecovery";
 import { Navbar } from "@/components/layout/Navbar";
 import { AdBannerInline } from "@/components/AdBanner";
 import { Card, CardContent } from "@/components/ui/card";
@@ -116,6 +117,7 @@ export default function DailyPicks() {
   const { toast } = useToast();
   const [league, setLeague] = useState("All");
   const [drafts, setDrafts] = useState<Record<number, DraftPick>>({});
+  const [recoveryUserId, setRecoveryUserId] = useState<string | null>(null);
 
   const isFounder = user?.referralCode === FOUNDER_CODE;
 
@@ -145,16 +147,26 @@ export default function DailyPicks() {
     mutationFn: async (picks: DraftPick[]) => {
       for (const p of picks) {
         await apiRequest("POST", "/api/predictions", { ...p, odds: null, units: 1 });
+        setDrafts(current => {
+          const remaining = { ...current };
+          delete remaining[p.gameId];
+          return remaining;
+        });
       }
+      return picks.length;
     },
-    onSuccess: () => {
+    onSuccess: (count) => {
       qc.invalidateQueries({ queryKey: ["/api/predictions"] });
       setDrafts({});
-      toast({ title: `${Object.keys(drafts).length} picks locked in!`, description: "Results update automatically when games finish." });
+      toast({ title: `${count} picks locked in!`, description: "Results update automatically when games finish." });
     },
     onError: (e: any) => {
       const msg: string = e.message || "";
-      if (msg.includes("reload") || msg.includes("refreshed")) {
+      qc.invalidateQueries({ queryKey: ["/api/predictions"] });
+      if (msg.startsWith("401:")) {
+        setRecoveryUserId(user?.id || null);
+        toast({ title: "Please sign in again", description: "Your remaining selections have been kept." });
+      } else if (msg.includes("reload") || msg.includes("refreshed")) {
         qc.invalidateQueries({ queryKey: DAILY_PICKS_GAMES_KEY });
         toast({ title: "Game list updated", description: "Your picks have been cleared — please reselect and resubmit.", variant: "destructive" });
         setDrafts({});
@@ -202,6 +214,11 @@ export default function DailyPicks() {
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
+      <PicksSessionRecovery open={!!recoveryUserId} expectedUserId={recoveryUserId} onRecovered={() => {
+        setRecoveryUserId(null);
+        qc.invalidateQueries({ queryKey: ["/api/auth/user"] });
+        qc.invalidateQueries({ queryKey: ["/api/predictions"] });
+      }} />
       <div className={cn("container mx-auto px-4 pt-24 max-w-5xl", draftCount > 0 ? "pb-32" : "pb-16")}>
 
         <div className="relative mb-8 overflow-hidden rounded-2xl bg-gradient-to-br from-primary/10 via-card/60 to-blue-900/20 border border-white/5 p-6 md:p-10">

@@ -18,15 +18,18 @@ export function setupAuth(app: Express) {
     secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
+    rolling: true,
     store: new PgStore({
       conString: process.env.DATABASE_URL,
       createTableIfMissing: true,
       tableName: "sessions",
+      ttl: 30 * 24 * 60 * 60,
     }),
     cookie: {
       httpOnly: true,
       secure: true,
       sameSite: "lax",
+      maxAge: 30 * 24 * 60 * 60 * 1000,
     },
   };
 
