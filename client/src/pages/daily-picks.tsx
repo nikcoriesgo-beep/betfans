@@ -77,8 +77,8 @@ const LEAGUE_ACTIVE_STYLE: Record<string, string> = {
   NCAABB: "border-yellow-500 bg-yellow-500/10 text-yellow-300",
 };
 
-// Skill play leagues do NOT count toward prize pool eligibility
-const SKILL_PLAY_LEAGUES = new Set(["MLS", "EPL", "UCL", "NCAABB"]);
+// Only MLB, NFL, and FBS Top 25 count toward Prize Pool eligibility.
+const PRIZE_POOL_LEAGUES = new Set(["MLB", "NFL", "NCAAF"]);
 
 function isToday(dateStr: string) {
   const format = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" });
@@ -372,9 +372,13 @@ export default function DailyPicks() {
                       <div className="flex items-center gap-2">
                         <Badge className={cn("text-[10px]", LEAGUE_COLORS[game.league] || "bg-foreground/10 text-foreground/60")}>{game.league}</Badge>
                         <StatusBadge status={game.status || "upcoming"} />
-                        {SKILL_PLAY_LEAGUES.has(game.league) && (
+                        {PRIZE_POOL_LEAGUES.has(game.league) ? (
+                          <Badge className="bg-yellow-500/20 text-yellow-700 border-yellow-500/30 text-[9px] gap-0.5">
+                            <Trophy size={8} />PRIZE POOL REQUIRED
+                          </Badge>
+                        ) : (
                           <Badge className="bg-purple-500/20 text-purple-700 border-purple-500/30 text-[9px] gap-0.5">
-                            <Sparkles size={8} />SKILL PLAY
+                            <Sparkles size={8} />OPTIONAL SKILL PLAY
                           </Badge>
                         )}
                       </div>

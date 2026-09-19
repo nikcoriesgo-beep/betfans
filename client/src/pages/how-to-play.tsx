@@ -241,7 +241,7 @@ export default function HowToPlay() {
               {[
                 {
                   title: "Daily Leaderboard",
-                  desc: "Resets each day. Yesterday's picks count — perfect for consistent daily players.",
+                  desc: "Resets each day. Pick every MLB, NFL & NCAA FBS Top 25 game scheduled that day to qualify — top qualifying predictor wins 10% of the prize pool.",
                   icon: Zap,
                   gradient: "from-emerald-500 to-teal-500",
                 },
@@ -284,11 +284,11 @@ export default function HowToPlay() {
               <ul className="space-y-2 text-sm text-yellow-100/90">
                 <li className="flex items-start gap-2">
                   <CheckCircle2 size={16} className="text-yellow-400 mt-0.5 shrink-0" />
-                  <span><strong className="text-yellow-200">Pick every MLB game</strong> each day — MLB picks only count toward the prize pool</span>
+                  <span><strong className="text-yellow-200">Pick every MLB, NFL & NCAA FBS Top 25 game</strong> scheduled that day — only these sports count toward the prize pool</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <CheckCircle2 size={16} className="text-yellow-400 mt-0.5 shrink-0" />
-                  <span><strong className="text-yellow-200">No exceptions</strong> — miss one game and you're disqualified from that day's payout</span>
+                  <span><strong className="text-yellow-200">Other sports are optional Skill Play</strong> — they count toward ordinary rankings, not the prize pool</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <CheckCircle2 size={16} className="text-yellow-400 mt-0.5 shrink-0" />

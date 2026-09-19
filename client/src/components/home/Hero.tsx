@@ -11,10 +11,17 @@ function HeroAnnouncements() {
     queryFn: () => fetch("/api/site-settings").then(r => r.json()),
     staleTime: 60000,
   });
-  const announcements: string[] = settings?.announcements ? JSON.parse(settings.announcements) : [
-    "All NFL 2026™, NCAA Division I FBS Top 25™, and WBC Boxing events scheduled for the Pacific payout day must be selected for daily Prize Pool qualification.",
+  const configuredAnnouncements: string[] = settings?.announcements ? JSON.parse(settings.announcements) : [
     "Premier League 2026™ games are now available as Skill Play picks. They count toward rankings but are not required for Prize Pool qualification.",
     "Champions League 2026™ games are available with Spider AI picks as Skill Play. They count toward rankings but are not required for Prize Pool qualification.",
+  ];
+  const announcements = [
+    "All MLB, NFL, and NCAA Division I FBS Top 25 events scheduled for the Pacific payout day must be selected for daily Prize Pool qualification.",
+    "NBA, NHL, WBC Boxing, and all other sports are optional Skill Play. They count toward rankings, not Prize Pool qualification.",
+    ...configuredAnnouncements.filter(text =>
+      !/must be selected for daily prize pool qualification/i.test(text) &&
+      !/pick every mlb, nba/i.test(text)
+    ),
   ];
   if (!announcements.length) return null;
   return (

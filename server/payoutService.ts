@@ -71,13 +71,14 @@ async function computeScorecardForPeriod(periodStart: Date, periodEnd: Date, log
     sql`${games.gameTime} >= ${periodStart} AND ${games.gameTime} < ${periodEnd}
         AND ${games.status} != 'postponed'
         AND (${games.league} != 'NCAAF' OR COALESCE(${games.isTop25}, FALSE))
-        AND ${games.league} IN ('MLB','NBA','NHL','FIFA_WC','EPL','UCL','NCAABB','NCAAF','NFL','BOXING')`
+        AND ${games.league} IN ('MLB','NCAAF','NFL')`
   );
 
-  // Deduplicate by (league, homeTeam, awayTeam)
+  // Deduplicate provider duplicates while preserving same-day doubleheaders.
   const matchupGroups = new Map<string, MatchupGroup>();
   for (const g of dayGamesRaw) {
-    const key = `${g.league}|${g.homeTeam}|${g.awayTeam}`;
+    const bucket = Math.round(new Date(g.gameTime!).getTime() / (90 * 60 * 1000));
+    const key = `${g.league}|${g.homeTeam}|${g.awayTeam}|${bucket}`;
     if (!matchupGroups.has(key)) {
       matchupGroups.set(key, { canonicalId: g.id, allIds: new Set([g.id]), league: g.league });
     } else {
@@ -134,18 +135,14 @@ async function computeScorecardForPeriod(periodStart: Date, periodEnd: Date, log
     const ncaaf  = forSport(ncaafMatchups);
     const nfl    = forSport(nflMatchups);
     const boxing = forSport(boxingMatchups);
-    const totalWins   = mlb.wins   + ncaaf.wins   + nfl.wins   + boxing.wins   + nba.wins   + nhl.wins   + wc.wins   + epl.wins   + ucl.wins   + ncaabb.wins;
-    const totalLosses = mlb.losses + ncaaf.losses + nfl.losses + boxing.losses + nba.losses + nhl.losses + wc.losses + epl.losses + ucl.losses + ncaabb.losses;
-    const totalPicks  = mlb.picks  + ncaaf.picks  + nfl.picks  + boxing.picks  + nba.picks  + nhl.picks  + wc.picks  + epl.picks  + ucl.picks  + ncaabb.picks;
-    // NFL, NCAA FBS, and WBC Boxing are required whenever scheduled in this
-    // Pacific-day payout period. Other bonus sports remain optional Skill Play.
+    const totalWins   = mlb.wins + ncaaf.wins + nfl.wins;
+    const totalLosses = mlb.losses + ncaaf.losses + nfl.losses;
+    const totalPicks  = mlb.picks + ncaaf.picks + nfl.picks;
+    // Optional Skill Play never affects prize qualification or winner selection.
     const qualified =
       mlb.picks >= mlbMatchups.length &&
-      (nbaMatchups.length === 0 || nba.picks >= nbaMatchups.length) &&
-      (nhlMatchups.length === 0 || nhl.picks >= nhlMatchups.length) &&
       (ncaafMatchups.length === 0 || ncaaf.picks >= ncaafMatchups.length) &&
-      (nflMatchups.length === 0 || nfl.picks >= nflMatchups.length) &&
-      (boxingMatchups.length === 0 || boxing.picks >= boxingMatchups.length);
+      (nflMatchups.length === 0 || nfl.picks >= nflMatchups.length);
     return { userId: u.id, user: u, wins: totalWins, losses: totalLosses, totalPicks, qualified };
   });
 
@@ -180,7 +177,7 @@ async function processDailyPayout(
     return { paid: 0, skipped: 0, detail: `No picks recorded for daily ${periodLabel}` };
   }
 
-  log(`Required: all ${totalCount} MLB+NBA+NHL games. Members scored: ${memberRows.length}`);
+  log(`Required: all ${totalCount} MLB+NFL+Top 25 FBS games. Members scored: ${memberRows.length}`);
 
   const eligible = memberRows.filter(m => {
     const tier = m.user?.membershipTier;

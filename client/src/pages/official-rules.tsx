@@ -191,11 +191,11 @@ export default function OfficialRules() {
               <p>To be eligible for a daily prize pool distribution, a member must satisfy ALL of the following conditions on that calendar day:</p>
               <BulletList items={[
                 "Submit a prediction on EVERY scheduled MLB game for that day, AND",
-                "Submit a prediction on EVERY scheduled NBA game for that day, AND",
-                "Submit a prediction on EVERY scheduled NHL game for that day.",
+                "Submit a prediction on EVERY scheduled NFL game for that day, AND",
+                "Submit a prediction on EVERY scheduled NCAA Division I FBS Top 25 game for that day.",
               ]} />
               <p className="font-semibold text-foreground">Missing even one (1) game across any of the three required sports on a given day will result in disqualification from that day's prize pool distribution. There are NO exceptions to this requirement.</p>
-              <p className="italic">Note: This requirement applies only during the active seasons of each respective league.</p>
+              <p className="italic">Note: This requirement applies only during the active seasons of each respective league. NBA, NHL, WBC Boxing, and all other sports are optional Skill Play for ordinary rankings and do not count toward Prize Pool qualification.</p>
             </Sub>
             <Sub id="5-2" title="5.2 Prediction Confirmation">
               <p>It is the member's sole responsibility to confirm that all required predictions have been submitted and recorded by the Platform prior to each game's lock time. BetFans recommends that members verify submission confirmation messages.</p>

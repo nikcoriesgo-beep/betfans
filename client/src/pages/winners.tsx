@@ -26,6 +26,11 @@ type PrizePoolData = {
 
 const DAILY_POOL_SHARE = 0.10;
 
+function prizePoolRecord(entry: any) {
+  return (entry?.prizePoolTotal && typeof entry.prizePoolTotal === "object")
+    ? entry.prizePoolTotal
+    : entry?.total ?? { wins: entry?.wins ?? 0, losses: entry?.losses ?? 0, picks: entry?.picks ?? 0 };
+}
 
 const tierConfig: Record<string, { label: string; color: string; bg: string; border: string; icon: any }> = {
   legend: { label: "Legend", color: "text-purple-400", bg: "bg-purple-600/20", border: "border-purple-500/30", icon: Crown },
@@ -39,8 +44,9 @@ function TierBadge({ tier }: { tier: string | null }) {
 
 function WinnerCard({ entry, payout, accentClass }: { entry: any; payout: number; accentClass: string }) {
   const name = entry.name || "Member";
-  const wins = entry.total?.wins ?? entry.wins ?? 0;
-  const losses = entry.total?.losses ?? entry.losses ?? 0;
+  const prizeRecord = prizePoolRecord(entry);
+  const wins = prizeRecord.wins;
+  const losses = prizeRecord.losses;
   const avatar = entry.avatar || entry.user?.profileImageUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${entry.userId}`;
   const tier = entry.tier || entry.user?.membershipTier;
 
@@ -191,11 +197,11 @@ function DailyWinners({ poolAmount }: { poolAmount: number }) {
   const rawMembers: any[] = scorecard?.members ?? [];
   const sorted = [...rawMembers]
     .filter((m: any) => m.qualified)
-    .sort((a: any, b: any) => b.total.wins - a.total.wins || a.total.losses - b.total.losses);
-  const topWins = sorted[0]?.total.wins;
-  const topLosses = sorted[0]?.total.losses;
+    .sort((a: any, b: any) => prizePoolRecord(b).wins - prizePoolRecord(a).wins || prizePoolRecord(a).losses - prizePoolRecord(b).losses);
+  const topWins = prizePoolRecord(sorted[0]).wins;
+  const topLosses = prizePoolRecord(sorted[0]).losses;
   const winners = sorted.length > 0
-    ? sorted.filter((m: any) => m.total.wins === topWins && m.total.losses === topLosses)
+    ? sorted.filter((m: any) => prizePoolRecord(m).wins === topWins && prizePoolRecord(m).losses === topLosses)
     : [];
   const dailyPool = poolAmount * DAILY_POOL_SHARE;
   const perWinner = winners.length > 0 ? dailyPool / winners.length : dailyPool;
@@ -225,7 +231,7 @@ function DailyWinners({ poolAmount }: { poolAmount: number }) {
           <CardContent className="p-5 text-center">
             <Trophy size={28} className="text-muted-foreground/20 mx-auto mb-2" />
             <p className="text-muted-foreground text-sm">No qualifying picks today</p>
-            <p className="text-xs text-muted-foreground/50 mt-1">Pick every MLB, NBA & NHL game to qualify</p>
+            <p className="text-xs text-muted-foreground/50 mt-1">Pick every MLB, NFL & NCAA FBS Top 25 game to qualify</p>
           </CardContent>
         </Card>
       ) : (
@@ -323,14 +329,15 @@ function DailyMemberScorecard() {
   const label = data?.period?.label ?? "";
   const winner = data?.winner ?? null;
 
-  // Sort by wins DESC, then losses ASC — same ranking as Top Predictors & Daily Rankings
+  // Prize Pool scorecard uses required-sport totals; ordinary leaderboards retain all-sport totals.
   const members = [...rawMembers].sort((a, b) =>
-    b.total.wins - a.total.wins || a.total.losses - b.total.losses
+    prizePoolRecord(b).wins - prizePoolRecord(a).wins || prizePoolRecord(a).losses - prizePoolRecord(b).losses
   );
 
   // Find all tied winners (same W-L as the winner, all qualified)
+  const winnerRecord = prizePoolRecord(winner);
   const tiedWinners = winner
-    ? members.filter((m: any) => m.qualified && m.total.wins === winner.wins && m.total.losses === winner.losses)
+    ? members.filter((m: any) => m.qualified && prizePoolRecord(m).wins === winnerRecord.wins && prizePoolRecord(m).losses === winnerRecord.losses)
     : [];
 
   const formattedDate = label
@@ -370,9 +377,9 @@ function DailyMemberScorecard() {
           </div>
           <div className="text-right shrink-0">
             <div className="font-mono text-2xl font-black tabular-nums">
-              <span className="text-green-400">{winner.wins}</span>
+              <span className="text-green-400">{winnerRecord.wins}</span>
               <span className="text-white/20">-</span>
-              <span className="text-red-400">{winner.losses}</span>
+              <span className="text-red-400">{winnerRecord.losses}</span>
             </div>
             <div className="text-[10px] text-muted-foreground/60 uppercase tracking-wider">W - L</div>
           </div>
@@ -392,9 +399,9 @@ function DailyMemberScorecard() {
                 <span className="font-display font-black text-base text-foreground">{w.name}</span>
                 {isExpertAnalyst(w.referralCode) && <ExpertBadge />}
                 <span className="font-mono text-sm tabular-nums">
-                  <span className="text-green-400">{w.total.wins}</span>
+                  <span className="text-green-400">{prizePoolRecord(w).wins}</span>
                   <span className="text-white/30">-</span>
-                  <span className="text-red-400">{w.total.losses}</span>
+                  <span className="text-red-400">{prizePoolRecord(w).losses}</span>
                 </span>
               </div>
             ))}
@@ -409,14 +416,14 @@ function DailyMemberScorecard() {
             <thead>
               <tr className="border-b border-white/10 bg-white/[0.03]">
                 <th className="text-left py-3 px-4 text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Member</th>
-                <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-blue-400">MLB</th>
-                {games.ncaaf > 0 && <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-amber-400">🏈 FBS</th>}
-                {games.nfl > 0 && <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-green-400">🏈 NFL</th>}
-                <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-orange-400">NBA</th>
-                <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-cyan-400">NHL</th>
-                {games.wc > 0 && <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-emerald-400">🌍 WC</th>}
-               {games.epl > 0 && <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-indigo-400">⚽ EPL</th>}
-                {games.ucl > 0 && <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-violet-400">🏆 UCL</th>}
+                <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-blue-400">MLB <span className="block text-[8px] text-yellow-400">Required</span></th>
+                {games.ncaaf > 0 && <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-amber-400">🏈 FBS Top 25 <span className="block text-[8px] text-yellow-400">Required</span></th>}
+                {games.nfl > 0 && <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-green-400">🏈 NFL <span className="block text-[8px] text-yellow-400">Required</span></th>}
+                <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-orange-400">NBA <span className="block text-[8px] text-muted-foreground">Optional</span></th>
+                <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-cyan-400">NHL <span className="block text-[8px] text-muted-foreground">Optional</span></th>
+                {games.wc > 0 && <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-emerald-400">🌍 WC <span className="block text-[8px] text-muted-foreground">Optional</span></th>}
+                {games.epl > 0 && <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-indigo-400">⚽ EPL <span className="block text-[8px] text-muted-foreground">Optional</span></th>}
+                {games.ucl > 0 && <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-violet-400">🏆 UCL <span className="block text-[8px] text-muted-foreground">Optional</span></th>}
                 <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-foreground">Total W-L</th>
                 <th className="py-3 px-3 text-center text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Status</th>
               </tr>
@@ -430,6 +437,10 @@ function DailyMemberScorecard() {
               )}
               {members.map((m: any) => {
                 const isWinner = winner && m.userId === winner.userId;
+                const prizeRecord = prizePoolRecord(m);
+                const prizeGameTotal = typeof games.prizePoolTotal === "number"
+                  ? games.prizePoolTotal
+                  : games.mlb + (games.ncaaf ?? 0) + (games.nfl ?? 0);
                 return (
                   <tr
                     key={m.userId}
@@ -480,11 +491,11 @@ function DailyMemberScorecard() {
                     {games.ncaabb > 0 && <SportCell wins={m.ncaabb?.wins ?? 0} losses={m.ncaabb?.losses ?? 0} picks={m.ncaabb?.picks ?? 0} total={games.ncaabb} qualified={games.ncaabb === 0 || (m.ncaabb?.picks ?? 0) >= games.ncaabb} />}
                     <td className="py-3 px-2 text-center align-middle">
                       <div className={cn("font-mono text-base font-black tabular-nums", isWinner ? "text-yellow-300" : "")}>
-                        <span className="text-green-400">{m.total.wins}</span>
+                        <span className="text-green-400">{prizeRecord.wins}</span>
                         <span className="text-muted-foreground/30 mx-0.5">-</span>
-                        <span className="text-red-400">{m.total.losses}</span>
+                        <span className="text-red-400">{prizeRecord.losses}</span>
                       </div>
-                      <div className="text-[10px] text-muted-foreground/40 tabular-nums">{m.total.picks}/{games.total} picks</div>
+                      <div className="text-[10px] text-muted-foreground/40 tabular-nums">{prizeRecord.picks}/{prizeGameTotal} required picks</div>
                     </td>
                     <td className="py-3 px-3 text-center align-middle">
                       {isWinner ? (
@@ -500,7 +511,7 @@ function DailyMemberScorecard() {
                         <div className="flex flex-col items-center gap-0.5">
                           <XCircle size={16} className="text-muted-foreground/30" />
                           <span className="text-[9px] text-red-400/50 uppercase tracking-wider">
-                            {m.total.picks === 0 ? "No picks" : `${games.total - m.total.picks} missing`}
+                            {prizeRecord.picks === 0 ? "No picks" : `${Math.max(0, prizeGameTotal - prizeRecord.picks)} missing`}
                           </span>
                         </div>
                       )}

@@ -108,7 +108,7 @@ export default function WorldCup() {
               <h1 className="text-xl font-bold text-white" style={{ fontFamily: "'Chakra Petch', sans-serif" }}>
                 FIFA World Cup 2026™
               </h1>
-              <p className="text-xs text-slate-400">Jun 11 – Jul 19 · All games qualify for Prize Pool</p>
+              <p className="text-xs text-slate-400">Jun 11 – Jul 19 · Optional Skill Play</p>
             </div>
           </div>
         </div>
@@ -120,7 +120,7 @@ export default function WorldCup() {
           <div className="flex items-start gap-2">
             <Zap className="w-4 h-4 text-green-400 mt-0.5 shrink-0" />
             <p className="text-green-300">
-              Pick every World Cup game + all MLB, NBA &amp; NHL games each day to qualify for the daily Prize Pool.
+              World Cup picks are optional Skill Play and count toward rankings, not Prize Pool qualification.
             </p>
           </div>
         </div>

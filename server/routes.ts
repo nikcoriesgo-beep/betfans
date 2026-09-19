@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integrations/auth";
 import { storage } from "./storage";
+import { prizePoolScore } from "./prizePoolRules";
 import { db } from "./db";
 import { users, referrals, games, predictions, leaderboardEntries } from "@shared/schema";
 import { eq, sql, and, desc, asc, inArray } from "drizzle-orm";
@@ -873,15 +874,12 @@ export async function registerRoutes(
           losses:  mlb.losses  + ncaaf.losses  + nfl.losses  + boxing.losses  + nba.losses  + nhl.losses  + wc.losses  + epl.losses  + ucl.losses  + ncaabb.losses,
           pending: mlb.pending + ncaaf.pending + nfl.pending + boxing.pending + nba.pending + nhl.pending + wc.pending + epl.pending + ucl.pending + ncaabb.pending,
         };
-        // NFL, NCAA FBS, and WBC Boxing are required whenever scheduled that Pacific day.
-        // FIFA_WC, EPL, UCL, and NCAABB remain optional Skill Play.
+        const prizePoolTotal = prizePoolScore({ mlb, nfl, ncaaf });
+        // Only MLB, NFL, and Top 25 FBS count toward Prize Pool qualification or scores.
         const qualified =
           mlb.picks >= mlbMatchups.length &&
-          (nbaMatchups.length === 0 || nba.picks >= nbaMatchups.length) &&
-          (nhlMatchups.length === 0 || nhl.picks >= nhlMatchups.length) &&
           (ncaafMatchups.length === 0 || ncaaf.picks >= ncaafMatchups.length) &&
-          (nflMatchups.length === 0 || nfl.picks >= nflMatchups.length) &&
-          (boxingMatchups.length === 0 || boxing.picks >= boxingMatchups.length);
+          (nflMatchups.length === 0 || nfl.picks >= nflMatchups.length);
 
         // Pick submission timestamps in PST
         const pickTimes = myPreds
@@ -906,7 +904,7 @@ export async function registerRoutes(
           referralCode: u.referralCode || null,
           tier:   u.membershipTier,
           avatar: u.profileImageUrl || null,
-          mlb, ncaaf, nfl, nba, nhl, wc, epl, ucl, ncaabb, total, qualified,
+          mlb, ncaaf, nfl, nba, nhl, wc, epl, ucl, ncaabb, total, prizePoolTotal, qualified,
           firstPickAt,
           lastPickAt,
         };
@@ -915,17 +913,17 @@ export async function registerRoutes(
       // Sort: qualified first → most wins → most picks
       memberRows.sort((a, b) => {
         if (a.qualified !== b.qualified) return a.qualified ? -1 : 1;
-        return b.total.wins - a.total.wins || b.total.picks - a.total.picks;
+        return b.prizePoolTotal.wins - a.prizePoolTotal.wins || a.prizePoolTotal.losses - b.prizePoolTotal.losses;
       });
 
       // Winner = first qualified member with at least 1 pick graded
-      const winner = memberRows.find(m => m.qualified && (m.total.wins + m.total.losses) > 0) || null;
+      const winner = memberRows.find(m => m.qualified && (m.prizePoolTotal.wins + m.prizePoolTotal.losses) > 0) || null;
 
       res.json({
         period: { start: periodStart, end: periodEnd, label: dateLabel },
         games:  { mlb: mlbMatchups.length, ncaaf: ncaafMatchups.length, nfl: nflMatchups.length, nba: nbaMatchups.length, nhl: nhlMatchups.length, wc: wcMatchups.length, epl: eplMatchups.length, ucl: uclMatchups.length, ncaabb: ncaabbMatchups.length, total: matchupGroups.size },
         members: memberRows,
-        winner: winner ? { userId: winner.userId, name: winner.name, wins: winner.total.wins, losses: winner.total.losses } : null,
+        winner: winner ? { userId: winner.userId, name: winner.name, wins: winner.prizePoolTotal.wins, losses: winner.prizePoolTotal.losses } : null,
       });
     } catch (e: any) {
       console.error("[daily-scorecard]", e);
