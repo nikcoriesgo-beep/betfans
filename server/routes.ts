@@ -768,14 +768,15 @@ export async function registerRoutes(
   // Public endpoint. Used for transparent prize pool verification.
   app.get("/api/daily-scorecard", async (_req, res) => {
     try {
-      // Search back through recent days to find the last day that has graded games
+      // Keep the latest completed prior Pacific day visible for the entire
+      // current Pacific day. Never switch to a partial current-day scorecard.
       type MatchupGroup = { canonicalId: number; allIds: Set<number>; league: string };
       let dayGamesRaw: (typeof games.$inferSelect)[] = [];
       let periodStart!: Date;
       let periodEnd!: Date;
       let dateLabel = "";
 
-      for (let daysBack = 0; daysBack <= 7; daysBack++) {
+      for (let daysBack = 1; daysBack <= 7; daysBack++) {
         const dt = new Date();
         dt.setUTCDate(dt.getUTCDate() - daysBack);
         const pstStr = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(dt);
