@@ -3,25 +3,11 @@ import { Button } from "@/components/ui/button";
 import { ArrowRight, Trophy, Target, Users, DollarSign, LogIn } from "lucide-react";
 import heroBg from "@assets/generated_images/futuristic_sports_data_background.png";
 import { Link } from "wouter";
-import { useQuery } from "@tanstack/react-query";
 
 function HeroAnnouncements() {
-  const { data: settings } = useQuery<Record<string, string>>({
-    queryKey: ["/api/site-settings"],
-    queryFn: () => fetch("/api/site-settings").then(r => r.json()),
-    staleTime: 60000,
-  });
-  const configuredAnnouncements: string[] = settings?.announcements ? JSON.parse(settings.announcements) : [
-    "Premier League 2026™ games are now available as Skill Play picks. They count toward rankings but are not required for Prize Pool qualification.",
-    "Champions League 2026™ games are available with Spider AI picks as Skill Play. They count toward rankings but are not required for Prize Pool qualification.",
-  ];
   const announcements = [
-    "All MLB, NFL, and NCAA Division I FBS Top 25 events scheduled for the Pacific payout day must be selected for daily Prize Pool qualification.",
-    "NBA, NHL, WBC Boxing, and all other sports are optional Skill Play. They count toward rankings, not Prize Pool qualification.",
-    ...configuredAnnouncements.filter(text =>
-      !/must be selected for daily prize pool qualification/i.test(text) &&
-      !/pick every mlb, nba/i.test(text)
-    ),
+    "Beginning September 29th\nAll NHL 2026 scheduled Games must be selected along with all MLB, NFL and NCAA FBS Games for daily Prize Pool qualification.",
+    "All other sports are optional Skill Play. They count toward rankings, not Prize Pool qualification.",
   ];
   if (!announcements.length) return null;
   return (
@@ -29,7 +15,7 @@ function HeroAnnouncements() {
       {announcements.map((text, i) => (
         <div key={i} className="flex items-start gap-2">
           <span className="text-primary font-bold text-sm shrink-0 mt-0.5">*</span>
-          <p className="text-sm text-primary/90 leading-snug">{text}</p>
+          <p className="text-sm text-primary/90 leading-snug whitespace-pre-line">{text}</p>
         </div>
       ))}
     </div>
