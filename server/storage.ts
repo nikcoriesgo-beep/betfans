@@ -206,19 +206,21 @@ export class DatabaseStorage implements IStorage {
     const nextCutoff = new Date(Date.UTC(y, m - 1, d + 1, 8, 0, 0, 0));
     const footballHorizon = new Date(Date.UTC(y, m - 1, d + 8, 8, 0, 0, 0));
     const boxingHorizon = new Date(Date.UTC(y, m - 1, d + 46, 8, 0, 0, 0));
+    const nhlHorizon = new Date(Date.UTC(y, m - 1, d + 2, 8, 0, 0, 0));
 
     const upcomingFeaturedEvents = await db.select().from(games)
       .where(sql`${games.gameTime} >= ${nextCutoff}
         AND (
           (${games.league} IN ('NFL', 'NCAAF') AND ${games.gameTime} < ${footballHorizon})
           OR (${games.league} = 'BOXING' AND ${games.gameTime} < ${boxingHorizon})
+          OR (${games.league} = 'NHL' AND ${games.gameTime} < ${nhlHorizon})
         )
         AND ${games.status} != 'postponed'
         AND (${games.league} != 'NCAAF' OR COALESCE(${games.isTop25}, FALSE))`)
       .orderBy(asc(games.gameTime));
 
-    // Open the complete upcoming football week for early picks, plus announced
-    // WBC events. Qualification is still evaluated on each game's Pacific day.
+    // Open the complete upcoming football week, announced WBC events, and
+    // tomorrow's NHL slate. Qualification is evaluated on each game's Pacific day.
     return dedupeGames([...todayGames, ...upcomingFeaturedEvents]);
   }
 

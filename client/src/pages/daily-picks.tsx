@@ -125,6 +125,7 @@ export default function DailyPicks() {
     queryKey: DAILY_PICKS_GAMES_KEY,
     staleTime: 0,
     refetchOnMount: "always",
+    refetchInterval: 60000,
   });
   const { data: myPredictions = [] } = useQuery<any[]>({
     queryKey: ["/api/predictions"],

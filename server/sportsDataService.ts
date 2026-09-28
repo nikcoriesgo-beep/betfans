@@ -348,16 +348,24 @@ async function fetchLeagueGames(league: string): Promise<any[]> {
       }
     }
 
-    // For FIFA_WC: also fetch tomorrow's games so late-night games (e.g. 9PM PT = midnight ET next day) appear
-    if (league === "FIFA_WC") {
+    // NHL games scheduled tomorrow must be available for picks ahead of time.
+    // A separate date request is required: ESPN's NHL scoreboard rejects date ranges.
+    // FIFA_WC also needs the next ET date for late Pacific starts.
+    if (league === "FIFA_WC" || league === "NHL") {
       try {
         const tomorrowET = getETDate(1);
         const r2 = await fetch(`${url}${separator}dates=${tomorrowET}`);
         if (r2.ok) {
           const d2 = await r2.json();
-          events = [...events, ...(d2.events || [])];
+          events = Array.from(new Map([...events, ...(d2.events || [])].map(
+            (event: ESPNEvent) => [event.id, event],
+          )).values());
+        } else {
+          console.log(`[spider] ESPN ${league} tomorrow returned ${r2.status}`);
         }
-      } catch {}
+      } catch (error) {
+        console.log(`[spider] Error fetching ${league} tomorrow:`, error);
+      }
     }
     const results: any[] = [];
 
@@ -739,7 +747,8 @@ export async function syncSportsData(): Promise<{ synced: number; leagues: strin
     UCL: (year === 2026 && month === 9 && now.getDate() >= 8) || month >= 10 || month <= 5,
     MLB: month >= 3 && month <= 10,
     NBA: month >= 10 || month <= 6,
-    NHL: month >= 10 || month <= 6,
+    // NHL preseason starts in September; fetch the September 29 slate on the 28th.
+    NHL: month >= 9 || month <= 6,
     MLS: month >= 2 && month <= 11,
     NCAAB: month >= 11 || month <= 4,
     NCAABB: month >= 2 && month <= 7, // Feb–July covers regular season + tournament + CWS (June 12-22)
