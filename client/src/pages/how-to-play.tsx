@@ -241,7 +241,7 @@ export default function HowToPlay() {
               {[
                 {
                   title: "Daily Leaderboard",
-                  desc: "Resets each day. Pick every MLB, NFL & NCAA FBS Top 25 game scheduled that day to qualify — top qualifying predictor wins 10% of the prize pool.",
+                  desc: "Resets each Pacific day. Pick every MLB, NFL & NCAA FBS Top 25 game; NHL joins September 29, 2026. The top qualifying predictor wins 10% of the prize pool.",
                   icon: Zap,
                   gradient: "from-emerald-500 to-teal-500",
                 },
@@ -284,7 +284,7 @@ export default function HowToPlay() {
               <ul className="space-y-2 text-sm text-yellow-100/90">
                 <li className="flex items-start gap-2">
                   <CheckCircle2 size={16} className="text-yellow-400 mt-0.5 shrink-0" />
-                  <span><strong className="text-yellow-200">Pick every MLB, NFL & NCAA FBS Top 25 game</strong> scheduled that day — only these sports count toward the prize pool</span>
+                  <span><strong className="text-yellow-200">Pick every MLB, NFL & NCAA FBS Top 25 game</strong> scheduled that Pacific day; beginning September 29, 2026, pick every NHL game too. Only required sports count toward the prize pool.</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <CheckCircle2 size={16} className="text-yellow-400 mt-0.5 shrink-0" />

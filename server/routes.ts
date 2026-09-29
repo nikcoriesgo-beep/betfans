@@ -2,7 +2,8 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integrations/auth";
 import { storage } from "./storage";
-import { prizePoolScore } from "./prizePoolRules";
+import { prizePoolScore, prizePoolQualified } from "./prizePoolRules";
+import { isNhlRequired, pacificDay, pacificDayWindow, previousPacificDay } from "@shared/prizePoolRules";
 import { db } from "./db";
 import { users, referrals, games, predictions, leaderboardEntries } from "@shared/schema";
 import { eq, sql, and, desc, asc, inArray } from "drizzle-orm";
@@ -729,13 +730,11 @@ export async function registerRoutes(
   });
 
   // Returns how many prize-qualification games are scheduled in the current day's pick window.
-  // Uses midnight PST as the day boundary so West Coast late games fall on the correct date.
+  // Pacific calendar-day boundaries include daylight saving time.
   app.get("/api/mlb-game-count", async (_req, res) => {
     try {
-      const pstDateStr = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(new Date());
-      const [y, m, d] = pstDateStr.split("-").map(Number);
-      const start = new Date(Date.UTC(y, m - 1, d, 8, 0, 0, 0));     // today midnight PST
-      const end   = new Date(Date.UTC(y, m - 1, d + 1, 8, 0, 0, 0)); // tomorrow midnight PST
+      const day = pacificDay(new Date());
+      const { start, end } = pacificDayWindow(day);
       const [mlbGames, nbaGames, nhlGames, ncaafGames, nflGames, boxingGames] = await Promise.all([
         db.select({ id: games.id, homeTeam: games.homeTeam, awayTeam: games.awayTeam, gameTime: games.gameTime }).from(games).where(sql`${games.league} = 'MLB' AND ${games.gameTime} >= ${start} AND ${games.gameTime} < ${end} AND ${games.status} != 'postponed'`),
         db.select({ id: games.id, homeTeam: games.homeTeam, awayTeam: games.awayTeam, gameTime: games.gameTime }).from(games).where(sql`${games.league} = 'NBA' AND ${games.gameTime} >= ${start} AND ${games.gameTime} < ${end} AND ${games.status} != 'postponed'`),
@@ -756,11 +755,12 @@ export async function registerRoutes(
       const ncaafCount = dedup(ncaafGames);
       const nflCount = dedup(nflGames);
       const boxingCount = dedup(boxingGames);
-      // Every NFL, NCAA FBS, and WBC Boxing event in the Pacific-day payout window is required.
-      const count = mlbCount + nbaCount + nhlCount + ncaafCount + nflCount + boxingCount;
-      res.json({ count, mlbCount, nbaCount, nhlCount, ncaafCount, nflCount, boxingCount, fbsRequired: true, nflRequired: true, boxingRequired: true, periodStart: start, periodEnd: end });
+      const nhlRequired = isNhlRequired(day);
+      const count = mlbCount + ncaafCount + nflCount + (nhlRequired ? nhlCount : 0);
+      res.json({ count, mlbCount, nbaCount, nhlCount, ncaafCount, nflCount, boxingCount, fbsRequired: true, nflRequired: true, nhlRequired, boxingRequired: false, periodStart: start, periodEnd: end });
     } catch (e) {
-      res.json({ count: 0 });
+      console.error("[mlb-game-count]", e);
+      res.status(500).json({ message: "Failed to fetch required game counts" });
     }
   });
 
@@ -777,13 +777,11 @@ export async function registerRoutes(
       let periodEnd!: Date;
       let dateLabel = "";
 
+      let candidateDay = pacificDay(new Date());
       for (let daysBack = 1; daysBack <= 7; daysBack++) {
-        const dt = new Date();
-        dt.setUTCDate(dt.getUTCDate() - daysBack);
-        const pstStr = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(dt);
-        const [y, m, d] = pstStr.split("-").map(Number);
-        const start = new Date(Date.UTC(y, m - 1, d, 8, 0, 0, 0));
-        const end   = new Date(Date.UTC(y, m - 1, d + 1, 8, 0, 0, 0));
+        const pstStr = previousPacificDay(candidateDay);
+        candidateDay = pstStr;
+        const { start, end } = pacificDayWindow(pstStr);
 
         const candidateGames = await db.select().from(games).where(
           sql`${games.gameTime} >= ${start} AND ${games.gameTime} < ${end}
@@ -874,12 +872,12 @@ export async function registerRoutes(
           losses:  mlb.losses  + ncaaf.losses  + nfl.losses  + boxing.losses  + nba.losses  + nhl.losses  + wc.losses  + epl.losses  + ucl.losses  + ncaabb.losses,
           pending: mlb.pending + ncaaf.pending + nfl.pending + boxing.pending + nba.pending + nhl.pending + wc.pending + epl.pending + ucl.pending + ncaabb.pending,
         };
-        const prizePoolTotal = prizePoolScore({ mlb, nfl, ncaaf });
-        // Only MLB, NFL, and Top 25 FBS count toward Prize Pool qualification or scores.
-        const qualified =
-          mlb.picks >= mlbMatchups.length &&
-          (ncaafMatchups.length === 0 || ncaaf.picks >= ncaafMatchups.length) &&
-          (nflMatchups.length === 0 || nfl.picks >= nflMatchups.length);
+        const scores = { mlb, nfl, ncaaf, nhl };
+        const prizePoolTotal = prizePoolScore(scores, dateLabel);
+        const qualified = prizePoolQualified(scores, {
+          mlb: mlbMatchups.length, nfl: nflMatchups.length,
+          ncaaf: ncaafMatchups.length, nhl: nhlMatchups.length,
+        }, dateLabel);
 
         // Pick submission timestamps in PST
         const pickTimes = myPreds
@@ -921,7 +919,7 @@ export async function registerRoutes(
 
       res.json({
         period: { start: periodStart, end: periodEnd, label: dateLabel },
-        games:  { mlb: mlbMatchups.length, ncaaf: ncaafMatchups.length, nfl: nflMatchups.length, nba: nbaMatchups.length, nhl: nhlMatchups.length, wc: wcMatchups.length, epl: eplMatchups.length, ucl: uclMatchups.length, ncaabb: ncaabbMatchups.length, total: matchupGroups.size },
+        games:  { mlb: mlbMatchups.length, ncaaf: ncaafMatchups.length, nfl: nflMatchups.length, nba: nbaMatchups.length, nhl: nhlMatchups.length, wc: wcMatchups.length, epl: eplMatchups.length, ucl: uclMatchups.length, ncaabb: ncaabbMatchups.length, total: matchupGroups.size, prizePoolTotal: mlbMatchups.length + ncaafMatchups.length + nflMatchups.length + (isNhlRequired(dateLabel) ? nhlMatchups.length : 0), nhlRequired: isNhlRequired(dateLabel) },
         members: memberRows,
         winner: winner ? { userId: winner.userId, name: winner.name, wins: winner.prizePoolTotal.wins, losses: winner.prizePoolTotal.losses } : null,
       });
@@ -2283,15 +2281,11 @@ export async function registerRoutes(
 
       const now = new Date();
       const periodLabel = period === "daily"
-        ? now.toISOString().split("T")[0]
+        ? previousPacificDay(pacificDay(now))
         : `${now.getFullYear()}`;
-
-      const periodStart = period === "daily"
-        ? new Date(now.getFullYear(), now.getMonth(), now.getDate())
-        : new Date(now.getFullYear(), 0, 1);
-      const periodEnd = period === "daily"
-        ? new Date(periodStart.getTime() + 86400000)
-        : new Date(now.getFullYear() + 1, 0, 1);
+      const dayWindow = period === "daily" ? pacificDayWindow(periodLabel) : null;
+      const periodStart = dayWindow?.start ?? new Date(now.getFullYear(), 0, 1);
+      const periodEnd = dayWindow?.end ?? new Date(now.getFullYear() + 1, 0, 1);
 
       const { processPayoutForPeriod } = await import("./payoutService");
       const result = await processPayoutForPeriod(period, periodLabel, periodStart, periodEnd);
@@ -3440,19 +3434,11 @@ export async function registerRoutes(
 
       let periodStart: Date, periodEnd: Date, periodLabel: string;
       if (date) {
-        const [y, m, d] = date.split("-").map(Number);
-        periodStart = new Date(Date.UTC(y, m - 1, d, 4, 0, 0)); // midnight ET
-        periodEnd   = new Date(Date.UTC(y, m - 1, d + 1, 4, 0, 0));
         periodLabel = date;
       } else {
-        const now = new Date();
-        const yesterday = new Date(now.getTime() - 86400000);
-        const yStr = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(yesterday);
-        const [y, m, d] = yStr.split("-").map(Number);
-        periodStart = new Date(Date.UTC(y, m - 1, d, 4, 0, 0));
-        periodEnd   = new Date(Date.UTC(y, m - 1, d + 1, 4, 0, 0));
-        periodLabel = yStr;
+        periodLabel = previousPacificDay(pacificDay(new Date()));
       }
+      ({ start: periodStart, end: periodEnd } = pacificDayWindow(periodLabel));
 
       const result = await processPayoutForPeriod("daily", periodLabel, periodStart, periodEnd, console.log);
 

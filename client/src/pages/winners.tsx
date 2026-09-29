@@ -18,6 +18,7 @@ import { Link } from "wouter";
 import { ExpertBadge, isExpertAnalyst } from "@/components/ExpertBadge";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
+import { isNhlRequired } from "@shared/prizePoolRules";
 
 type PrizePoolData = {
   amount: number;
@@ -231,7 +232,7 @@ function DailyWinners({ poolAmount }: { poolAmount: number }) {
           <CardContent className="p-5 text-center">
             <Trophy size={28} className="text-muted-foreground/20 mx-auto mb-2" />
             <p className="text-muted-foreground text-sm">No qualifying picks today</p>
-            <p className="text-xs text-muted-foreground/50 mt-1">Pick every MLB, NFL & NCAA FBS Top 25 game to qualify</p>
+            <p className="text-xs text-muted-foreground/50 mt-1">Pick every MLB, NFL & NCAA FBS Top 25 game{isNhlRequired(scorecard?.period?.label ?? "") ? ", plus every NHL game" : ""} to qualify</p>
           </CardContent>
         </Card>
       ) : (
@@ -327,6 +328,7 @@ function DailyMemberScorecard() {
   const games = data?.games ?? { mlb: 0, nba: 0, nhl: 0, wc: 0, epl: 0, ncaabb: 0, total: 0 };
   const rawMembers: any[] = data?.members ?? [];
   const label = data?.period?.label ?? "";
+  const nhlRequired = isNhlRequired(label);
   const winner = data?.winner ?? null;
 
   // Prize Pool scorecard uses required-sport totals; ordinary leaderboards retain all-sport totals.
@@ -420,7 +422,7 @@ function DailyMemberScorecard() {
                 {games.ncaaf > 0 && <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-amber-400">🏈 FBS Top 25 <span className="block text-[8px] text-yellow-400">Required</span></th>}
                 {games.nfl > 0 && <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-green-400">🏈 NFL <span className="block text-[8px] text-yellow-400">Required</span></th>}
                 <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-orange-400">NBA <span className="block text-[8px] text-muted-foreground">Optional</span></th>
-                <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-cyan-400">NHL <span className="block text-[8px] text-muted-foreground">Optional</span></th>
+                <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-cyan-400">NHL <span className={cn("block text-[8px]", nhlRequired ? "text-yellow-400" : "text-muted-foreground")}>{nhlRequired ? "Required" : "Optional"}</span></th>
                 {games.wc > 0 && <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-emerald-400">🌍 WC <span className="block text-[8px] text-muted-foreground">Optional</span></th>}
                 {games.epl > 0 && <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-indigo-400">⚽ EPL <span className="block text-[8px] text-muted-foreground">Optional</span></th>}
                 {games.ucl > 0 && <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-violet-400">🏆 UCL <span className="block text-[8px] text-muted-foreground">Optional</span></th>}
@@ -440,7 +442,7 @@ function DailyMemberScorecard() {
                 const prizeRecord = prizePoolRecord(m);
                 const prizeGameTotal = typeof games.prizePoolTotal === "number"
                   ? games.prizePoolTotal
-                  : games.mlb + (games.ncaaf ?? 0) + (games.nfl ?? 0);
+                  : games.mlb + (games.ncaaf ?? 0) + (games.nfl ?? 0) + (nhlRequired ? (games.nhl ?? 0) : 0);
                 return (
                   <tr
                     key={m.userId}
@@ -754,13 +756,13 @@ export default function Winners() {
             </div>
             <div className="mt-4 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/25">
               <p className="text-xs text-yellow-300 leading-relaxed">
-                <strong className="text-yellow-200">Qualification Rule:</strong> You must predict <strong>every MLB, NBA, and NHL game daily</strong> to qualify for any payout. Missing even one game in any sport that day disqualifies you from that day's pool.
+                <strong className="text-yellow-200">Qualification Rule:</strong> Pick every MLB, NFL, and NCAA FBS Top 25 game on its Pacific day; beginning September 29, 2026, pick every NHL game too. Other sports are optional Skill Play. Missing a required game disqualifies you from that day's pool.
               </p>
             </div>
             <div className="mt-3 p-3 rounded-lg bg-white/5 border border-white/5">
               <p className="text-xs text-muted-foreground">
                 <strong className="text-foreground">How it works:</strong> Each day, all members compete together regardless of tier.
-                The best MLB predictor wins the daily prize. Tied winners split equally. Prizes subject to availability.
+                The best qualifying Prize Pool predictor wins the daily prize. Tied winners split equally. Prizes subject to availability.
               </p>
             </div>
             <div className="mt-3 p-3 rounded-lg bg-primary/5 border border-primary/10">

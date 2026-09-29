@@ -4,14 +4,8 @@ import { gradeStuckGames } from "./sportsDataService";
 import { db } from "./db";
 import { games, predictions, users } from "@shared/schema";
 import { sql, inArray } from "drizzle-orm";
-
-// Use PST-based midnight (8 AM UTC) to match the daily scorecard's window exactly.
-// The scorecard uses PST boundaries — payout must use the same so it finds the same games.
-function getPSTMidnight(date: Date): Date {
-  const pstStr = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(date);
-  const [year, month, day] = pstStr.split("-").map(Number);
-  return new Date(Date.UTC(year, month - 1, day, 8, 0, 0, 0)); // midnight PST = 08:00 UTC always
-}
+import { isNhlRequired, pacificDay, pacificDayWindow, previousPacificDay, requiredPrizePoolLeagues } from "@shared/prizePoolRules";
+import { prizePoolQualified, prizePoolScore } from "./prizePoolRules";
 
 async function sendAndRecordPayout(
   payoutId: number,
@@ -65,13 +59,15 @@ async function sendAndRecordPayout(
 
 async function computeScorecardForPeriod(periodStart: Date, periodEnd: Date, log: (msg: string) => void) {
   type MatchupGroup = { canonicalId: number; allIds: Set<number>; league: string };
+  const day = pacificDay(periodStart);
+  const leagues = requiredPrizePoolLeagues(day);
 
   // Use game_time (not prediction.createdAt) to identify games in the period
   const dayGamesRaw = await db.select().from(games).where(
     sql`${games.gameTime} >= ${periodStart} AND ${games.gameTime} < ${periodEnd}
         AND ${games.status} != 'postponed'
         AND (${games.league} != 'NCAAF' OR COALESCE(${games.isTop25}, FALSE))
-        AND ${games.league} IN ('MLB','NCAAF','NFL')`
+        AND ${inArray(games.league, leagues)}`
   );
 
   // Deduplicate provider duplicates while preserving same-day doubleheaders.
@@ -135,15 +131,13 @@ async function computeScorecardForPeriod(periodStart: Date, periodEnd: Date, log
     const ncaaf  = forSport(ncaafMatchups);
     const nfl    = forSport(nflMatchups);
     const boxing = forSport(boxingMatchups);
-    const totalWins   = mlb.wins + ncaaf.wins + nfl.wins;
-    const totalLosses = mlb.losses + ncaaf.losses + nfl.losses;
-    const totalPicks  = mlb.picks + ncaaf.picks + nfl.picks;
-    // Optional Skill Play never affects prize qualification or winner selection.
-    const qualified =
-      mlb.picks >= mlbMatchups.length &&
-      (ncaafMatchups.length === 0 || ncaaf.picks >= ncaafMatchups.length) &&
-      (nflMatchups.length === 0 || nfl.picks >= nflMatchups.length);
-    return { userId: u.id, user: u, wins: totalWins, losses: totalLosses, totalPicks, qualified };
+    const scores = { mlb, ncaaf, nfl, nhl };
+    const prizeTotal = prizePoolScore(scores, day);
+    const qualified = prizePoolQualified(scores, {
+      mlb: mlbMatchups.length, ncaaf: ncaafMatchups.length,
+      nfl: nflMatchups.length, nhl: nhlMatchups.length,
+    }, day);
+    return { userId: u.id, user: u, wins: prizeTotal.wins, losses: prizeTotal.losses, totalPicks: prizeTotal.picks, qualified };
   });
 
   return { memberRows, mlbCount: mlbMatchups.length, ncaafCount: ncaafMatchups.length, nflCount: nflMatchups.length, boxingCount: boxingMatchups.length, nbaCount: nbaMatchups.length, nhlCount: nhlMatchups.length, wcCount: wcMatchups.length, eplCount: eplMatchups.length, uclCount: uclMatchups.length, ncaabbCount: ncaabbMatchups.length, totalCount: matchupGroups.size };
@@ -172,12 +166,14 @@ async function processDailyPayout(
   const dailyShare = Math.floor(poolAmount * 0.10); // whole dollars only
 
   // Use game-time-based scorecard (same logic as /api/daily-scorecard) for correctness
-  const { memberRows, totalCount } = await computeScorecardForPeriod(periodStart, periodEnd, log);
+  const { memberRows, mlbCount, nflCount, ncaafCount, nhlCount } = await computeScorecardForPeriod(periodStart, periodEnd, log);
+  const day = pacificDay(periodStart);
+  const totalCount = mlbCount + nflCount + ncaafCount + (isNhlRequired(day) ? nhlCount : 0);
   if (memberRows.every(m => m.totalPicks === 0)) {
     return { paid: 0, skipped: 0, detail: `No picks recorded for daily ${periodLabel}` };
   }
 
-  log(`Required: all ${totalCount} MLB+NFL+Top 25 FBS games. Members scored: ${memberRows.length}`);
+  log(`Required: all ${totalCount} ${requiredPrizePoolLeagues(day).join("+")} games (FBS Top 25 only). Members scored: ${memberRows.length}`);
 
   const eligible = memberRows.filter(m => {
     const tier = m.user?.membershipTier;
@@ -355,13 +351,8 @@ export async function processPayoutForPeriod(
 
 export function getPayoutSchedule(now: Date): Array<{ period: string; periodLabel: string; periodStart: Date; periodEnd: Date }> {
   const results: Array<{ period: string; periodLabel: string; periodStart: Date; periodEnd: Date }> = [];
-
-  // Use PST-based boundaries to match the daily scorecard window exactly (8 AM UTC = midnight PST)
-  const yesterday = new Date(now.getTime() - 86400000);
-  const periodStart = getPSTMidnight(yesterday);
-  const periodEnd   = getPSTMidnight(now);
-
-  const pstStr = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(yesterday);
+  const pstStr = previousPacificDay(pacificDay(now));
+  const { start: periodStart, end: periodEnd } = pacificDayWindow(pstStr);
   const [year, month, day] = pstStr.split("-").map(Number);
 
   results.push({
@@ -373,7 +364,7 @@ export function getPayoutSchedule(now: Date): Array<{ period: string; periodLabe
 
   if (month === 1 && day === 1) {
     const lastYear = year - 1;
-    const firstOfLastYear = getPSTMidnight(new Date(Date.UTC(lastYear, 0, 1)));
+    const firstOfLastYear = pacificDayWindow(`${lastYear}-01-01`).start;
     const firstOfThisYear = periodStart;
     results.push({
       period: "annual",

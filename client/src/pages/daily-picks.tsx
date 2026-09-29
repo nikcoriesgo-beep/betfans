@@ -15,6 +15,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { isPrizePoolLeague, pacificDay } from "@shared/prizePoolRules";
 
 const LEAGUES = ["All", "MLB", "NCAAF", "NFL", "NHL", "NBA", "FIFA_WC", "MLS", "EPL", "UCL", "NCAAB", "NCAABB"];
 
@@ -76,9 +77,6 @@ const LEAGUE_ACTIVE_STYLE: Record<string, string> = {
   NCAAB: "border-purple-500 bg-purple-500/10 text-purple-300",
   NCAABB: "border-yellow-500 bg-yellow-500/10 text-yellow-300",
 };
-
-// Only MLB, NFL, and FBS Top 25 count toward Prize Pool eligibility.
-const PRIZE_POOL_LEAGUES = new Set(["MLB", "NFL", "NCAAF"]);
 
 function isToday(dateStr: string) {
   const format = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" });
@@ -373,7 +371,7 @@ export default function DailyPicks() {
                       <div className="flex items-center gap-2">
                         <Badge className={cn("text-[10px]", LEAGUE_COLORS[game.league] || "bg-foreground/10 text-foreground/60")}>{game.league}</Badge>
                         <StatusBadge status={game.status || "upcoming"} />
-                        {PRIZE_POOL_LEAGUES.has(game.league) ? (
+                        {isPrizePoolLeague(game.league, pacificDay(new Date(game.gameTime)), game.league === "NCAAF" && game.isTop25 === true) ? (
                           <Badge className="bg-yellow-500/20 text-yellow-700 border-yellow-500/30 text-[9px] gap-0.5">
                             <Trophy size={8} />PRIZE POOL REQUIRED
                           </Badge>

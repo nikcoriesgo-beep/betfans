@@ -56,12 +56,12 @@ const slides = [
     step: 4,
     tag: "Step 4",
     title: "Win Real\nCash",
-    subtitle: "Pick every MLB, NFL & FBS Top 25 game daily. Get paid.",
-    description: "50% of all membership fees go into the live prize pool. You must pick every MLB, NFL, and NCAA FBS Top 25 game scheduled that day to qualify. Other sports are optional Skill Play for rankings. Payouts go directly to the card you signed up with.",
+    subtitle: "Pick every required game on its Pacific day. Get paid.",
+    description: "50% of all membership fees go into the live prize pool. Pick every MLB, NFL, and NCAA FBS Top 25 game scheduled that Pacific day; beginning September 29, 2026, pick every NHL game too. Other sports are optional Skill Play for rankings. Payouts go directly to the card you signed up with.",
     icon: DollarSign,
     gradient: "from-yellow-400 via-amber-500 to-orange-500",
     bgAccent: "bg-yellow-500/10",
-    features: ["MLB, NFL & FBS Top 25", "Required Games", "Optional Skill Play", "Live Prize Pool"],
+    features: ["MLB, NFL, FBS Top 25 & NHL from Sep 29", "Required Games", "Optional Skill Play", "Live Prize Pool"],
   },
   {
     step: 5,
@@ -150,8 +150,8 @@ function SlideContent({ slide, index }: { slide: typeof slides[0]; index: number
           <div className="rounded-lg border border-yellow-400/50 bg-yellow-500/10 px-4 py-3 mb-4 max-w-sm mx-auto text-left">
             <p className="text-xs font-black text-yellow-300 uppercase tracking-wide mb-1">To Qualify:</p>
             <ul className="space-y-1 text-xs text-yellow-100/90">
-              <li>✓ <strong className="text-yellow-200">Pick every MLB, NFL & FBS Top 25 game</strong> scheduled that day</li>
-              <li>✓ <strong className="text-yellow-200">NBA, NHL, WBC and other sports are optional</strong> Skill Play for rankings</li>
+              <li>✓ <strong className="text-yellow-200">Pick every MLB, NFL & FBS Top 25 game</strong> on its Pacific day; NHL joins September 29, 2026</li>
+              <li>✓ <strong className="text-yellow-200">NBA, WBC and other sports are optional</strong> Skill Play for rankings</li>
               <li>✗ Miss one required game = <strong className="text-yellow-200">disqualified</strong> from that day's payout</li>
             </ul>
           </div>

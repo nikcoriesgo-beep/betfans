@@ -1,5 +1,6 @@
 import { AlertTriangle, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { isNhlRequired, pacificDay } from "@shared/prizePoolRules";
 
 interface Props {
   compact?: boolean;
@@ -7,6 +8,8 @@ interface Props {
 }
 
 export function PrizePoolQualRule({ compact = false, className }: Props) {
+  const nhlRequired = isNhlRequired(pacificDay(new Date()));
+  const required = <>every MLB, NFL, and NCAA FBS Top 25 game{nhlRequired ? ", plus every NHL game" : ""}</>;
   if (compact) {
     return (
       <div className={cn("rounded-lg border border-yellow-400/40 bg-yellow-500/10 px-4 py-3 flex items-start gap-3", className)} data-testid="prize-pool-qual-rule-compact">
@@ -14,7 +17,8 @@ export function PrizePoolQualRule({ compact = false, className }: Props) {
         <div>
           <p className="text-xs text-yellow-100/90 leading-relaxed">
             <span className="font-black text-yellow-300">Prize Pool Rule: </span>
-            You must pick <strong className="text-yellow-200">every MLB, NFL, and NCAA FBS Top 25 event</strong> scheduled that day to qualify for payouts. All other sports are optional Skill Play and ranking picks.
+            You must pick <strong className="text-yellow-200">{required}</strong> scheduled that Pacific day to qualify for payouts. {nhlRequired ? "NBA, WBC Boxing, and all other sports" : "NBA, NHL, WBC Boxing, and all other sports"} are optional Skill Play and ranking picks.
+            {!nhlRequired && " NHL becomes required September 29, 2026 (Pacific Time)."}
           </p>
           <p className="mt-1.5 text-xs text-yellow-300/50">* All members must predict over 2,000 MLB games to qualify for the annual prize pool payout.</p>
         </div>
@@ -34,7 +38,7 @@ export function PrizePoolQualRule({ compact = false, className }: Props) {
           <ul className="space-y-1.5 text-sm text-yellow-100/90">
             <li className="flex items-center gap-2">
               <CheckCircle2 size={14} className="text-yellow-400 shrink-0" />
-              Pick <strong className="text-yellow-200">every MLB, NFL, and NCAA FBS Top 25 event</strong> scheduled that day
+               Pick <strong className="text-yellow-200">{required}</strong> scheduled that Pacific day
             </li>
             <li className="flex items-center gap-2">
               <CheckCircle2 size={14} className="text-yellow-400 shrink-0" />
@@ -42,9 +46,10 @@ export function PrizePoolQualRule({ compact = false, className }: Props) {
             </li>
             <li className="flex items-center gap-2">
               <CheckCircle2 size={14} className="text-yellow-400 shrink-0" />
-              NBA, NHL, WBC Boxing, and all other sports are <strong className="text-yellow-200">optional Skill Play</strong> for rankings only
+               {nhlRequired ? "NBA, WBC Boxing, and all other sports" : "NBA, NHL, WBC Boxing, and all other sports"} are <strong className="text-yellow-200">optional Skill Play</strong> for rankings only
             </li>
           </ul>
+          {!nhlRequired && <p className="text-xs text-yellow-200">NHL becomes required September 29, 2026 (Pacific Time).</p>}
           <p className="mt-2 text-xs text-yellow-300/70">Applies to daily prize pool payouts.</p>
           <p className="mt-2 text-xs text-yellow-300/50">* All members must predict over 2,000 MLB games to qualify for the annual prize pool payout.</p>
         </div>
