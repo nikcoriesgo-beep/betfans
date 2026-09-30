@@ -328,12 +328,14 @@ function DailyMemberScorecard() {
   const games = data?.games ?? { mlb: 0, nba: 0, nhl: 0, wc: 0, epl: 0, ncaabb: 0, total: 0 };
   const rawMembers: any[] = data?.members ?? [];
   const label = data?.period?.label ?? "";
-  const nhlRequired = isNhlRequired(label);
+  const nhlRequired = label ? isNhlRequired(label) : false;
   const winner = data?.winner ?? null;
 
   // Prize Pool scorecard uses required-sport totals; ordinary leaderboards retain all-sport totals.
   const members = [...rawMembers].sort((a, b) =>
-    prizePoolRecord(b).wins - prizePoolRecord(a).wins || prizePoolRecord(a).losses - prizePoolRecord(b).losses
+    Number(b.qualified) - Number(a.qualified) ||
+    prizePoolRecord(b).wins - prizePoolRecord(a).wins ||
+    prizePoolRecord(a).losses - prizePoolRecord(b).losses
   );
 
   // Find all tied winners (same W-L as the winner, all qualified)
@@ -341,6 +343,7 @@ function DailyMemberScorecard() {
   const tiedWinners = winner
     ? members.filter((m: any) => m.qualified && prizePoolRecord(m).wins === winnerRecord.wins && prizePoolRecord(m).losses === winnerRecord.losses)
     : [];
+  const winnerIds = new Set(tiedWinners.map((m: any) => m.userId));
 
   const formattedDate = label
     ? new Date(label + "T12:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })
@@ -438,7 +441,7 @@ function DailyMemberScorecard() {
                 <tr><td colSpan={8} className="py-8 text-center text-sm text-muted-foreground">No results yet</td></tr>
               )}
               {members.map((m: any) => {
-                const isWinner = winner && m.userId === winner.userId;
+                const isWinner = winnerIds.has(m.userId);
                 const prizeRecord = prizePoolRecord(m);
                 const prizeGameTotal = typeof games.prizePoolTotal === "number"
                   ? games.prizePoolTotal
