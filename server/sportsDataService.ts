@@ -1,6 +1,10 @@
 import { db } from "./db";
 import { games, predictions, leaderboardEntries } from "@shared/schema";
 import { eq, and, sql, inArray } from "drizzle-orm";
+import {
+  fetchEspnSchedule, isRemovedFixtureCandidate, verifyEspnFixture,
+  type ScheduleSnapshot,
+} from "./espnSchedule";
 
 const ESPN_ENDPOINTS: Record<string, string> = {
   NFL: "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard",
@@ -311,62 +315,12 @@ function getETDate(offsetDays = 0): string {
   return `${parts[2]}${parts[0]}${parts[1]}`;
 }
 
-async function fetchLeagueGames(league: string): Promise<any[]> {
+async function fetchLeagueGames(league: string): Promise<{ games: any[]; snapshot: ScheduleSnapshot } | null> {
   try {
     const url = ESPN_ENDPOINTS[league];
-    if (!url) return [];
-    // Always pass today's ET date so ESPN returns ALL scheduled games,
-    // not just live/finished ones. Without this, upcoming games are invisible.
-    const todayET = getTodayET();
-    const separator = url.includes("?") ? "&" : "?";
-    // Football is played in weekly slates. Load the next two weeks so Daily Picks
-    // can expose the next FBS/NFL game day even when neither league plays today.
-    const dateParam = league === "NFL" || league === "NCAAF"
-      ? `${todayET}-${getETDate(14)}`
-      : todayET;
-    const limitParam = league === "NFL" || league === "NCAAF" ? "limit=300&" : "";
-    const response = await fetch(`${url}${separator}${limitParam}dates=${dateParam}`);
-    if (!response.ok) {
-      console.log(`[spider] ESPN ${league} returned ${response.status}`);
-      return [];
-    }
-    const data = await response.json();
-    let events: ESPNEvent[] = data.events || [];
-
-    // During long gaps (bye weeks / bowl scheduling), make one wider fallback
-    // request only when the normal two-week football window is empty.
-    const hasFutureFootballEvent = events.some(
-      (event) => new Date(event.date).getTime() > Date.now(),
-    );
-    if ((league === "NFL" || league === "NCAAF") && !hasFutureFootballEvent) {
-      const fallbackDates = `${getETDate(15)}-${getETDate(45)}`;
-      const fallbackResponse = await fetch(`${url}${separator}limit=500&dates=${fallbackDates}`);
-      if (fallbackResponse.ok) {
-        const fallbackData = await fallbackResponse.json();
-        const merged = [...events, ...(fallbackData.events || [])] as ESPNEvent[];
-        events = Array.from(new Map(merged.map((event) => [event.id, event])).values());
-      }
-    }
-
-    // NHL games scheduled tomorrow must be available for picks ahead of time.
-    // A separate date request is required: ESPN's NHL scoreboard rejects date ranges.
-    // FIFA_WC also needs the next ET date for late Pacific starts.
-    if (league === "FIFA_WC" || league === "NHL") {
-      try {
-        const tomorrowET = getETDate(1);
-        const r2 = await fetch(`${url}${separator}dates=${tomorrowET}`);
-        if (r2.ok) {
-          const d2 = await r2.json();
-          events = Array.from(new Map([...events, ...(d2.events || [])].map(
-            (event: ESPNEvent) => [event.id, event],
-          )).values());
-        } else {
-          console.log(`[spider] ESPN ${league} tomorrow returned ${r2.status}`);
-        }
-      } catch (error) {
-        console.log(`[spider] Error fetching ${league} tomorrow:`, error);
-      }
-    }
+    if (!url) return null;
+    const snapshot = await fetchEspnSchedule(league, url);
+    const events: ESPNEvent[] = snapshot.events;
     const results: any[] = [];
 
     // For college baseball, ESPN includes some D2 transition schools — exclude them
@@ -423,10 +377,32 @@ async function fetchLeagueGames(league: string): Promise<any[]> {
         isTop25,
       });
     }
-    return results;
+    return { games: results, snapshot };
   } catch (error) {
     console.log(`[spider] Error fetching ${league}:`, error);
-    return [];
+    return null;
+  }
+}
+
+async function retireRemovedMLBFixtures(snapshot: ScheduleSnapshot): Promise<void> {
+  // Absence alone is not evidence of cancellation: require BOTH a successful
+  // single-date slate and an event-summary 404. Never modify played/picked rows.
+  const candidates = await db.select().from(games)
+    .where(sql`${games.league} = 'MLB' AND ${games.status} = 'upcoming'
+      AND ${games.gameTime} > ${new Date()}
+      AND NOT EXISTS (SELECT 1 FROM predictions p WHERE p.game_id = ${games.id})`);
+  for (const fixture of candidates) {
+    if (!isRemovedFixtureCandidate(fixture, snapshot, 0)) continue;
+    if (await verifyEspnFixture(ESPN_ENDPOINTS.MLB, fixture) !== "missing") continue;
+    const retired = await db.update(games).set({ status: "postponed" })
+      .where(sql`${games.id} = ${fixture.id} AND ${games.externalId} = ${fixture.externalId}
+        AND ${games.status} = 'upcoming' AND ${games.gameTime} = ${fixture.gameTime}
+        AND ${games.gameTime} > NOW()
+        AND NOT EXISTS (SELECT 1 FROM predictions p WHERE p.game_id = ${games.id})`)
+      .returning({ id: games.id });
+    if (retired.length) {
+      console.warn(`[spider] Retained removed ESPN fixture ${fixture.externalId} (${fixture.id}) as postponed; no predictions changed`);
+    }
   }
 }
 
@@ -767,7 +743,10 @@ export async function syncSportsData(): Promise<{ synced: number; leagues: strin
       console.log(`[spider] Skipping ${league} (off-season)`);
       continue;
     }
-    const liveGames = await fetchLeagueGames(league);
+    const fetched = await fetchLeagueGames(league);
+    if (!fetched) continue;
+    const liveGames = fetched.games;
+    if (league === "MLB") await retireRemovedMLBFixtures(fetched.snapshot);
     if (liveGames.length === 0) continue;
 
     // Rankings change weekly. Reset future FBS rows after a successful ESPN
@@ -802,6 +781,13 @@ export async function syncSportsData(): Promise<{ synced: number; leagues: strin
 
       if (existing.length > 0) {
         const prev = existing[0];
+
+        // A stale slate cannot resurrect a postponed event.
+        if (prev.status === "postponed" && game.status === "upcoming" &&
+            await verifyEspnFixture(ESPN_ENDPOINTS[league], game) !== "scheduled") {
+          console.warn(`[spider] Keeping ${game.externalId} postponed: scheduled fixture not verified`);
+          continue;
+        }
 
         // CRITICAL: If the existing record is already FINISHED (played yesterday),
         // treat today's same-matchup as a brand-new game — INSERT, never UPDATE.
@@ -859,7 +845,7 @@ export async function syncSportsData(): Promise<{ synced: number; leagues: strin
         // (handles edge cases where the PST-date query above missed an existing record).
         const gameTimeBucket = Math.round(game.gameTime.getTime() / (90 * 60 * 1000));
         const bucketCheck = await db.execute(sql`
-          SELECT id FROM games
+          SELECT id, status FROM games
           WHERE league = ${game.league}
             AND home_team = ${game.homeTeam}
             AND away_team = ${game.awayTeam}
@@ -868,6 +854,11 @@ export async function syncSportsData(): Promise<{ synced: number; leagues: strin
         `);
         if ((bucketCheck as any).rows?.length > 0) {
           // An equivalent game already exists — update it instead of inserting a duplicate
+          if ((bucketCheck as any).rows[0].status === "postponed" && game.status === "upcoming" &&
+              await verifyEspnFixture(ESPN_ENDPOINTS[league], game) !== "scheduled") {
+            console.warn(`[spider] Keeping ${game.externalId} postponed: scheduled fixture not verified`);
+            continue;
+          }
           const existingId = (bucketCheck as any).rows[0].id;
           await db.update(games).set({
             externalId: game.externalId,

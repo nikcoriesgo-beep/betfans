@@ -346,6 +346,9 @@ export async function registerRoutes(
       }
 
       // Block picks after game has started
+      if (game.status === "postponed") {
+        return res.status(422).json({ message: "This fixture is unavailable — please reload the game list." });
+      }
       const nowBfb = new Date();
       const gameStartedBfb = game.gameTime && new Date(game.gameTime) <= nowBfb;
       const gameLockedBfb = gameStartedBfb || game.status === "live" || game.status === "finished";
@@ -537,6 +540,9 @@ export async function registerRoutes(
       if (game.gameTime && new Date(game.gameTime) <= new Date()) {
         return res.status(422).json({ message: "Game has already started — picks are locked." });
       }
+      if (game.status === "postponed") {
+        return res.status(422).json({ message: "This fixture is unavailable — please reload the game list." });
+      }
       if (game.status === "live" || game.status === "finished") {
         return res.status(422).json({ message: "Game has already started — picks are locked." });
       }
@@ -660,6 +666,9 @@ export async function registerRoutes(
       // Block picks on games that have already started, are live, or are finished
       const now = new Date();
       const gameStarted = new Date(gameCheck.gameTime) <= now;
+      if (gameCheck.status === "postponed") {
+        return res.status(422).json({ message: "This fixture is unavailable — please reload the game list." });
+      }
       const gameLocked = gameStarted || gameCheck.status === "live" || gameCheck.status === "finished";
       if (gameLocked) {
         return res.status(422).json({
