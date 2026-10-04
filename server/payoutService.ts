@@ -1,4 +1,5 @@
 import { storage } from "./storage";
+import { isPrizePoolExempt } from "@shared/prizePoolExemptions";
 import { sendPayPalSubscriptionRefund, sendPayPalPayout } from "./paypalService";
 import { gradeStuckGames } from "./sportsDataService";
 import { db } from "./db";
@@ -63,12 +64,12 @@ async function computeScorecardForPeriod(periodStart: Date, periodEnd: Date, log
   const leagues = requiredPrizePoolLeagues(day);
 
   // Use game_time (not prediction.createdAt) to identify games in the period
-  const dayGamesRaw = await db.select().from(games).where(
+  const dayGamesRaw = (await db.select().from(games).where(
     sql`${games.gameTime} >= ${periodStart} AND ${games.gameTime} < ${periodEnd}
         AND ${games.status} != 'postponed'
         AND (${games.league} != 'NCAAF' OR COALESCE(${games.isTop25}, FALSE))
         AND ${inArray(games.league, leagues)}`
-  );
+  )).filter(g => !isPrizePoolExempt(g));
 
   // Deduplicate provider duplicates while preserving same-day doubleheaders.
   const matchupGroups = new Map<string, MatchupGroup>();

@@ -16,6 +16,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { isPrizePoolLeague, pacificDay } from "@shared/prizePoolRules";
+import { isPrizePoolExempt } from "@shared/prizePoolExemptions";
 
 const LEAGUES = ["All", "MLB", "NCAAF", "NFL", "NHL", "NBA", "FIFA_WC", "MLS", "EPL", "UCL", "NCAAB", "NCAABB"];
 
@@ -371,7 +372,9 @@ export default function DailyPicks() {
                       <div className="flex items-center gap-2">
                         <Badge className={cn("text-[10px]", LEAGUE_COLORS[game.league] || "bg-foreground/10 text-foreground/60")}>{game.league}</Badge>
                         <StatusBadge status={game.status || "upcoming"} />
-                        {isPrizePoolLeague(game.league, pacificDay(new Date(game.gameTime)), game.league === "NCAAF" && game.isTop25 === true) ? (
+                        {isPrizePoolExempt(game) ? (
+                          <Badge className="text-[9px]">EXEMPT — LATE SCHEDULE ADDITION</Badge>
+                        ) : isPrizePoolLeague(game.league, pacificDay(new Date(game.gameTime)), game.league === "NCAAF" && game.isTop25 === true) ? (
                           <Badge className="bg-yellow-500/20 text-yellow-700 border-yellow-500/30 text-[9px] gap-0.5">
                             <Trophy size={8} />PRIZE POOL REQUIRED
                           </Badge>

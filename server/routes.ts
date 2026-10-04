@@ -1,4 +1,5 @@
 import type { Express } from "express";
+import { isPrizePoolExempt } from "@shared/prizePoolExemptions";
 import { createServer, type Server } from "http";
 import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integrations/auth";
 import { storage } from "./storage";
@@ -753,7 +754,7 @@ export async function registerRoutes(
       const nbaCount = dedup(nbaGames);
       const nhlCount = dedup(nhlGames);
       const ncaafCount = dedup(ncaafGames);
-      const nflCount = dedup(nflGames);
+      const nflCount = dedup(nflGames.filter(g => !isPrizePoolExempt(g)));
       const boxingCount = dedup(boxingGames);
       const nhlRequired = isNhlRequired(day);
       const count = mlbCount + ncaafCount + nflCount + (nhlRequired ? nhlCount : 0);
@@ -793,7 +794,7 @@ export async function registerRoutes(
         // Check if any of these games are finished (graded)
         const hasFinished = candidateGames.some(g => g.status === "finished");
         if (hasFinished) {
-          dayGamesRaw   = candidateGames;
+          dayGamesRaw   = candidateGames.filter(g => !isPrizePoolExempt(g));
           periodStart   = start;
           periodEnd     = end;
           dateLabel     = pstStr;
