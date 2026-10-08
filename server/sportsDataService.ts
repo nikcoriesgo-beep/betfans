@@ -321,11 +321,10 @@ async function fetchLeagueGames(league: string): Promise<any[]> {
     const separator = url.includes("?") ? "&" : "?";
     // Football is played in weekly slates. Load the next two weeks so Daily Picks
     // can expose the next FBS/NFL game day even when neither league plays today.
-    const dateParam = league === "NFL" || league === "NCAAF"
-      ? `${todayET}-${getETDate(14)}`
-      : todayET;
+    // ESPN rejects football date ranges with HTTP 400. Request individual days.
+    const dateParam = todayET;
     const limitParam = league === "NFL" || league === "NCAAF" ? "limit=300&" : "";
-    const response = await fetch(`${url}${separator}${limitParam}dates=${dateParam}`);
+    const response = await fetch(`${url}${separator}${limitParam}dates=${dateParam}`, { signal: AbortSignal.timeout(15000) });
     if (!response.ok) {
       console.log(`[spider] ESPN ${league} returned ${response.status}`);
       return [];
@@ -333,18 +332,28 @@ async function fetchLeagueGames(league: string): Promise<any[]> {
     const data = await response.json();
     let events: ESPNEvent[] = data.events || [];
 
-    // During long gaps (bye weeks / bowl scheduling), make one wider fallback
-    // request only when the normal two-week football window is empty.
-    const hasFutureFootballEvent = events.some(
-      (event) => new Date(event.date).getTime() > Date.now(),
-    );
-    if ((league === "NFL" || league === "NCAAF") && !hasFutureFootballEvent) {
-      const fallbackDates = `${getETDate(15)}-${getETDate(45)}`;
-      const fallbackResponse = await fetch(`${url}${separator}limit=500&dates=${fallbackDates}`);
-      if (fallbackResponse.ok) {
-        const fallbackData = await fallbackResponse.json();
-        const merged = [...events, ...(fallbackData.events || [])] as ESPNEvent[];
-        events = Array.from(new Map(merged.map((event) => [event.id, event])).values());
+    if (league === "NFL" || league === "NCAAF") {
+      const fetchDays = async (start: number, end: number) => {
+        for (let offset = start; offset <= end; offset += 4) {
+          const days = await Promise.all(Array.from({ length: Math.min(4, end - offset + 1) }, async (_, index) => {
+            const date = getETDate(offset + index);
+            try {
+              const result = await fetch(`${url}${separator}limit=300&dates=${date}`, { signal: AbortSignal.timeout(15000) });
+              if (!result.ok) throw new Error(`HTTP ${result.status}`);
+              const data = await result.json();
+              if (!Array.isArray(data.events)) throw new Error("Invalid ESPN events");
+              return data.events as ESPNEvent[];
+            } catch (error) {
+              console.warn(`[spider] ESPN ${league} ${date} failed:`, error);
+              return [];
+            }
+          }));
+          events = Array.from(new Map([...events, ...days.flat()].map(event => [event.id, event])).values());
+        }
+      };
+      await fetchDays(1, 14);
+      if (!events.some(event => new Date(event.date).getTime() > Date.now())) {
+        await fetchDays(15, 45);
       }
     }
 
