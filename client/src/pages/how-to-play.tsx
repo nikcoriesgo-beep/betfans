@@ -24,7 +24,7 @@ function SignupCTA({ variant = "default" }: { variant?: "default" | "accent" | "
         Join BetFans Now
       </h3>
       <p className="text-muted-foreground text-sm mb-5 max-w-sm mx-auto">
-        Start making picks, climb the leaderboard, and win real cash prizes. Memberships start at just $19/month.
+        Start making picks, climb the leaderboard, and win real cash prizes. Legend membership — $99/month.
       </p>
       <div className="flex flex-col sm:flex-row gap-3 justify-center items-center">
         <Link href="/membership">
@@ -56,29 +56,13 @@ function SectionBadge({ label }: { label: string }) {
 
 const TIERS = [
   {
-    name: "Rookie",
-    price: "$19",
-    color: "text-blue-400",
-    border: "border-blue-400/30",
-    bg: "bg-blue-400/5",
-    perks: ["Access to all Spider AI picks", "Daily & annual leaderboard", "Prize pool eligible", "$5 instant payout per referral", "$5/mo residual income per referral"],
-  },
-  {
-    name: "Pro",
-    price: "$29",
-    color: "text-purple-400",
-    border: "border-purple-400/40",
-    bg: "bg-purple-400/10",
-    badge: "Most Popular",
-    perks: ["Everything in Rookie", "Pro-locked premium picks", "Pro leaderboard status", "$10 instant payout per referral", "$10/mo residual income per referral"],
-  },
-  {
     name: "Legend",
     price: "$99",
     color: "text-yellow-400",
     border: "border-yellow-400/40",
     bg: "bg-yellow-400/10",
-    perks: ["Everything in Pro", "Max prize pool share", "Legend badge + status", "$50 instant payout per referral", "$50/mo residual income per referral"],
+    badge: "Legend",
+    perks: ["Access to Spider AI picks", "Prize pool eligibility", "Legend badge + status", "$50/mo residual income per referral"],
   },
 ];
 
@@ -102,8 +86,8 @@ export default function HowToPlay() {
     return currentRank >= rank;
   };
 
-  const nextUpgrade = currentTier === "rookie" ? "pro" : currentTier === "pro" ? "legend" : null;
-  const nextUpgradeLabel = nextUpgrade === "pro" ? "Upgrade to Pro — $29/mo" : nextUpgrade === "legend" ? "Upgrade to Legend — $99/mo" : null;
+  const nextUpgrade = currentRank < 3 ? "legend" : null;
+  const nextUpgradeLabel = nextUpgrade ? "Join Legend — $99/mo" : null;
   const nextUpgradePriceHref = "/membership";
 
   return (
@@ -299,9 +283,7 @@ export default function HowToPlay() {
             </div>
             <div className="grid grid-cols-3 gap-3">
               {[
-                { tier: "Rookie", pool: "$14", instant: "$5", color: "text-blue-400", border: "border-blue-400/20" },
-                { tier: "Pro", pool: "$19", instant: "$10", color: "text-purple-400", border: "border-purple-400/20" },
-                { tier: "Legend", pool: "$49", instant: null, color: "text-yellow-400", border: "border-yellow-400/20" },
+                { tier: "Legend", pool: "$50", instant: null, color: "text-yellow-400", border: "border-yellow-400/20" },
               ].map(({ tier, pool, instant, color, border }) => (
                 <div key={tier} className={cn("rounded-xl bg-white/5 border p-4 text-center", border)}>
                   <div className={cn("text-xs font-bold uppercase tracking-wide mb-2", color)}>{tier}</div>
@@ -345,10 +327,10 @@ export default function HowToPlay() {
           <section className="mb-16">
             <div className="text-center mb-8">
               <SectionBadge label="Membership" />
-              <h2 className="text-3xl md:text-4xl font-display font-black mt-2">Choose Your Tier</h2>
-              <p className="text-muted-foreground mt-2">All tiers get access to Spider AI picks and the prize pool. No hidden fees.</p>
+              <h2 className="text-3xl md:text-4xl font-display font-black mt-2">The Legend Membership</h2>
+              <p className="text-muted-foreground mt-2">Legend membership includes Spider AI picks and the prize pool. No hidden fees.</p>
             </div>
-            <div className="grid md:grid-cols-3 gap-4">
+            <div className="max-w-sm mx-auto">
               {TIERS.map((tier) => (
                 <div
                   key={tier.name}
@@ -374,7 +356,7 @@ export default function HowToPlay() {
                   <Link href="/membership" className="block mt-5">
                     <Button
                       className={`w-full gap-2 ${tier.name === "Legend" && !upgradeDisabled(tier.name) ? "bg-gradient-to-r from-yellow-500 to-yellow-600 text-black hover:from-yellow-400 hover:to-yellow-500" : ""}`}
-                      variant={tier.name === "Pro" && !upgradeDisabled(tier.name) ? "default" : "outline"}
+                      variant={!upgradeDisabled(tier.name) ? "default" : "outline"}
                       disabled={upgradeDisabled(tier.name)}
                       data-testid={`button-select-tier-${tier.name.toLowerCase()}`}
                     >
@@ -401,8 +383,6 @@ export default function HowToPlay() {
             </div>
             <div className="grid grid-cols-3 gap-3 mb-5">
               {[
-                { tier: "Rookie", instant: "$5", residual: "$5/mo", color: "text-blue-400", border: "border-blue-400/20" },
-                { tier: "Pro", instant: "$10", residual: "$10/mo", color: "text-purple-400", border: "border-purple-400/20" },
                 { tier: "Legend", instant: "$50", residual: "$50/mo", color: "text-yellow-400", border: "border-yellow-400/20" },
               ].map(({ tier, instant, residual, color, border }) => (
                 <div key={tier} className={cn("rounded-xl bg-white/5 border p-4 text-center", border)}>
@@ -421,19 +401,7 @@ export default function HowToPlay() {
                   <Crown size={13} className="text-yellow-400 shrink-0" />
                   <span className="text-yellow-400 font-bold">Legend</span>
                   <span className="text-muted-foreground">can refer</span>
-                  <span className="text-white font-medium">Rookie, Pro & Legend</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Star size={13} className="text-primary shrink-0" />
-                  <span className="text-primary font-bold">Pro</span>
-                  <span className="text-muted-foreground">can refer</span>
-                  <span className="text-white font-medium">Rookie & Pro only</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Users size={13} className="text-muted-foreground shrink-0" />
-                  <span className="text-muted-foreground font-bold">Rookie</span>
-                  <span className="text-muted-foreground">can refer</span>
-                  <span className="text-white font-medium">Rookie only</span>
+                  <span className="text-white font-medium">Legend members</span>
                 </div>
               </div>
             </div>
