@@ -8,7 +8,11 @@ export function isPrizePoolExempt(game: {
   awayTeam: string;
   gameTime: Date | string;
 }): boolean {
-  return pacificDay(new Date(game.gameTime)) === "2026-10-04" &&
+  const day = pacificDay(new Date(game.gameTime));
+  if (day === "2026-10-11" &&
+    (game.externalId === "NFL:401872981" ||
+      (game.homeTeam === "Jacksonville Jaguars" && game.awayTeam === "Philadelphia Eagles"))) return true;
+  return day === "2026-10-04" &&
     (game.externalId === "NFL:401872965" ||
       (game.homeTeam === "Washington Commanders" && game.awayTeam === "Indianapolis Colts"));
 }
