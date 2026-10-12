@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { DailyPrizeLeaderboard } from "@/components/DailyPrizeLeaderboard";
 import { PrizePoolQualRule } from "@/components/PrizePoolQualRule";
 import { useRoute } from "wouter";
 import { Navbar } from "@/components/layout/Navbar";
@@ -144,6 +145,11 @@ function TopThreePodium({ entries }: { entries: any[] }) {
 }
 
 export default function LeaderboardPage() {
+  const [daily] = useRoute("/leaderboard/daily");
+  return daily ? <DailyPrizeLeaderboard /> : <LegacyLeaderboardPage />;
+}
+
+function LegacyLeaderboardPage() {
   const [, navigate] = useLocation();
   const [, dailyMatch] = useRoute("/leaderboard/daily");
   const [, annualMatch] = useRoute("/leaderboard/annual");
