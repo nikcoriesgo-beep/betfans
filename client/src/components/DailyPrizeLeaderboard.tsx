@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Navbar } from "@/components/layout/Navbar";
 import { PrizePoolQualRule } from "@/components/PrizePoolQualRule";
+import { DailyPrizePodium } from "@/components/DailyPrizePodium";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Trophy } from "lucide-react";
 import { dailyPrizeStandings, type DailyPrizeMember } from "@shared/dailyPrizeStandings";
@@ -41,6 +42,7 @@ export function DailyPrizeLeaderboard() {
           <p>Daily results could not be loaded.</p>
           <button className="mt-3 text-primary underline" onClick={() => refetch()}>Try again</button>
         </div> : <>
+          <DailyPrizePodium entries={entries} />
           <section className="rounded-xl border border-yellow-500/30 bg-yellow-500/5 p-5 mb-6" aria-label="Daily Prize Pool winners">
             <h2 className="text-yellow-400 font-bold flex items-center gap-2 mb-4">
               <Trophy size={20} />
