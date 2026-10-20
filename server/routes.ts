@@ -4,7 +4,7 @@ import { createServer, type Server } from "http";
 import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integrations/auth";
 import { storage } from "./storage";
 import { prizePoolScore, prizePoolQualified } from "./prizePoolRules";
-import { isNhlRequired, pacificDay, pacificDayWindow, previousPacificDay } from "@shared/prizePoolRules";
+import { isNhlRequired, isNbaRequired, pacificDay, pacificDayWindow, previousPacificDay } from "@shared/prizePoolRules";
 import { db } from "./db";
 import { users, referrals, games, predictions, leaderboardEntries } from "@shared/schema";
 import { eq, sql, and, desc, asc, inArray } from "drizzle-orm";
@@ -757,8 +757,9 @@ export async function registerRoutes(
       const nflCount = dedup(nflGames.filter(g => !isPrizePoolExempt(g)));
       const boxingCount = dedup(boxingGames);
       const nhlRequired = isNhlRequired(day);
-      const count = mlbCount + ncaafCount + nflCount + (nhlRequired ? nhlCount : 0);
-      res.json({ count, mlbCount, nbaCount, nhlCount, ncaafCount, nflCount, boxingCount, fbsRequired: true, nflRequired: true, nhlRequired, boxingRequired: false, periodStart: start, periodEnd: end });
+      const nbaRequired = isNbaRequired(day);
+      const count = mlbCount + ncaafCount + nflCount + (nhlRequired ? nhlCount : 0) + (nbaRequired ? nbaCount : 0);
+      res.json({ count, mlbCount, nbaCount, nhlCount, ncaafCount, nflCount, boxingCount, fbsRequired: true, nflRequired: true, nhlRequired, nbaRequired, boxingRequired: false, periodStart: start, periodEnd: end });
     } catch (e) {
       console.error("[mlb-game-count]", e);
       res.status(500).json({ message: "Failed to fetch required game counts" });
@@ -873,11 +874,11 @@ export async function registerRoutes(
           losses:  mlb.losses  + ncaaf.losses  + nfl.losses  + boxing.losses  + nba.losses  + nhl.losses  + wc.losses  + epl.losses  + ucl.losses  + ncaabb.losses,
           pending: mlb.pending + ncaaf.pending + nfl.pending + boxing.pending + nba.pending + nhl.pending + wc.pending + epl.pending + ucl.pending + ncaabb.pending,
         };
-        const scores = { mlb, nfl, ncaaf, nhl };
+        const scores = { mlb, nfl, ncaaf, nhl, nba };
         const prizePoolTotal = prizePoolScore(scores, dateLabel);
         const qualified = prizePoolQualified(scores, {
           mlb: mlbMatchups.length, nfl: nflMatchups.length,
-          ncaaf: ncaafMatchups.length, nhl: nhlMatchups.length,
+          ncaaf: ncaafMatchups.length, nhl: nhlMatchups.length, nba: nbaMatchups.length,
         }, dateLabel);
 
         // Pick submission timestamps in PST
@@ -920,7 +921,7 @@ export async function registerRoutes(
 
       res.json({
         period: { start: periodStart, end: periodEnd, label: dateLabel },
-        games:  { mlb: mlbMatchups.length, ncaaf: ncaafMatchups.length, nfl: nflMatchups.length, nba: nbaMatchups.length, nhl: nhlMatchups.length, wc: wcMatchups.length, epl: eplMatchups.length, ucl: uclMatchups.length, ncaabb: ncaabbMatchups.length, total: matchupGroups.size, prizePoolTotal: mlbMatchups.length + ncaafMatchups.length + nflMatchups.length + (isNhlRequired(dateLabel) ? nhlMatchups.length : 0), nhlRequired: isNhlRequired(dateLabel) },
+        games:  { mlb: mlbMatchups.length, ncaaf: ncaafMatchups.length, nfl: nflMatchups.length, nba: nbaMatchups.length, nhl: nhlMatchups.length, wc: wcMatchups.length, epl: eplMatchups.length, ucl: uclMatchups.length, ncaabb: ncaabbMatchups.length, total: matchupGroups.size, prizePoolTotal: mlbMatchups.length + ncaafMatchups.length + nflMatchups.length + (isNhlRequired(dateLabel) ? nhlMatchups.length : 0) + (isNbaRequired(dateLabel) ? nbaMatchups.length : 0), nhlRequired: isNhlRequired(dateLabel), nbaRequired: isNbaRequired(dateLabel) },
         members: memberRows,
         winner: winner ? { userId: winner.userId, name: winner.name, wins: winner.prizePoolTotal.wins, losses: winner.prizePoolTotal.losses } : null,
       });

@@ -151,7 +151,8 @@ function SlideContent({ slide, index }: { slide: typeof slides[0]; index: number
             <p className="text-xs font-black text-yellow-300 uppercase tracking-wide mb-1">To Qualify:</p>
             <ul className="space-y-1 text-xs text-yellow-100/90">
               <li>✓ <strong className="text-yellow-200">Pick every MLB, NFL & FBS Top 25 game</strong> on its Pacific day; NHL joins September 29, 2026</li>
-              <li>✓ <strong className="text-yellow-200">NBA, WBC and other sports are optional</strong> Skill Play for rankings</li>
+               <li>✓ <strong className="text-yellow-200">Every NBA game is required beginning October 20, 2026 (Pacific Time)</strong></li>
+               <li>✓ <strong className="text-yellow-200">WBC and other sports are optional</strong> Skill Play for rankings</li>
               <li>✗ Miss one required game = <strong className="text-yellow-200">disqualified</strong> from that day's payout</li>
             </ul>
           </div>

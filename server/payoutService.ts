@@ -5,7 +5,7 @@ import { gradeStuckGames } from "./sportsDataService";
 import { db } from "./db";
 import { games, predictions, users } from "@shared/schema";
 import { sql, inArray } from "drizzle-orm";
-import { isNhlRequired, pacificDay, pacificDayWindow, previousPacificDay, requiredPrizePoolLeagues } from "@shared/prizePoolRules";
+import { isNhlRequired, isNbaRequired, pacificDay, pacificDayWindow, previousPacificDay, requiredPrizePoolLeagues } from "@shared/prizePoolRules";
 import { prizePoolQualified, prizePoolScore } from "./prizePoolRules";
 
 async function sendAndRecordPayout(
@@ -132,11 +132,11 @@ async function computeScorecardForPeriod(periodStart: Date, periodEnd: Date, log
     const ncaaf  = forSport(ncaafMatchups);
     const nfl    = forSport(nflMatchups);
     const boxing = forSport(boxingMatchups);
-    const scores = { mlb, ncaaf, nfl, nhl };
+    const scores = { mlb, ncaaf, nfl, nhl, nba };
     const prizeTotal = prizePoolScore(scores, day);
     const qualified = prizePoolQualified(scores, {
       mlb: mlbMatchups.length, ncaaf: ncaafMatchups.length,
-      nfl: nflMatchups.length, nhl: nhlMatchups.length,
+      nfl: nflMatchups.length, nhl: nhlMatchups.length, nba: nbaMatchups.length,
     }, day);
     return { userId: u.id, user: u, wins: prizeTotal.wins, losses: prizeTotal.losses, totalPicks: prizeTotal.picks, qualified };
   });
@@ -167,9 +167,9 @@ async function processDailyPayout(
   const dailyShare = Math.floor(poolAmount * 0.10); // whole dollars only
 
   // Use game-time-based scorecard (same logic as /api/daily-scorecard) for correctness
-  const { memberRows, mlbCount, nflCount, ncaafCount, nhlCount } = await computeScorecardForPeriod(periodStart, periodEnd, log);
+  const { memberRows, mlbCount, nflCount, ncaafCount, nhlCount, nbaCount } = await computeScorecardForPeriod(periodStart, periodEnd, log);
   const day = pacificDay(periodStart);
-  const totalCount = mlbCount + nflCount + ncaafCount + (isNhlRequired(day) ? nhlCount : 0);
+  const totalCount = mlbCount + nflCount + ncaafCount + (isNhlRequired(day) ? nhlCount : 0) + (isNbaRequired(day) ? nbaCount : 0);
   if (memberRows.every(m => m.totalPicks === 0)) {
     return { paid: 0, skipped: 0, detail: `No picks recorded for daily ${periodLabel}` };
   }

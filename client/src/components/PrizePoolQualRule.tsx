@@ -1,6 +1,6 @@
 import { AlertTriangle, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { isNhlRequired, pacificDay } from "@shared/prizePoolRules";
+import { isNhlRequired, isNbaRequired, pacificDay } from "@shared/prizePoolRules";
 
 interface Props {
   compact?: boolean;
@@ -9,18 +9,19 @@ interface Props {
 
 export function PrizePoolQualRule({ compact = false, className }: Props) {
   const nhlRequired = isNhlRequired(pacificDay(new Date()));
-  const required = <>every MLB, NFL, and NCAA FBS Top 25 game{nhlRequired ? ", plus every NHL game" : ""}</>;
+  const nbaRequired = isNbaRequired(pacificDay(new Date()));
+  const optional = nbaRequired ? "WBC Boxing and all other sports" : nhlRequired ? "NBA, WBC Boxing, and all other sports" : "NBA, NHL, WBC Boxing, and all other sports";
+  const required = <>every MLB, NFL, and NCAA FBS Top 25 game{nhlRequired ? ", plus every NHL game" : ""}{nbaRequired ? " and every NBA game" : ""}</>;
   if (compact) {
     return (
       <div className={cn("rounded-lg border border-yellow-400/40 bg-yellow-500/10 px-4 py-3 flex items-start gap-3", className)} data-testid="prize-pool-qual-rule-compact">
         <AlertTriangle size={16} className="text-yellow-400 shrink-0 mt-0.5" />
-        <div>
+        <div className="space-y-1">
           <p className="text-xs text-yellow-100/90 leading-relaxed">
             <span className="font-black text-yellow-300">Prize Pool Rule: </span>
-            You must pick <strong className="text-yellow-200">{required}</strong> scheduled that Pacific day to qualify for payouts. {nhlRequired ? "NBA, WBC Boxing, and all other sports" : "NBA, NHL, WBC Boxing, and all other sports"} are optional Skill Play and ranking picks.
+            You must pick <strong className="text-yellow-200">{required}</strong> scheduled that Pacific day to qualify for payouts. {optional} are optional Skill Play and ranking picks.
             {!nhlRequired && " NHL becomes required September 29, 2026 (Pacific Time)."}
           </p>
-          <p className="mt-1.5 text-xs text-yellow-300/50">* All members must predict over 2,000 MLB games to qualify for the annual prize pool payout.</p>
         </div>
       </div>
     );
@@ -30,28 +31,26 @@ export function PrizePoolQualRule({ compact = false, className }: Props) {
     <div className={cn("rounded-xl border-2 border-yellow-400/50 bg-yellow-500/10 p-5", className)} data-testid="prize-pool-qual-rule">
       <div className="flex items-start gap-3">
         <AlertTriangle size={22} className="text-yellow-400 shrink-0 mt-0.5" />
-        <div>
+        <div className="w-full">
           <p className="font-black text-yellow-300 text-base mb-1 uppercase tracking-wide">Prize Pool Qualification Rule</p>
           <p className="text-sm text-yellow-100/90 leading-relaxed mb-2">
             To qualify for <strong className="text-yellow-200">any prize pool payout</strong>, you must:
           </p>
-          <ul className="space-y-1.5 text-sm text-yellow-100/90">
+          <ul className="space-y-1.5 text-sm text-yellow-100/90 mb-3">
             <li className="flex items-center gap-2">
               <CheckCircle2 size={14} className="text-yellow-400 shrink-0" />
                Pick <strong className="text-yellow-200">{required}</strong> scheduled that Pacific day
             </li>
             <li className="flex items-center gap-2">
               <CheckCircle2 size={14} className="text-yellow-400 shrink-0" />
-              Missing <strong className="text-yellow-200">even one required game</strong> disqualifies you
+                Missing <strong className="text-yellow-200">even one required game</strong> disqualifies you
             </li>
             <li className="flex items-center gap-2">
               <CheckCircle2 size={14} className="text-yellow-400 shrink-0" />
-               {nhlRequired ? "NBA, WBC Boxing, and all other sports" : "NBA, NHL, WBC Boxing, and all other sports"} are <strong className="text-yellow-200">optional Skill Play</strong> for rankings only
+               {optional} are <strong className="text-yellow-200">optional Skill Play</strong> for rankings only
             </li>
           </ul>
           {!nhlRequired && <p className="text-xs text-yellow-200">NHL becomes required September 29, 2026 (Pacific Time).</p>}
-          <p className="mt-2 text-xs text-yellow-300/70">Applies to daily prize pool payouts.</p>
-          <p className="mt-2 text-xs text-yellow-300/50">* All members must predict over 2,000 MLB games to qualify for the annual prize pool payout.</p>
         </div>
       </div>
     </div>

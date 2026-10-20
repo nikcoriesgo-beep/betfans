@@ -18,7 +18,7 @@ import { Link } from "wouter";
 import { ExpertBadge, isExpertAnalyst } from "@/components/ExpertBadge";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
-import { isNhlRequired } from "@shared/prizePoolRules";
+import { isNhlRequired, isNbaRequired } from "@shared/prizePoolRules";
 
 type PrizePoolData = {
   amount: number;
@@ -232,7 +232,7 @@ function DailyWinners({ poolAmount }: { poolAmount: number }) {
           <CardContent className="p-5 text-center">
             <Trophy size={28} className="text-muted-foreground/20 mx-auto mb-2" />
             <p className="text-muted-foreground text-sm">No qualifying picks today</p>
-            <p className="text-xs text-muted-foreground/50 mt-1">Pick every MLB, NFL & NCAA FBS Top 25 game{isNhlRequired(scorecard?.period?.label ?? "") ? ", plus every NHL game" : ""} to qualify</p>
+            <p className="text-xs text-muted-foreground/50 mt-1">Pick every MLB, NFL & NCAA FBS Top 25 game{isNhlRequired(scorecard?.period?.label ?? "") ? ", plus every NHL game" : ""}{isNbaRequired(scorecard?.period?.label ?? "") ? " and every NBA game" : ""} to qualify</p>
           </CardContent>
         </Card>
       ) : (
@@ -329,6 +329,7 @@ function DailyMemberScorecard() {
   const rawMembers: any[] = data?.members ?? [];
   const label = data?.period?.label ?? "";
   const nhlRequired = label ? isNhlRequired(label) : false;
+  const nbaRequired = label ? isNbaRequired(label) : false;
   const winner = data?.winner ?? null;
 
   // Prize Pool scorecard uses required-sport totals; ordinary leaderboards retain all-sport totals.
@@ -424,7 +425,7 @@ function DailyMemberScorecard() {
                 <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-blue-400">MLB <span className="block text-[8px] text-yellow-400">Required</span></th>
                 {games.ncaaf > 0 && <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-amber-400">🏈 FBS Top 25 <span className="block text-[8px] text-yellow-400">Required</span></th>}
                 {games.nfl > 0 && <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-green-400">🏈 NFL <span className="block text-[8px] text-yellow-400">Required</span></th>}
-                <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-orange-400">NBA <span className="block text-[8px] text-muted-foreground">Optional</span></th>
+                <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-orange-400">NBA <span className={cn("block text-[8px]", nbaRequired ? "text-yellow-400" : "text-muted-foreground")}>{nbaRequired ? "Required" : "Optional"}</span></th>
                 <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-cyan-400">NHL <span className={cn("block text-[8px]", nhlRequired ? "text-yellow-400" : "text-muted-foreground")}>{nhlRequired ? "Required" : "Optional"}</span></th>
                 {games.wc > 0 && <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-emerald-400">🌍 WC <span className="block text-[8px] text-muted-foreground">Optional</span></th>}
                 {games.epl > 0 && <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-indigo-400">⚽ EPL <span className="block text-[8px] text-muted-foreground">Optional</span></th>}
@@ -445,7 +446,7 @@ function DailyMemberScorecard() {
                 const prizeRecord = prizePoolRecord(m);
                 const prizeGameTotal = typeof games.prizePoolTotal === "number"
                   ? games.prizePoolTotal
-                  : games.mlb + (games.ncaaf ?? 0) + (games.nfl ?? 0) + (nhlRequired ? (games.nhl ?? 0) : 0);
+                  : games.mlb + (games.ncaaf ?? 0) + (games.nfl ?? 0) + (nhlRequired ? (games.nhl ?? 0) : 0) + (nbaRequired ? (games.nba ?? 0) : 0);
                 return (
                   <tr
                     key={m.userId}
