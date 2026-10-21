@@ -74,12 +74,14 @@ async function loadSport(config: typeof SPORTS[number]): Promise<Sport> {
     } catch {
       // A previously verified deadline remains valid during provider outages.
     }
+    // A missing date means open, not unavailable. Keep a row even without a
+    // date so scheduled/manual locks and pick writes serialize on that row.
+    await pool.query(`INSERT INTO master_championship_sports (season,sport_id,lock_at)
+      VALUES ($1,$2,NULL) ON CONFLICT (season,sport_id) DO NOTHING`, [MASTER_SEASON, config.id]);
     const result = await pool.query("SELECT lock_at FROM master_championship_sports WHERE season=$1 AND sport_id=$2", [MASTER_SEASON, config.id]);
-    // ESPN's football "postseason" starts with bowls, not the CFP playoffs.
-    sport.lockAt = config.id === "NCAAF" ? null : result.rows[0]?.lock_at?.toISOString() ?? null;
+    sport.lockAt = result.rows[0]?.lock_at?.toISOString() ?? null;
     sport.locked = championshipIsLocked(sport.lockAt);
-    sport.available = !!sport.lockAt;
-    if (!sport.available) sport.error = `A verified ${sport.lockRule === "final_round" ? "final-round" : "playoff"} lock date is not available for this competition. Selections are not open yet.`;
+    sport.available = true;
   } catch {
     sport.error = "Teams could not be loaded. Please try again.";
   }
@@ -105,12 +107,23 @@ async function getPicks(userId: string) {
 
 export async function registerMasterChampionships(app: Express) {
   await pool.query(`CREATE TABLE IF NOT EXISTS master_championship_sports (
-    season TEXT NOT NULL, sport_id TEXT NOT NULL, lock_at TIMESTAMPTZ NOT NULL,
+    season TEXT NOT NULL, sport_id TEXT NOT NULL, lock_at TIMESTAMPTZ,
     PRIMARY KEY (season,sport_id));
     CREATE TABLE IF NOT EXISTS master_championship_picks (
     user_id TEXT NOT NULL REFERENCES users(id), season TEXT NOT NULL, sport_id TEXT NOT NULL,
     team_id TEXT NOT NULL, team_name TEXT NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (user_id,season,sport_id));`);
+    PRIMARY KEY (user_id,season,sport_id));
+    DO $$ BEGIN
+      IF EXISTS (SELECT 1 FROM information_schema.columns
+        WHERE table_schema=current_schema() AND table_name='master_championship_sports'
+        AND column_name='lock_at' AND is_nullable='NO') THEN
+        ALTER TABLE master_championship_sports ALTER COLUMN lock_at DROP NOT NULL;
+        -- The previous release explicitly ignored NCAAF dates: those old
+        -- rows describe bowl season, not the College Football Playoff.
+        UPDATE master_championship_sports SET lock_at=NULL
+          WHERE season='2026-27' AND sport_id='NCAAF';
+      END IF;
+    END $$;`);
   app.get("/api/master-championships", async (req, res) => {
     try {
       const userId = (req.session as any)?.userId;
@@ -135,7 +148,7 @@ export async function registerMasterChampionships(app: Express) {
       const client = await pool.connect();
       try {
         await client.query("BEGIN");
-        const deadline = await client.query(`SELECT lock_at > clock_timestamp() AS open FROM master_championship_sports
+        const deadline = await client.query(`SELECT (lock_at IS NULL OR lock_at > clock_timestamp()) AS open FROM master_championship_sports
           WHERE season=$1 AND sport_id=$2 FOR UPDATE`, [MASTER_SEASON, sport.id]);
         if (!deadline.rows[0]?.open) {
           await client.query("ROLLBACK");

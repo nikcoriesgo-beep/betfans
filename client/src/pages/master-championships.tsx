@@ -58,7 +58,7 @@ function SportSelection({ sport, pick, canPlay }: { sport: Sport; pick?: Champio
   const lockDate = sport.lockAt ? new Date(sport.lockAt) : null;
   const verifiedDeadline = !!lockDate && Number.isFinite(lockDate.getTime());
   const locked = sport.locked || (!!lockDate && lockDate.getTime() <= Date.now());
-  const available = sport.available && verifiedDeadline;
+  const available = sport.available;
   const save = useMutation({
     mutationFn: async (teamId: string) => {
       if (!available || locked || !canPlay) throw new Error("Selections are unavailable for this sport.");
@@ -85,7 +85,7 @@ function SportSelection({ sport, pick, canPlay }: { sport: Sport; pick?: Champio
       </div>
       <CardDescription>
         {verifiedDeadline ? <span className="flex items-start gap-2"><Lock size={14} className="shrink-0 mt-0.5" /><span>Verified {sport.lockRule === "world_series_friday" ? "World Series Friday" : sport.lockRule === "final_round" ? "final-round" : "playoff"} lock: {lockDate!.toLocaleString("en-US", { timeZone: "America/Los_Angeles", month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" })} (Pacific Time)</span></span> :
-          "Schedule unavailable — no verified lock deadline. Selections are disabled until the applicable playoff or final-round start is confirmed."}
+          "Open — no lock date scheduled. Choose or change your champion until BetFans locks this sport or a scheduled deadline is reached."}
       </CardDescription>
       {sport.error && <p className="text-xs text-muted-foreground">{sport.error}</p>}
       {pick && <p className="rounded-lg bg-primary/10 border border-primary/30 text-primary font-bold px-3 py-2 text-sm">Your champion: <strong>{pick.teamName}</strong></p>}
@@ -125,7 +125,7 @@ export default function MasterChampionships() {
       <header className="mb-8">
         <div className="flex items-center gap-2 text-primary text-xs font-bold uppercase tracking-widest mb-3"><Trophy size={18} /> {data?.season || "Season championships"}</div>
         <h1 className="text-4xl md:text-5xl font-display font-bold mb-4">Master Championships</h1>
-        <p className="text-muted-foreground max-w-2xl">Pick the champion. Back your team all season. Save one selection per sport and edit it until playoffs begin. For leagues without playoffs, picks lock when the final round begins.</p>
+        <p className="text-muted-foreground max-w-2xl">Save one champion per sport and change your choice while selections are open. Sports without a scheduled lock date stay open until BetFans locks them or a deadline is scheduled. Confirmed deadlines appear on each sport below.</p>
         <p className="text-sm text-primary mt-3">MLB 2026 exception: picks lock Friday, October 23 at 12:00 AM Pacific, before the World Series begins.</p>
       </header>
       <div className="bg-primary/5 border border-primary/20 rounded-xl p-5 mb-8">

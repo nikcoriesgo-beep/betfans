@@ -8,7 +8,7 @@ import { users } from "./models/auth";
 export const masterChampionshipSports = pgTable("master_championship_sports", {
   season: text("season").notNull(),
   sportId: text("sport_id").notNull(),
-  lockAt: timestamp("lock_at", { withTimezone: true }).notNull(),
+  lockAt: timestamp("lock_at", { withTimezone: true }),
 }, table => [primaryKey({ columns: [table.season, table.sportId] })]);
 
 export const masterChampionshipPicks = pgTable("master_championship_picks", {
