@@ -9,6 +9,7 @@ import NotFound from "@/pages/not-found";
 import Home from "@/pages/home";
 import Dashboard from "@/pages/dashboard";
 import Membership from "@/pages/membership";
+import MasterChampionships from "@/pages/master-championships";
 import GameDetail from "@/pages/game-detail";
 import Profile from "@/pages/profile";
 import MembersMap from "@/pages/members-map";
@@ -33,7 +34,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 declare const __BUILD_ID__: string;
 
 const FOUNDER_CODES = ["NIKCOX"];
-const PAID_TIERS = ["rookie", "pro", "legend"];
+const PAID_TIERS = ["rookie", "pro", "legend", "corporate", "premium_corporate"];
 const BUILD_KEY = "bf_build_id";
 
 function PaymentGate({ children }: { children: ReactNode }) {
@@ -48,7 +49,8 @@ function PaymentGate({ children }: { children: ReactNode }) {
     const isFounder = FOUNDER_CODES.includes(refCode);
     if (isPaid || isFounder) return;
     // Free / unpaid — redirect to membership except on open pages
-    const openPaths = ["/", "/auth", "/membership", "/how-to-play", "/official-rules", "/merch"];
+    if (tier === "free_play" && ["/daily-picks", "/master-championships", "/profile"].includes(location.split("?")[0])) return;
+    const openPaths = ["/", "/auth", "/membership", "/how-to-play", "/official-rules", "/merch", "/master-championships"];
     const isOpen = openPaths.some(p => location === p || location.startsWith(p + "?") || location.startsWith(p + "/"));
     if (!isOpen) setLocation("/membership");
   }, [user, isLoading, location]);
@@ -63,6 +65,7 @@ function Router() {
       <Route path="/" component={Home} />
       <Route path="/dashboard" component={Dashboard} />
       <Route path="/membership" component={Membership} />
+      <Route path="/master-championships" component={MasterChampionships} />
       <Route path="/members-map" component={MembersMap} />
       <Route path="/leaderboard/daily" component={LeaderboardPage} />
       <Route path="/leaderboard/annual" component={LeaderboardPage} />
@@ -139,7 +142,7 @@ function BuildVersionGuard() {
           if (affiliate) localStorage.setItem("betfans_affiliate_code", affiliate);
           localStorage.setItem(BUILD_KEY, __BUILD_ID__);
           queryClient.clear();
-          window.location.href = "/";
+          window.location.reload();
         });
     }
   }, []);

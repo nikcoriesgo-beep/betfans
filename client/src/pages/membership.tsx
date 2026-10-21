@@ -10,6 +10,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { PayPalSubscribeButton } from "@/components/PayPalSubscribeButton";
 import { PayPalCorporateButton } from "@/components/PayPalCorporateButton";
 import { PayPalPremiumCorporateButton } from "@/components/PayPalPremiumCorporateButton";
@@ -26,6 +27,43 @@ export default function Membership() {
   const [checkoutTier, setCheckoutTier] = useState<Tier | null>(null);
   const [subscriptionSuccess, setSubscriptionSuccess] = useState(false);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
+  const [freePlayPending, setFreePlayPending] = useState(false);
+  const [freePlayError, setFreePlayError] = useState("");
+
+  const handleFreePlay = async () => {
+    if (user?.membershipTier === "free_play") {
+      window.location.href = "/master-championships";
+      return;
+    }
+    if (user?.membershipTier && user.membershipTier !== "free") return;
+    const referralCode = affiliateCode.trim().toUpperCase();
+    if (!referralCode) {
+      setFreePlayError("A valid affiliate code is required to enroll in Free Play.");
+      return;
+    }
+    setFreePlayPending(true);
+    setFreePlayError("");
+    try {
+      const validation = await apiRequest("GET", `/api/referral/validate?code=${encodeURIComponent(referralCode)}`);
+      const result = await validation.json();
+      if (!result.valid) throw new Error("Affiliate code not found. Please check the code and try again.");
+      if (!isAuthenticated) {
+        localStorage.setItem("betfans_affiliate_code", referralCode);
+        localStorage.removeItem("betfans_checkout_tier");
+        window.location.href = `/auth?mode=signup&ref=${encodeURIComponent(referralCode)}`;
+        return;
+      }
+      await apiRequest("POST", "/api/membership/free-play", { referralCode });
+      await queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+      localStorage.removeItem("betfans_checkout_tier");
+      toast({ title: "Free Play is active", description: "Choose your Master Champions or make your daily picks." });
+      window.location.href = "/master-championships";
+    } catch (error) {
+      setFreePlayError(error instanceof Error ? error.message : "Enrollment failed. Please try again.");
+    } finally {
+      setFreePlayPending(false);
+    }
+  };
 
   useEffect(() => {
     const savedCode = localStorage.getItem("betfans_affiliate_code");
@@ -45,22 +83,13 @@ export default function Membership() {
     }
   }, []);
 
-  useEffect(() => {
-    if (isAuthenticated && affiliateCode && !user?.referredBy && !codeApplied) {
-      applyAffiliateCode(affiliateCode);
-    }
-  }, [isAuthenticated, affiliateCode]);
-
-  // Auto-open checkout when returning from signup with a saved tier,
-  // OR when a free-tier user lands here (they must pay to proceed)
+  // Only an explicitly chosen paid tier may reopen checkout.
   useEffect(() => {
     if (!isAuthenticated) return;
     const savedTier = localStorage.getItem("betfans_checkout_tier") as Tier | null;
     if (savedTier === "legend") {
       localStorage.removeItem("betfans_checkout_tier");
       setTimeout(() => handleUpgrade("legend"), 600);
-    } else if (!savedTier && user?.membershipTier === "free") {
-      setTimeout(() => handleUpgrade("legend"), 800);
     }
   }, [isAuthenticated]);
 
@@ -70,7 +99,7 @@ export default function Membership() {
       const res = await fetch("/api/referral/code", { credentials: "include" });
       return res.json();
     },
-    enabled: isAuthenticated,
+    enabled: isAuthenticated && !!user?.membershipTier && !["free", "free_play"].includes(user.membershipTier),
   });
   const myReferralCode = myCodeData?.code || "";
 
@@ -110,7 +139,9 @@ export default function Membership() {
       return;
     }
 
-    if (affiliateCode.trim() && (tier === "legend" || tier === "corporate" || tier === "premium_corporate")) {
+    // An upgrade retains the original inviter, even if a different code is
+    // present in local storage or the inviter's membership has since changed.
+    if (!user?.referredBy && affiliateCode.trim() && (tier === "legend" || tier === "corporate" || tier === "premium_corporate")) {
       try {
         const checkRes = await fetch("/api/referral/check-tier", {
           method: "POST",
@@ -138,7 +169,7 @@ export default function Membership() {
 
   const handlePayPalSuccess = async (subscriptionId: string) => {
     try {
-      const savedAffiliateCode = localStorage.getItem("betfans_affiliate_code") || undefined;
+      const savedAffiliateCode = user?.referredBy ? undefined : localStorage.getItem("betfans_affiliate_code") || undefined;
       const res = await fetch("/api/paypal/subscription", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -191,10 +222,10 @@ export default function Membership() {
         {/* Header */}
         <div className="text-center max-w-3xl mx-auto mb-16">
           <h1 className="text-4xl md:text-5xl font-display font-bold mb-6" data-testid="text-membership-heading">
-            Unlock Your Full Potential
+            Choose How You Play
           </h1>
           <p className="text-xl text-muted-foreground">
-            Join the elite community of sports analysts. Make picks, compete for daily prize pools, and earn $50/month residual income for every member you refer.
+            Start with Free Play for daily picks and Master Championships. Choose Legend for daily Prize Pool entries, a 1099 Business License, and paid referral benefits.
           </p>
         </div>
 
@@ -216,11 +247,11 @@ export default function Membership() {
                 <div className="text-xs text-muted-foreground uppercase tracking-widest mb-1">Daily Winner</div>
                 <div className="text-3xl font-bold font-display text-primary mb-1">Daily</div>
                 <h3 className="font-bold text-base mb-2">One Winner Per Day</h3>
-                <p className="text-xs text-muted-foreground">All members compete together. The day's best MLB predictor wins. Prizes subject to availability.</p>
+                <p className="text-xs text-muted-foreground">Eligible paid members compete together. Free Play does not include entries or payouts. Prizes subject to availability.</p>
               </div>
               <div className="bg-background/40 backdrop-blur-md border border-primary/30 rounded-xl p-6 text-center hover:border-primary/60 transition-colors shadow-xl">
                 <div className="w-14 h-14 rounded-full bg-primary/20 text-primary flex items-center justify-center mx-auto mb-4"><Crown size={28} /></div>
-                <div className="text-xs text-muted-foreground uppercase tracking-widest mb-1">All Members</div>
+                <div className="text-xs text-muted-foreground uppercase tracking-widest mb-1">Eligible Paid Members</div>
                 <div className="text-4xl font-bold font-display text-primary mb-1">Compete</div>
                 <h3 className="font-bold text-lg mb-2">Equal Footing</h3>
                 <p className="text-xs text-muted-foreground">Every Legend member competes on equal footing for the same daily prize. No guarantees — prizes vary.</p>
@@ -233,7 +264,7 @@ export default function Membership() {
         <div className="max-w-2xl mx-auto mb-16">
 
           {/* ALL paid members: show their own affiliate code */}
-          {isAuthenticated && myReferralCode && currentTier !== "free" && (
+          {isAuthenticated && myReferralCode && !["free", "free_play"].includes(currentTier) && (
             <Card className={`mb-6 ${isFounder ? "bg-gradient-to-br from-primary/10 via-card/30 to-card/30 border-primary/30" : "bg-gradient-to-br from-primary/8 via-card/30 to-card/30 border-primary/20"}`}>
               <CardContent className="p-6 md:p-8">
                 <div className="flex items-center gap-3 mb-5">
@@ -307,7 +338,7 @@ export default function Membership() {
                 {(user?.referredBy || codeApplied) ? (
                   <div className="flex items-center gap-2 bg-green-500/10 border border-green-500/20 rounded-xl px-4 py-3">
                     <Check size={16} className="text-green-400" />
-                    <span className="text-sm text-green-400 font-medium">Affiliate code applied — your referrer earns every month you're active</span>
+                    <span className="text-sm text-green-400 font-medium">Your original affiliate is linked to your account and stays with you when you upgrade.</span>
                   </div>
                 ) : (
                   <>
@@ -315,7 +346,7 @@ export default function Membership() {
                     <div className="bg-primary/5 border border-primary/20 rounded-2xl p-5 mb-4 text-center">
                       <p className="text-xs text-muted-foreground uppercase tracking-widest mb-1">Active Code</p>
                       <p className="text-3xl font-mono font-black text-primary tracking-[0.3em] mb-1" data-testid="text-active-affiliate-code">
-                        {affiliateCode || "NIKCOX"}
+                        {affiliateCode || "Enter your code"}
                       </p>
                       <p className="text-xs text-muted-foreground">
                         Your referrer earns <span className="text-yellow-400 font-semibold">$50/mo</span> per Legend member they bring in
@@ -372,7 +403,7 @@ export default function Membership() {
                 className={`mt-0.5 flex-shrink-0 w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all duration-150 ${
                   agreedToTerms
                     ? "bg-primary border-primary text-primary-foreground"
-                    : "border-white/30 bg-transparent hover:border-primary/60"
+                    : "border-black bg-white hover:border-primary/60"
                 }`}
               >
                 {agreedToTerms && <Check size={14} strokeWidth={3} />}
@@ -402,11 +433,38 @@ export default function Membership() {
           </div>
         </div>
 
-        {/* ── Legend Tier (only tier) ── */}
-        <div className="max-w-lg mx-auto">
+        {/* Free Play and Legend preserve separate access and reward eligibility. */}
+        <div className="max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
+          <Card className="bg-card/40 border-primary/30 flex flex-col">
+            <CardHeader className="pt-10 text-center">
+              <CardTitle className="text-3xl font-display flex items-center justify-center gap-2">Free Play <Trophy size={22} className="text-primary" /></CardTitle>
+              <CardDescription>Your picks. Your champions. No subscription.</CardDescription>
+            </CardHeader>
+            <CardContent className="flex-1">
+              <div className="text-5xl font-bold text-center mb-6">$0<span className="text-xl text-muted-foreground font-normal">/mo</span></div>
+              <ul className="space-y-4 mb-6 text-sm">
+                {["Daily picks", "Master Championships", "One champion per sport; locks at playoff start, or final-round start for leagues without playoffs"].map(feature => <li key={feature} className="flex gap-3"><Check size={16} className="text-primary shrink-0 mt-0.5" />{feature}</li>)}
+                {["No Prize Pool entries or payouts", "No referral cash rewards"].map(feature => <li key={feature} className="flex gap-3 text-muted-foreground"><X size={16} className="shrink-0 mt-0.5" />{feature}</li>)}
+              </ul>
+              {currentTier !== "free_play" && (!isAuthenticated || currentTier === "free") && <div className="space-y-2">
+                <label htmlFor="free-play-code" className="text-sm font-medium">Affiliate code <span className="text-muted-foreground">(required)</span></label>
+                <Input id="free-play-code" value={affiliateCode} onChange={e => { setAffiliateCode(e.target.value.toUpperCase()); setFreePlayError(""); }} placeholder="Enter your affiliate's code" className="bg-background/50 border-white/10 font-mono" />
+                <p className="text-xs text-muted-foreground">We validate your entered or linked code before enrollment. No code is assigned automatically.</p>
+              </div>}
+              {freePlayError && <p role="alert" className="text-sm text-red-400 mt-3">{freePlayError}</p>}
+              {isAuthenticated && !["free", "free_play"].includes(currentTier) && <p className="text-sm text-muted-foreground">Free Play activities are already included with your paid membership. Your current plan will not be downgraded.</p>}
+            </CardContent>
+            <CardFooter>
+              <Button className="w-full h-12 font-bold" onClick={handleFreePlay}
+                disabled={freePlayPending || (currentTier !== "free_play" && (!agreedToTerms || (isAuthenticated && currentTier !== "free")))}
+                data-testid="button-enroll-free-play">
+                {freePlayPending ? "Validating & enrolling…" : currentTier === "free_play" ? "Play Master Championships" : isAuthenticated && currentTier !== "free" ? "Included in your paid membership" : "Join Free Play — $0"}
+              </Button>
+            </CardFooter>
+          </Card>
           <Card className="bg-gradient-to-b from-yellow-500/10 via-card/30 to-card/30 border-yellow-500/50 flex flex-col relative overflow-hidden shadow-[0_0_40px_rgba(234,179,8,0.2)]">
             <div className="absolute top-0 left-0 right-0 bg-gradient-to-r from-yellow-500 via-yellow-400 to-yellow-500 text-black text-center py-1.5 text-xs font-bold uppercase tracking-widest">
-              The Only Membership — $50/mo Per Referral
+              Paid Membership — $50/mo Per Legend Referral
             </div>
             <CardHeader className="pt-10 text-center">
               <CardTitle className="text-3xl font-display flex items-center justify-center gap-2">
@@ -427,6 +485,9 @@ export default function Membership() {
               <ul className="space-y-4">
                 {[
                   "Spider AI Daily Picks",
+                  "Master Championships",
+                  "1099 Business License",
+                  "Daily Prize Pool Entries",
                   "Prize Pool Eligibility",
                   "View All Members' Daily Picks",
                   "Advanced ROI Analytics",
@@ -453,7 +514,7 @@ export default function Membership() {
                   disabled={!agreedToTerms}
                   data-testid="button-upgrade-legend"
                 >
-                  {isAuthenticated ? "Subscribe — $99/mo" : "Join BetFans — $99/mo"}
+                  {currentTier === "free_play" ? "Upgrade to Legend — $99/mo" : isAuthenticated ? "Subscribe — $99/mo" : "Join BetFans — $99/mo"}
                 </Button>
               )}
             </CardFooter>
@@ -470,7 +531,7 @@ export default function Membership() {
 
           <Card className="bg-gradient-to-b from-yellow-900/20 via-card/30 to-card/30 border-yellow-600/40 relative overflow-hidden shadow-[0_0_40px_rgba(161,109,8,0.15)]">
             <div className="absolute top-0 left-0 right-0 bg-gradient-to-r from-yellow-700 via-yellow-600 to-yellow-700 text-black text-center py-1.5 text-xs font-bold uppercase tracking-widest">
-              Annual Partnership · $600 to Prize Pool + $600 to Your Affiliate
+              Annual Partnership · $600 to Affiliate · $300 to Prize Pool · $300 Corporate Profit Share
             </div>
             <div className="grid md:grid-cols-2 gap-0 pt-8">
               {/* Left: pricing + split */}
@@ -486,18 +547,25 @@ export default function Membership() {
                 {/* Split breakdown */}
                 <div className="space-y-3 mb-6">
                   <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">On signup, your $1,200 splits:</p>
-                  <div className="flex items-center gap-3 bg-primary/10 border border-primary/20 rounded-xl px-4 py-3">
-                    <Trophy size={16} className="text-primary shrink-0" />
-                    <div>
-                      <p className="text-sm font-bold text-primary">$600 → Prize Pool</p>
-                      <p className="text-xs text-muted-foreground">Immediately added to the community prize pool</p>
-                    </div>
-                  </div>
                   <div className="flex items-center gap-3 bg-yellow-500/10 border border-yellow-500/20 rounded-xl px-4 py-3">
                     <DollarSign size={16} className="text-yellow-400 shrink-0" />
                     <div>
                       <p className="text-sm font-bold text-yellow-400">$600 → Your Affiliate</p>
                       <p className="text-xs text-muted-foreground">Instantly paid to whoever referred you</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 bg-primary/10 border border-primary/20 rounded-xl px-4 py-3">
+                    <Trophy size={16} className="text-primary shrink-0" />
+                    <div>
+                      <p className="text-sm font-bold text-primary">$300 → Prize Pool</p>
+                      <p className="text-xs text-muted-foreground">50/50 corporate prize pool profit share</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-xl px-4 py-3">
+                    <ArrowRight size={16} className="text-muted-foreground shrink-0" />
+                    <div>
+                      <p className="text-sm font-bold text-muted-foreground">$300 → Corporate Profit Share</p>
+                      <p className="text-xs text-muted-foreground">Retained in-house as corporate profit</p>
                     </div>
                   </div>
                 </div>
@@ -529,7 +597,7 @@ export default function Membership() {
                   {[
                     { icon: DollarSign, label: "Your own affiliate code", desc: "Earn monthly residual income for every member you refer", accent: true },
                     { icon: Crown, label: "Full Legend access", desc: "Spider AI picks, prize pool eligibility, all member picks" },
-                    { icon: Trophy, label: "$600 funds the prize pool", desc: "Half your fee goes directly to daily community prizes" },
+                    { icon: Trophy, label: "$300 funds the prize pool", desc: "50/50 corporate prize pool profit share on remaining balance" },
                     { icon: Users, label: "Double prize pool entries", desc: "Two entries for every daily competition" },
                     { icon: Star, label: "Priority partner support", desc: "Dedicated onboarding and account management" },
                     { icon: ArrowRight, label: "Corporate badge", desc: "Displayed next to your name in the community" },
@@ -563,7 +631,7 @@ export default function Membership() {
 
           <Card className="bg-gradient-to-b from-purple-900/20 via-card/30 to-card/30 border-purple-500/40 relative overflow-hidden shadow-[0_0_50px_rgba(168,85,247,0.15)]">
             <div className="absolute top-0 left-0 right-0 bg-gradient-to-r from-purple-700 via-purple-500 to-purple-700 text-white text-center py-1.5 text-xs font-bold uppercase tracking-widest">
-              Premium Annual Partnership · $6,000 to Prize Pool + $6,000 to Your Affiliate
+              Premium Annual Partnership · $6,000 to Affiliate · $3,000 to Prize Pool · $3,000 Corporate Profit Share
             </div>
             <div className="grid md:grid-cols-2 gap-0 pt-8">
               {/* Left: pricing + split */}
@@ -579,18 +647,25 @@ export default function Membership() {
                 {/* Split breakdown */}
                 <div className="space-y-3 mb-6">
                   <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">On signup, your $12,000 splits:</p>
-                  <div className="flex items-center gap-3 bg-primary/10 border border-primary/20 rounded-xl px-4 py-3">
-                    <Trophy size={16} className="text-primary shrink-0" />
-                    <div>
-                      <p className="text-sm font-bold text-primary">$6,000 → Prize Pool</p>
-                      <p className="text-xs text-muted-foreground">Immediately added to the community prize pool</p>
-                    </div>
-                  </div>
                   <div className="flex items-center gap-3 bg-yellow-500/10 border border-yellow-500/20 rounded-xl px-4 py-3">
                     <DollarSign size={16} className="text-yellow-400 shrink-0" />
                     <div>
                       <p className="text-sm font-bold text-yellow-400">$6,000 → Your Affiliate</p>
                       <p className="text-xs text-muted-foreground">Instantly paid to whoever referred you</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 bg-primary/10 border border-primary/20 rounded-xl px-4 py-3">
+                    <Trophy size={16} className="text-primary shrink-0" />
+                    <div>
+                      <p className="text-sm font-bold text-primary">$3,000 → Prize Pool</p>
+                      <p className="text-xs text-muted-foreground">50/50 corporate prize pool profit share</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-xl px-4 py-3">
+                    <ArrowRight size={16} className="text-muted-foreground shrink-0" />
+                    <div>
+                      <p className="text-sm font-bold text-muted-foreground">$3,000 → Corporate Profit Share</p>
+                      <p className="text-xs text-muted-foreground">Retained in-house as corporate profit</p>
                     </div>
                   </div>
                 </div>
@@ -623,7 +698,7 @@ export default function Membership() {
                     { icon: Gem, label: "Logo on betfans.us", desc: "Your brand displayed to the entire BetFans community", accent: true },
                     { icon: DollarSign, label: "Your own affiliate code", desc: "Earn monthly residual income for every member you refer", accent: true },
                     { icon: Crown, label: "Full Legend access", desc: "Spider AI picks, prize pool eligibility, all member picks" },
-                    { icon: Trophy, label: "$6,000 funds the prize pool", desc: "Half your fee goes directly to daily community prizes" },
+                    { icon: Trophy, label: "$3,000 funds the prize pool", desc: "50/50 corporate prize pool profit share on remaining balance" },
                     { icon: Users, label: "Double prize pool entries", desc: "Two entries for every daily competition" },
                     { icon: Star, label: "Premium partner badge", desc: "Displayed next to your name — highest status on the platform" },
                   ].map((f, i) => (

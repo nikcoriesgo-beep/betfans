@@ -34,6 +34,7 @@ export function Navbar() {
     { label: "Home", href: "/" },
     { label: "How to Play", href: "/how-to-play" },
     { label: "Daily Picks", href: "/daily-picks" },
+    { label: "Master Championships", href: "/master-championships" },
     ...moreItems,
   ];
 
@@ -76,6 +77,7 @@ export function Navbar() {
               <Link href="/daily-picks" className={linkClass(location === "/daily-picks")}>Daily Picks</Link>
             )}
 
+            <Link href="/master-championships" className={linkClass(location === "/master-championships")}>Master Championships</Link>
             <div className="relative" ref={lbRef}>
               <button
                 onClick={() => { setLbOpen(!lbOpen); setMoreOpen(false); }}

@@ -1,4 +1,5 @@
 import { Navbar } from "@/components/layout/Navbar";
+import { MemberChampions } from "@/pages/master-championships";
 import { AdBannerTop, AdBannerInline } from "@/components/AdBanner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -11,7 +12,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Trophy, Calendar, Target, TrendingUp, Settings, CreditCard, Shield, Wallet,
   ArrowUpRight, ArrowDownLeft, LogOut, Camera, Loader2, MessageSquare,
-  Send, Plus, Clock, MessageCircle, ArrowLeft, Crown, Star, Pin, Lock, KeyRound,
+  Send, Plus, Clock, MessageCircle, ArrowLeft, Crown, Star, Pin, Lock, KeyRound, Mail, CheckCircle,
 } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
@@ -37,7 +38,6 @@ function timeAgo(date: string) {
 
 function TierBadge({ tier }: { tier: string | null }) {
   if (tier === "legend") return <Badge className="bg-purple-600/20 text-purple-400 border-purple-500/30 text-[10px] gap-0.5 px-1 py-0"><Crown size={9} /> Legend</Badge>;
-  if (tier === "pro") return <Badge className="bg-primary/20 text-primary border-primary/30 text-[10px] gap-0.5 px-1 py-0"><Star size={9} /> Pro</Badge>;
   return null;
 }
 
@@ -229,7 +229,7 @@ function MemberDailyPicks({ targetUserId, profileName }: { targetUserId: string;
   const { user, isAuthenticated } = useAuth();
   const [, navigate] = useLocation();
   const viewerTier = user?.membershipTier || "free";
-  const canView = viewerTier === "pro" || viewerTier === "legend";
+  const canView = viewerTier === "legend";
 
   const { data: memberPicks = [], isLoading } = useQuery<any[]>({
     queryKey: ["/api/users", targetUserId, "predictions"],
@@ -260,14 +260,14 @@ function MemberDailyPicks({ targetUserId, profileName }: { targetUserId: string;
       <Card className="bg-card/30 border-white/5 relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-b from-transparent via-background/60 to-background/90 z-10 flex flex-col items-center justify-center">
           <Lock size={40} className="text-primary/40 mb-4" />
-          <h3 className="text-lg font-display font-bold mb-2">Pro Feature</h3>
-          <p className="text-sm text-muted-foreground mb-4 text-center max-w-xs">Upgrade to Pro or Legend to view {profileName}'s daily picks and predictions</p>
+          <h3 className="text-lg font-display font-bold mb-2">Legend Feature</h3>
+          <p className="text-sm text-muted-foreground mb-4 text-center max-w-xs">Legend members can view {profileName}'s daily picks and predictions</p>
           <Button
             className="bg-primary text-primary-foreground shadow-[0_0_15px_rgba(34,197,94,0.3)] gap-2"
             onClick={() => navigate("/membership")}
             data-testid="button-upgrade-view-picks"
           >
-            <Star size={14} /> Upgrade to Pro
+            <Crown size={14} /> Become a Legend
           </Button>
         </div>
         <CardContent className="p-4 space-y-2 filter blur-sm pointer-events-none select-none">
@@ -569,6 +569,31 @@ export default function Profile() {
     reader.readAsDataURL(file);
   };
 
+  const [payoutEmailInput, setPayoutEmailInput] = useState(user?.paypalPayoutEmail || "");
+  const [payoutEmailEditing, setPayoutEmailEditing] = useState(false);
+
+  const updatePayoutEmail = useMutation({
+    mutationFn: async (email: string) => {
+      const res = await fetch("/api/user/payout-email", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.message || "Failed to update");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Payout email saved!", description: "Daily winnings will be sent to this PayPal address." });
+      setPayoutEmailEditing(false);
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+    },
+    onError: (e: any) => toast({ title: "Save failed", description: e.message, variant: "destructive" }),
+  });
+
   const showSignInPrompt = !isLoading && !isAuthenticated && !viewUserId;
 
   const { data: stats } = useQuery({
@@ -596,8 +621,20 @@ export default function Profile() {
     enabled: isAuthenticated && isOwnProfile,
   });
 
+  const { data: referralStats } = useQuery<any>({
+    queryKey: ["/api/referral/stats"],
+    queryFn: async () => { const res = await fetch("/api/referral/stats", { credentials: "include" }); if (!res.ok) return { monthlyIncome: 0 }; return res.json(); },
+    enabled: isAuthenticated && isOwnProfile,
+  });
 
-  if (!viewUserId && (isLoading || !user)) {
+  const { data: userPayouts = [] } = useQuery<any[]>({
+    queryKey: ["/api/payouts"],
+    queryFn: async () => { const res = await fetch("/api/payouts", { credentials: "include" }); if (!res.ok) return []; return res.json(); },
+    enabled: isAuthenticated && isOwnProfile,
+  });
+
+
+  if (!viewUserId && (isLoading || (!user && !showSignInPrompt))) {
     return <div className="min-h-screen bg-background flex items-center justify-center"><div className="w-12 h-12 border-4 border-primary/30 border-t-primary rounded-full animate-spin" /></div>;
   }
 
@@ -606,11 +643,20 @@ export default function Profile() {
   }
 
   const displayName = profileUser ? `${profileUser.firstName || ""} ${profileUser.lastName || ""}`.trim() || "Member" : "Member";
-  const winRate = stats && stats.wins + stats.losses > 0 ? ((stats.wins / (stats.wins + stats.losses)) * 100).toFixed(1) : "0.0";
+  const mlbStat = sportStats?.bySport?.find((s: any) => s.league === "MLB");
+  const mlbWinRate = mlbStat && mlbStat.total > 0 ? mlbStat.winRate.toFixed(1) : "0.0";
   const tier = profileUser?.membershipTier || "rookie";
-  const tierLabel = tier === "legend" ? "LEGEND" : tier === "pro" ? "PRO MEMBER" : "ROOKIE";
+  const tierLabel = tier === "legend" ? "LEGEND" : tier === "free_play" ? "FREE PLAY" : "MEMBER";
 
   const formatDate = (dateStr: string) => new Date(dateStr).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+
+  const _now = new Date();
+  const monthlyPrize = userPayouts
+    .filter((p: any) => p.status !== "reversed" && new Date(p.createdAt).getFullYear() === _now.getFullYear() && new Date(p.createdAt).getMonth() === _now.getMonth())
+    .reduce((sum: number, p: any) => sum + parseFloat(p.amount || 0), 0);
+  const ytdPrize = userPayouts
+    .filter((p: any) => p.status !== "reversed" && new Date(p.createdAt).getFullYear() === _now.getFullYear())
+    .reduce((sum: number, p: any) => sum + parseFloat(p.amount || 0), 0);
 
   if (showSignInPrompt) {
     return (
@@ -625,7 +671,7 @@ export default function Profile() {
           <p className="text-muted-foreground max-w-sm">Your picks, wallet, and stats are waiting. Sign in to access your personal dashboard.</p>
           <div className="flex gap-3">
             <a href="/auth"><Button className="gap-2 font-display font-bold px-6">Sign In</Button></a>
-            <a href="/auth?mode=signup"><Button variant="outline" className="gap-2 px-6">Create Account</Button></a>
+            <a href="/membership"><Button variant="outline" className="gap-2 px-6">Join BetFans</Button></a>
           </div>
         </div>
       </div>
@@ -665,10 +711,22 @@ export default function Profile() {
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
               <div>
                 <h1 className="text-4xl font-display font-bold mb-2" data-testid="text-profile-name">{displayName}</h1>
+                {(profileUser as any)?.certifiedExpert && (
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/40 px-2 py-0.5 text-xs font-semibold gap-1">
+                      <Star size={10} className="fill-amber-400" /> Certified Expert Legend
+                    </Badge>
+                  </div>
+                )}
                 <div className="flex items-center gap-4 text-sm text-muted-foreground flex-wrap">
                   <span className="flex items-center gap-1"><Calendar size={14} /> Joined {profileUser?.createdAt ? formatDate(profileUser.createdAt) : "Recently"}</span>
                   {profileUser?.city && <span className="flex items-center gap-1">📍 {[profileUser.city, profileUser.state].filter(Boolean).join(", ")}</span>}
                   {isOwnProfile && <span className="flex items-center gap-1"><Target size={14} /> {predictions.length} Predictions</span>}
+                  {isOwnProfile && (user as any)?.phone && (
+                    <span className="flex items-center gap-1 font-mono text-xs text-green-400">
+                      📱 {String((user as any).phone).replace(/(\d{3})(\d{3})(\d{4})/, "$1-$2-$3")}
+                    </span>
+                  )}
                 </div>
               </div>
               {isOwnProfile && (
@@ -688,28 +746,34 @@ export default function Profile() {
             </div>
 
             {isOwnProfile && (
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4">
-                <div className="p-4 rounded-xl bg-card/30 border border-white/5">
-                  <div className="text-muted-foreground text-xs uppercase tracking-wider mb-1">Total Profit</div>
-                  <div className="text-2xl font-bold font-mono text-green-400" data-testid="text-total-profit">{stats ? `$${Math.round(stats.profit || 0).toLocaleString()}` : "--"}</div>
-                </div>
-                <div className="p-4 rounded-xl bg-card/30 border border-white/5">
+              <div className="grid grid-cols-2 gap-4 pt-4">
+                <div className="p-4 rounded-xl bg-card/30 border border-border">
                   <div className="text-muted-foreground text-xs uppercase tracking-wider mb-1">MLB Win Rate</div>
-                  <div className="text-2xl font-bold font-mono text-primary" data-testid="text-win-rate">{winRate}%</div>
+                  <div className="text-2xl font-bold font-mono text-primary" data-testid="text-win-rate">{mlbWinRate}%</div>
+                  {mlbStat && <div className="text-[10px] text-muted-foreground mt-0.5">{mlbStat.wins}W – {mlbStat.losses}L</div>}
                 </div>
-                <div className="p-4 rounded-xl bg-card/30 border border-white/5">
-                  <div className="text-muted-foreground text-xs uppercase tracking-wider mb-1">Current Streak</div>
-                  <div className="text-2xl font-bold font-mono text-orange-500 flex items-center gap-2" data-testid="text-streak">{stats?.streak || 0} <span className="text-xs">WINS</span></div>
-                </div>
-                <div className="p-4 rounded-xl bg-card/30 border border-white/5">
-                  <div className="text-muted-foreground text-xs uppercase tracking-wider mb-1">Wallet Balance</div>
-                  <div className="text-2xl font-bold font-mono text-white" data-testid="text-wallet-balance">${parseFloat(user?.walletBalance || "0").toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
-                </div>
+                {tier !== "free_play" && <div className="p-4 rounded-xl bg-card/30 border border-border">
+                  <div className="text-muted-foreground text-xs uppercase tracking-wider mb-1">Monthly Residual Income</div>
+                  <div className="text-2xl font-bold font-mono text-green-400" data-testid="text-monthly-residual">${(referralStats?.monthlyIncome || 0).toLocaleString()}</div>
+                  <div className="text-[10px] text-muted-foreground mt-0.5">per month from referrals</div>
+                </div>}
+                {tier !== "free_play" && <div className="p-4 rounded-xl bg-card/30 border border-border">
+                  <div className="text-muted-foreground text-xs uppercase tracking-wider mb-1">Monthly Prize Winnings</div>
+                  <div className="text-2xl font-bold font-mono text-green-400" data-testid="text-monthly-prize">${monthlyPrize.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                  <div className="text-[10px] text-muted-foreground mt-0.5">this month</div>
+                </div>}
+                {tier !== "free_play" && <div className="p-4 rounded-xl bg-card/30 border border-border">
+                  <div className="text-muted-foreground text-xs uppercase tracking-wider mb-1">YTD Prize Winnings</div>
+                  <div className="text-2xl font-bold font-mono text-green-400" data-testid="text-ytd-prize">${ytdPrize.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                  <div className="text-[10px] text-muted-foreground mt-0.5">{_now.getFullYear()} total</div>
+                </div>}
               </div>
             )}
           </div>
         </div>
 
+        {profileUserId && <MemberChampions userId={profileUserId} />}
+        {tier === "free_play" && <p className="text-sm text-muted-foreground mb-8">Free Play includes daily picks and Master Championships, not Prize Pool entries, payouts, or referral cash rewards. <a href="/membership" className="text-primary hover:underline">Compare memberships</a></p>}
         {sportStats && (sportStats.overall?.total > 0 || sportStats.bySport?.length > 0) && (
           <div className="mb-10">
             <div className="flex items-center gap-2 mb-4">
@@ -784,7 +848,7 @@ export default function Profile() {
             <TabsList className="bg-black/20">
               <TabsTrigger value="threads" data-testid="tab-threads">Threads</TabsTrigger>
               <TabsTrigger value="history" data-testid="tab-history">Betting History</TabsTrigger>
-              <TabsTrigger value="wallet" data-testid="tab-wallet">Wallet & Payouts</TabsTrigger>
+              {tier !== "free_play" && <TabsTrigger value="wallet" data-testid="tab-wallet">Wallet & Payouts</TabsTrigger>}
               <TabsTrigger value="badges" data-testid="tab-badges">Badges & Awards</TabsTrigger>
               <TabsTrigger value="subscription" data-testid="tab-subscription">Membership</TabsTrigger>
             </TabsList>
@@ -799,7 +863,7 @@ export default function Profile() {
                 <CardContent>
                   <div className="space-y-4">
                     {predictions.length === 0 ? (
-                      <p className="text-sm text-muted-foreground py-4 text-center">No predictions yet. Head to the Dashboard to make your first one!</p>
+                      <p className="text-sm text-muted-foreground py-4 text-center">No predictions yet. <a href="/daily-picks" className="text-primary hover:underline">Make your first daily picks.</a></p>
                     ) : (
                       predictions.map((p: any) => (
                         <div key={p.id} className="flex items-center justify-between p-4 rounded-lg bg-white/5 hover:bg-white/10 transition-colors" data-testid={`row-prediction-${p.id}`}>
@@ -844,6 +908,67 @@ export default function Profile() {
                         </a>
                       ) : (
                         <p className="text-sm text-muted-foreground">Subscribe to a membership to add a payment method</p>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  <Card className="bg-card/30 border-white/5">
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2"><Mail size={16} className="text-primary" />Prize Payout Email</CardTitle>
+                      <CardDescription>Your PayPal email address where daily prize winnings are sent automatically</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      {user?.paypalPayoutEmail && !payoutEmailEditing ? (
+                        <div className="space-y-3">
+                          <div className="flex items-center gap-2 p-3 rounded-lg bg-green-500/10 border border-green-500/20">
+                            <CheckCircle size={16} className="text-green-400 shrink-0" />
+                            <span className="text-sm font-mono text-green-400 truncate" data-testid="text-payout-email">{user.paypalPayoutEmail}</span>
+                          </div>
+                          <Button variant="outline" size="sm" className="w-full" data-testid="button-edit-payout-email"
+                            onClick={() => { setPayoutEmailInput(user.paypalPayoutEmail || ""); setPayoutEmailEditing(true); }}>
+                            Change Payout Email
+                          </Button>
+                        </div>
+                      ) : payoutEmailEditing ? (
+                        <div className="space-y-2">
+                          <Input
+                            type="email"
+                            placeholder="your@paypal.com"
+                            value={payoutEmailInput}
+                            onChange={(e) => setPayoutEmailInput(e.target.value)}
+                            data-testid="input-payout-email"
+                          />
+                          <div className="flex gap-2">
+                            <Button size="sm" className="flex-1 bg-primary text-primary-foreground"
+                              disabled={updatePayoutEmail.isPending || !payoutEmailInput.trim()}
+                              onClick={() => updatePayoutEmail.mutate(payoutEmailInput.trim())}
+                              data-testid="button-save-payout-email">
+                              {updatePayoutEmail.isPending ? <Loader2 size={14} className="animate-spin" /> : "Save"}
+                            </Button>
+                            <Button size="sm" variant="outline" className="flex-1"
+                              onClick={() => { setPayoutEmailEditing(false); setPayoutEmailInput(user?.paypalPayoutEmail || ""); }}
+                              data-testid="button-cancel-payout-email">
+                              Cancel
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <Input
+                            type="email"
+                            placeholder="your@paypal.com"
+                            value={payoutEmailInput}
+                            onChange={(e) => setPayoutEmailInput(e.target.value)}
+                            data-testid="input-payout-email-new"
+                          />
+                          <Button size="sm" className="w-full bg-primary text-primary-foreground"
+                            disabled={updatePayoutEmail.isPending || !payoutEmailInput.trim()}
+                            onClick={() => updatePayoutEmail.mutate(payoutEmailInput.trim())}
+                            data-testid="button-save-payout-email-new">
+                            {updatePayoutEmail.isPending ? <Loader2 size={14} className="animate-spin" /> : "Save Payout Email"}
+                          </Button>
+                          <p className="text-xs text-muted-foreground text-center">Required to receive daily prize payouts via PayPal</p>
+                        </div>
                       )}
                     </CardContent>
                   </Card>
@@ -893,34 +1018,27 @@ export default function Profile() {
             </TabsContent>
 
             <TabsContent value="subscription">
-              <Card className={user?.membershipTier !== "rookie" ? "bg-primary/5 border-primary/20" : "bg-card/30 border-white/5"}>
+              <Card className={user?.membershipTier === "legend" ? "bg-primary/5 border-primary/20" : "bg-card/30 border-white/5"}>
                 <CardHeader>
                   <div className="flex items-center justify-between">
                     <div>
                       <CardTitle className="text-2xl font-display text-primary" data-testid="text-membership-title">
-                        {user?.membershipTier === "legend" ? "Legend Membership" : user?.membershipTier === "pro" ? "Pro Membership" : user?.membershipTier === "rookie" ? "Rookie Membership" : "No Membership"}
+                        {tier === "free_play" ? "Free Play Membership — $0" : user?.membershipTier === "legend" || (user as any)?.referralCode === "NIKCOX" ? "Legend Membership" : tier !== "free" && user?.membershipTier ? `${tier.replace(/_/g, " ")} Membership` : "Choose Your Membership"}
                       </CardTitle>
-                      <CardDescription>{user?.membershipTier === "pro" || user?.membershipTier === "legend" ? "Your premium membership is active" : user?.membershipTier === "rookie" ? "Your Rookie membership is active" : "Subscribe to unlock features"}</CardDescription>
+                      <CardDescription>{tier === "free_play" ? "Daily picks and Master Championships. No Prize Pool entries, payouts, or referral cash rewards." : user?.membershipTier === "legend" || (user as any)?.referralCode === "NIKCOX" ? "Your Legend membership is active" : tier !== "free" && user?.membershipTier ? "Your membership is active" : "Enroll in Free Play with a valid affiliate code or choose a paid plan"}</CardDescription>
                     </div>
-                    <Badge variant="outline" className={`px-3 py-1 ${(user?.membershipTier === "pro" || user?.membershipTier === "legend") ? "border-primary text-primary" : user?.membershipTier === "rookie" ? "border-yellow-500 text-yellow-400" : "border-white/20"}`}>
-                      {user?.membershipTier === "pro" || user?.membershipTier === "legend" ? "ACTIVE" : user?.membershipTier === "rookie" ? "ACTIVE" : "FREE"}
+                    <Badge variant="outline" className={`px-3 py-1 ${user?.membershipTier === "legend" || (user as any)?.referralCode === "NIKCOX" ? "border-primary text-primary" : "border-white/20"}`}>
+                      {tier !== "free" && user?.membershipTier || (user as any)?.referralCode === "NIKCOX" ? "ACTIVE" : "ENROLL"}
                     </Badge>
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                  {user?.membershipTier === "pro" || user?.membershipTier === "legend" ? (
+                  {user?.membershipTier === "legend" || (user as any)?.referralCode === "NIKCOX" ? (
                     <a href="https://www.paypal.com/myaccount/autopay/" target="_blank" rel="noopener noreferrer">
                       <Button variant="outline" className="border-white/10 hover:bg-white/5" data-testid="button-manage-membership">Manage PayPal Subscription</Button>
                     </a>
-                  ) : user?.membershipTier === "rookie" ? (
-                    <div className="flex gap-3">
-                      <a href="https://www.paypal.com/myaccount/autopay/" target="_blank" rel="noopener noreferrer">
-                        <Button variant="outline" className="border-white/10 hover:bg-white/5" data-testid="button-manage-membership">Manage PayPal</Button>
-                      </a>
-                      <Button className="bg-primary text-primary-foreground" onClick={() => navigate("/membership")} data-testid="button-upgrade">Upgrade to Pro</Button>
-                    </div>
                   ) : (
-                    <Button className="bg-primary text-primary-foreground" onClick={() => navigate("/membership")} data-testid="button-upgrade">Subscribe Now</Button>
+                    <Button className="bg-primary text-primary-foreground" onClick={() => navigate("/membership")} data-testid="button-upgrade">{tier === "free_play" ? "Compare paid memberships" : "Choose a membership"}</Button>
                   )}
                 </CardContent>
               </Card>

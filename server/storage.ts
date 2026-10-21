@@ -343,7 +343,7 @@ export class DatabaseStorage implements IStorage {
 
     // Include ALL paid members even those with 0 picks
     const paidMemberIds = new Set(
-      allUsers.filter(u => u.membershipTier && u.membershipTier !== "free").map(u => u.id)
+      allUsers.filter(u => ["rookie", "pro", "legend", "corporate", "premium_corporate"].includes(u.membershipTier ?? "")).map(u => u.id)
     );
 
     const computed = [...new Set([...Object.keys(byUser), ...paidMemberIds])]

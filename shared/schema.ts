@@ -1,9 +1,24 @@
 export * from "./models/auth";
 
-import { pgTable, text, integer, boolean, timestamp, real, serial } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, boolean, timestamp, real, serial, primaryKey } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { users } from "./models/auth";
+
+export const masterChampionshipSports = pgTable("master_championship_sports", {
+  season: text("season").notNull(),
+  sportId: text("sport_id").notNull(),
+  lockAt: timestamp("lock_at", { withTimezone: true }).notNull(),
+}, table => [primaryKey({ columns: [table.season, table.sportId] })]);
+
+export const masterChampionshipPicks = pgTable("master_championship_picks", {
+  userId: text("user_id").notNull().references(() => users.id),
+  season: text("season").notNull(),
+  sportId: text("sport_id").notNull(),
+  teamId: text("team_id").notNull(),
+  teamName: text("team_name").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, table => [primaryKey({ columns: [table.userId, table.season, table.sportId] })]);
 
 export const predictions = pgTable("predictions", {
   id: serial("id").primaryKey(),

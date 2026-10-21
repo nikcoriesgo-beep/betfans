@@ -75,6 +75,7 @@ export async function registerRoutes(
 
   await setupAuth(app);
   registerAuthRoutes(app);
+  await (await import("./masterChampionships")).registerMasterChampionships(app);
 
   app.get("/api/auth/replit-auto", async (req: any, res) => {
     try {
@@ -641,8 +642,8 @@ export async function registerRoutes(
 
       // Block free-tier (unpaid) accounts
       const actingUser = await storage.getUser(userId);
-      if (!actingUser || actingUser.membershipTier === "free") {
-        return res.status(403).json({ message: "An active subscription is required to submit picks. Please visit the Membership page." });
+      if (!(await import("@shared/membershipAccess")).canPlayFreeGames(actingUser)) {
+        return res.status(403).json({ message: "Join Free Play with a valid affiliate code or activate Legend to submit picks." });
       }
 
       // Self-heal: if the submitted gameId no longer exists (e.g. cleaned up as a duplicate),
@@ -1201,7 +1202,7 @@ export async function registerRoutes(
       if (!code) return res.status(400).json({ message: "Affiliate code required" });
 
       const user = await storage.getUser(userId);
-      if (user?.referredBy && user.referredBy !== "NIKCOX") return res.status(400).json({ message: "You have already used an affiliate code" });
+      if (user?.referredBy) return res.status(400).json({ message: "Your original affiliate is already linked and is preserved when you upgrade." });
 
       const upperCode = code.trim().toUpperCase();
 

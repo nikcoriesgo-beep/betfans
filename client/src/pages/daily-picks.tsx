@@ -293,7 +293,12 @@ export default function DailyPicks() {
           </div>
         )}
 
-        <PrizePoolQualRule className="mb-4" data-testid="banner-mlb-prize-pool" />
+        {user?.membershipTier === "free_play" ? (
+          <div className="mb-4 rounded-xl border border-primary/30 bg-primary/10 p-4">
+            <strong>Free Play — skill play only</strong>
+            <p className="text-sm text-muted-foreground mt-1">Your daily picks do not enter the Prize Pool or earn payouts. Legend membership is $99/month for eligible daily Prize Pool entries.</p>
+          </div>
+        ) : <PrizePoolQualRule className="mb-4" data-testid="banner-mlb-prize-pool" />}
 
         <div className="mb-6">
           <p className="text-[10px] text-muted-foreground/50 uppercase tracking-widest mb-3">Select Sport</p>
@@ -372,7 +377,9 @@ export default function DailyPicks() {
                       <div className="flex items-center gap-2">
                         <Badge className={cn("text-[10px]", LEAGUE_COLORS[game.league] || "bg-foreground/10 text-foreground/60")}>{game.league}</Badge>
                         <StatusBadge status={game.status || "upcoming"} />
-                        {isPrizePoolExempt(game) ? (
+                        {user?.membershipTier === "free_play" ? (
+                          <Badge className="bg-primary/10 text-primary text-[9px]">FREE SKILL PLAY</Badge>
+                        ) : isPrizePoolExempt(game) ? (
                           <Badge className="text-[9px]">EXEMPT — LATE SCHEDULE ADDITION</Badge>
                         ) : isPrizePoolLeague(game.league, pacificDay(new Date(game.gameTime)), game.league === "NCAAF" && game.isTop25 === true) ? (
                           <Badge className="bg-yellow-500/20 text-yellow-700 border-yellow-500/30 text-[9px] gap-0.5">
