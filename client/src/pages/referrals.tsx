@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
+import { FreePlayerInvites } from "@/components/FreePlayerInvites";
 
 const AFFILIATE_NAMES = ["Scott Lunny", "Ian C Glover", "Moe McCoy", "Bryant Nelson"];
 
@@ -125,7 +126,7 @@ export default function Referrals() {
     },
   });
 
-  const { data: codeData } = useQuery<{ code: string }>({
+  const { data: codeData, isLoading: codeLoading, isError: codeFailed, refetch: retryCode } = useQuery<{ code: string }>({
     queryKey: ["/api/referral/code"],
     enabled: isAuthenticated,
   });
@@ -196,6 +197,16 @@ export default function Referrals() {
     toast({ title: "Copied to clipboard!" });
     setTimeout(() => setCopied(false), 2000);
   };
+
+  if (user?.membershipTier === "free_play") {
+    return <div className="min-h-screen bg-background">
+      <Navbar /><AdBannerTop />
+      <main className="container mx-auto px-4 pt-24 pb-12">
+        <FreePlayerInvites code={referralCode} loading={codeLoading} failed={codeFailed}
+          retry={() => { void retryCode(); }} invited={referralList.length} />
+      </main>
+    </div>;
+  }
 
   return (
     <div className="min-h-screen bg-background">
