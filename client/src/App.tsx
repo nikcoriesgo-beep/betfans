@@ -5,6 +5,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuth } from "@/hooks/use-auth";
+import { canBrowseMemberPages } from "@shared/membershipAccess";
 import NotFound from "@/pages/not-found";
 import Home from "@/pages/home";
 import Dashboard from "@/pages/dashboard";
@@ -34,7 +35,6 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 declare const __BUILD_ID__: string;
 
 const FOUNDER_CODES = ["NIKCOX"];
-const PAID_TIERS = ["rookie", "pro", "legend", "corporate", "premium_corporate"];
 const BUILD_KEY = "bf_build_id";
 
 function PaymentGate({ children }: { children: ReactNode }) {
@@ -45,11 +45,9 @@ function PaymentGate({ children }: { children: ReactNode }) {
     if (isLoading || !user) return;
     const tier = (user as any).membershipTier || "";
     const refCode = (user as any).referralCode || "";
-    const isPaid = PAID_TIERS.includes(tier);
     const isFounder = FOUNDER_CODES.includes(refCode);
-    if (isPaid || isFounder) return;
-    // Free / unpaid — redirect to membership except on open pages
-    if (tier === "free_play" && ["/daily-picks", "/master-championships", "/profile"].includes(location.split("?")[0])) return;
+    if (canBrowseMemberPages(tier) || isFounder) return;
+    // Legacy free accounts must enroll; Free Play can browse every page.
     const openPaths = ["/", "/auth", "/membership", "/how-to-play", "/official-rules", "/merch", "/master-championships"];
     const isOpen = openPaths.some(p => location === p || location.startsWith(p + "?") || location.startsWith(p + "/"));
     if (!isOpen) setLocation("/membership");
