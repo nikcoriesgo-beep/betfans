@@ -835,9 +835,9 @@ export async function registerRoutes(
         inArray(predictions.gameId, allDayIds)
       );
 
-      // Fetch all paid members
+      // Include Free Play records for transparency, but never prize eligibility.
       const allUsers = await db.select().from(users).where(
-        sql`${users.membershipTier} IN ('rookie', 'pro', 'legend', 'corporate', 'premium_corporate')`
+        sql`${users.membershipTier} IN ('rookie', 'pro', 'legend', 'corporate', 'premium_corporate', 'free_play')`
       );
 
       const memberRows = allUsers.map(u => {
@@ -877,7 +877,7 @@ export async function registerRoutes(
         };
         const scores = { mlb, nfl, ncaaf, nhl, nba };
         const prizePoolTotal = prizePoolScore(scores, dateLabel);
-        const qualified = prizePoolQualified(scores, {
+        const qualified = u.membershipTier !== "free_play" && prizePoolQualified(scores, {
           mlb: mlbMatchups.length, nfl: nflMatchups.length,
           ncaaf: ncaafMatchups.length, nhl: nhlMatchups.length, nba: nbaMatchups.length,
         }, dateLabel);

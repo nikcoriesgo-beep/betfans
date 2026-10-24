@@ -40,6 +40,7 @@ const tierConfig: Record<string, { label: string; color: string; bg: string; bor
 };
 
 function TierBadge({ tier }: { tier: string | null }) {
+  if (tier === "free_play") return <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/30 text-[10px] px-1.5 py-0">Free Play</Badge>;
   return <Badge className="bg-purple-600/20 text-purple-400 border-purple-500/30 text-[10px] gap-0.5 px-1.5 py-0"><Crown size={10} /> Legend</Badge>;
 }
 
@@ -452,7 +453,7 @@ function DailyMemberScorecard() {
                     key={m.userId}
                     className={cn(
                       "border-b border-white/5 transition-colors",
-                      isWinner ? "bg-yellow-500/[0.06] hover:bg-yellow-500/[0.09]" : m.qualified ? "bg-green-500/[0.03] hover:bg-white/[0.03]" : "hover:bg-white/[0.02]"
+                      m.tier === "free_play" ? "bg-amber-500/[0.05] border-l-2 border-l-amber-500/50" : isWinner ? "bg-yellow-500/[0.06] hover:bg-yellow-500/[0.09]" : m.qualified ? "bg-green-500/[0.03] hover:bg-white/[0.03]" : "hover:bg-white/[0.02]"
                     )}
                     data-testid={`row-scorecard-member-${m.userId}`}
                   >
@@ -469,6 +470,10 @@ function DailyMemberScorecard() {
                             {isExpertAnalyst(m.referralCode) && <ExpertBadge />}
                           </div>
                           <TierBadge tier={m.tier} />
+                          {m.tier === "free_play" && <div className="mt-1 max-w-[180px] text-[10px] font-semibold text-amber-400">
+                            Not Prize Pool qualified
+                            <a href="/membership" className="block underline underline-offset-2">Upgrade to Legend</a>
+                          </div>}
                           {m.firstPickAt && (
                             <div className="font-mono text-[10px] mt-1 space-y-0.5">
                               <div className="flex items-center gap-1 text-green-400/80">
@@ -504,7 +509,9 @@ function DailyMemberScorecard() {
                       <div className="text-[10px] text-muted-foreground/40 tabular-nums">{prizeRecord.picks}/{prizeGameTotal} required picks</div>
                     </td>
                     <td className="py-3 px-3 text-center align-middle">
-                      {isWinner ? (
+                      {m.tier === "free_play" ? (
+                        <span className="text-[10px] font-bold text-amber-400">NOT QUALIFIED<br />Free Play</span>
+                      ) : isWinner ? (
                         <div className="flex flex-col items-center gap-0.5">
                           <span className="text-[10px] font-black text-yellow-400 uppercase tracking-wider px-2 py-0.5 bg-yellow-500/10 rounded-full border border-yellow-500/20">Winner</span>
                         </div>
