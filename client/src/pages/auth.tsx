@@ -15,6 +15,8 @@ interface CodeInfo {
   tier: string;
 }
 
+import { initialAffiliateCode } from "@shared/referralDefaults";
+
 export default function Auth() {
   const params = new URLSearchParams(window.location.search);
   const initialMode = params.get("mode") === "signup" ? "signup" : "login";
@@ -25,7 +27,7 @@ export default function Auth() {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
-  const [referralCode, setReferralCode] = useState("");
+  const [referralCode, setReferralCode] = useState("NIKCOX");
   const [codeState, setCodeState] = useState<CodeState>("idle");
   const [codeInfo, setCodeInfo] = useState<CodeInfo | null>(null);
   const [loading, setLoading] = useState(false);
@@ -39,8 +41,7 @@ export default function Auth() {
     if (refCode) {
       localStorage.setItem("betfans_affiliate_code", refCode);
     }
-    const stored = refCode || localStorage.getItem("betfans_affiliate_code") || "";
-    setReferralCode(stored.toUpperCase());
+    setReferralCode(initialAffiliateCode(refCode, localStorage.getItem("betfans_affiliate_code")));
   }, []);
 
   // Validate referral code whenever it changes (debounced)

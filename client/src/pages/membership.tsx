@@ -17,10 +17,12 @@ import { PayPalPremiumCorporateButton } from "@/components/PayPalPremiumCorporat
 
 type Tier = "legend" | "corporate" | "premium_corporate";
 
+import { initialAffiliateCode } from "@shared/referralDefaults";
+
 export default function Membership() {
   const { user, isAuthenticated } = useAuth();
   const { toast } = useToast();
-  const [affiliateCode, setAffiliateCode] = useState("");
+  const [affiliateCode, setAffiliateCode] = useState("NIKCOX");
   const [codeApplied, setCodeApplied] = useState(false);
   const [founderCode, setFounderCode] = useState("");
   const [referrerTier, setReferrerTier] = useState<string | null>(null);
@@ -70,10 +72,8 @@ export default function Membership() {
     const urlParams = new URLSearchParams(window.location.search);
     const urlCode = urlParams.get("ref") || urlParams.get("code");
 
-    if (savedCode) {
-      setAffiliateCode(savedCode);
-    } else if (urlCode) {
-      setAffiliateCode(urlCode);
+    setAffiliateCode(initialAffiliateCode(urlCode, savedCode));
+    if (urlCode) {
       localStorage.setItem("betfans_affiliate_code", urlCode);
     }
 
@@ -449,7 +449,7 @@ export default function Membership() {
               {currentTier !== "free_play" && (!isAuthenticated || currentTier === "free") && <div className="space-y-2">
                 <label htmlFor="free-play-code" className="text-sm font-medium">Affiliate code <span className="text-muted-foreground">(required)</span></label>
                 <Input id="free-play-code" value={affiliateCode} onChange={e => { setAffiliateCode(e.target.value.toUpperCase()); setFreePlayError(""); }} placeholder="Enter your affiliate's code" className="bg-background/50 border-white/10 font-mono" />
-                <p className="text-xs text-muted-foreground">We validate your entered or linked code before enrollment. No code is assigned automatically.</p>
+                <p className="text-xs text-muted-foreground">NIKCOX is the official default. You can replace it with your inviter’s affiliate code before signing up.</p>
               </div>}
               {freePlayError && <p role="alert" className="text-sm text-red-400 mt-3">{freePlayError}</p>}
               {isAuthenticated && !["free", "free_play"].includes(currentTier) && <p className="text-sm text-muted-foreground">Free Play activities are already included with your paid membership. Your current plan will not be downgraded.</p>}
