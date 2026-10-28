@@ -9,6 +9,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState, useRef } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { Link } from "wouter";
+import { HomeFreeMembership } from "@/components/HomeFreeMembership";
 
 function AnnouncementBar() {
   const announcements = [
@@ -334,6 +335,7 @@ export default function Home() {
       <section className="py-20 border-t border-white/5">
         <div className="container mx-auto px-4 text-center">
           <h2 className="text-3xl md:text-4xl font-display font-bold mb-6">Choose Your Edge</h2>
+          <HomeFreeMembership signedIn={!!user} tier={user?.membershipTier} />
 
           {/* Instant Payout Highlight Banner */}
           <div className="max-w-3xl mx-auto mb-10 rounded-2xl border border-primary/40 bg-gradient-to-r from-primary/15 via-primary/10 to-primary/15 p-4 flex items-center justify-center gap-3 shadow-[0_0_30px_rgba(34,197,94,0.2)]" data-testid="banner-instant-payout">
@@ -341,13 +343,13 @@ export default function Home() {
               <Zap size={20} className="text-black" />
             </div>
             <div className="text-left">
-              <p className="font-display font-black text-primary text-lg leading-tight">INSTANT PAYOUTS on Every Referral</p>
+              <p className="font-display font-black text-primary text-lg leading-tight">Legend Membership — Referral Payouts</p>
               <p className="text-sm text-muted-foreground">Get paid the moment someone joins with your code — $50/month for every active Legend you refer</p>
             </div>
           </div>
 
           <div className="max-w-md mx-auto">
-            <div className="p-8 rounded-2xl border bg-yellow-500/5 border-yellow-500/50 relative overflow-hidden shadow-[0_0_30px_rgba(234,179,8,0.15)] flex flex-col">
+            <div data-testid="home-legend-membership" className="p-8 rounded-2xl border bg-yellow-500/5 border-yellow-500/50 relative overflow-hidden shadow-[0_0_30px_rgba(234,179,8,0.15)] flex flex-col">
               <div className="absolute top-0 right-0 bg-gradient-to-r from-yellow-500 to-yellow-400 text-black text-xs font-bold px-3 py-1 rounded-bl-lg">
                 LEGEND ONLY
               </div>
