@@ -10,11 +10,12 @@ import { useEffect, useState, useRef } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { Link } from "wouter";
 import { HomeFreeMembership } from "@/components/HomeFreeMembership";
+import { PRIZE_POOL_NOTICE, OPTIONAL_SPORTS_NOTICE } from "@shared/prizePoolRules";
 
 function AnnouncementBar() {
   const announcements = [
-    "Beginning October 20, 2026 (Pacific Time)\nAll scheduled NBA games must be selected along with MLB, NFL, NHL and NCAA FBS Top 25 games for daily Prize Pool qualification.",
-    "All other sports are optional Skill Play. They count toward rankings, not Prize Pool qualification.",
+    PRIZE_POOL_NOTICE,
+    OPTIONAL_SPORTS_NOTICE,
   ];
   if (!announcements.length) return null;
   return (

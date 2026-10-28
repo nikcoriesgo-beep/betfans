@@ -758,7 +758,7 @@ export async function syncSportsData(): Promise<{ synced: number; leagues: strin
     NBA: month >= 10 || month <= 6,
     // NHL preseason starts in September; fetch the September 29 slate on the 28th.
     NHL: month >= 9 || month <= 6,
-    MLS: month >= 2 && month <= 11,
+    MLS: month >= 2 && month <= 12, // Include December MLS Cup playoff fixtures.
     NCAAB: month >= 11 || month <= 4,
     NCAABB: month >= 2 && month <= 7, // Feb–July covers regular season + tournament + CWS (June 12-22)
     // FIFA World Cup 2026: June 11 – July 19

@@ -1,6 +1,6 @@
 import { AlertTriangle, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { isNhlRequired, isNbaRequired, pacificDay } from "@shared/prizePoolRules";
+import { isNhlRequired, isNbaRequired, isMlsRequired, pacificDay, PRIZE_POOL_NOTICE } from "@shared/prizePoolRules";
 
 interface Props {
   compact?: boolean;
@@ -11,7 +11,7 @@ export function PrizePoolQualRule({ compact = false, className }: Props) {
   const nhlRequired = isNhlRequired(pacificDay(new Date()));
   const nbaRequired = isNbaRequired(pacificDay(new Date()));
   const optional = nbaRequired ? "WBC Boxing and all other sports" : nhlRequired ? "NBA, WBC Boxing, and all other sports" : "NBA, NHL, WBC Boxing, and all other sports";
-  const required = <>every MLB, NFL, and NCAA FBS Top 25 game{nhlRequired ? ", plus every NHL game" : ""}{nbaRequired ? " and every NBA game" : ""}</>;
+  const required = <>every MLB, NFL, and NCAA FBS Top 25 game{nhlRequired ? ", plus every NHL game" : ""}{nbaRequired ? " and every NBA game" : ""}{isMlsRequired(pacificDay(new Date())) ? ", plus every 2026 MLS playoff game" : ""}</>;
   if (compact) {
     return (
       <div className={cn("rounded-lg border border-yellow-400/40 bg-yellow-500/10 px-4 py-3 flex items-start gap-3", className)} data-testid="prize-pool-qual-rule-compact">
@@ -21,6 +21,7 @@ export function PrizePoolQualRule({ compact = false, className }: Props) {
             <span className="font-black text-yellow-300">Prize Pool Rule: </span>
             You must pick <strong className="text-yellow-200">{required}</strong> scheduled that Pacific day to qualify for payouts. {optional} are optional Skill Play and ranking picks.
             {!nhlRequired && " NHL becomes required September 29, 2026 (Pacific Time)."}
+            <span className="block mt-2">{PRIZE_POOL_NOTICE}</span>
           </p>
         </div>
       </div>
@@ -51,6 +52,7 @@ export function PrizePoolQualRule({ compact = false, className }: Props) {
             </li>
           </ul>
           {!nhlRequired && <p className="text-xs text-yellow-200">NHL becomes required September 29, 2026 (Pacific Time).</p>}
+          <p className="text-xs text-yellow-200">{PRIZE_POOL_NOTICE}</p>
         </div>
       </div>
     </div>

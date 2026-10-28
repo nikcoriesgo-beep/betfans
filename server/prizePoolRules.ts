@@ -1,9 +1,9 @@
-import { isNhlRequired, isNbaRequired } from "@shared/prizePoolRules";
+import { isNhlRequired, isNbaRequired, isMlsRequired } from "@shared/prizePoolRules";
 
 type SportScore = { picks: number; wins: number; losses: number; pending?: number };
-type PrizeScores = { mlb: SportScore; nfl: SportScore; ncaaf: SportScore; nhl?: SportScore; nba?: SportScore };
+type PrizeScores = { mlb: SportScore; nfl: SportScore; ncaaf: SportScore; nhl?: SportScore; nba?: SportScore; mls?: SportScore };
 export function prizePoolScore(scores: PrizeScores, day: string) {
-  return [scores.mlb, scores.nfl, scores.ncaaf, ...(isNhlRequired(day) ? [scores.nhl ?? { picks: 0, wins: 0, losses: 0 }] : []), ...(isNbaRequired(day) ? [scores.nba ?? { picks: 0, wins: 0, losses: 0 }] : [])].reduce<Required<SportScore>>(
+  return [scores.mlb, scores.nfl, scores.ncaaf, ...(isNhlRequired(day) ? [scores.nhl ?? { picks: 0, wins: 0, losses: 0 }] : []), ...(isNbaRequired(day) ? [scores.nba ?? { picks: 0, wins: 0, losses: 0 }] : []), ...(isMlsRequired(day) ? [scores.mls ?? { picks: 0, wins: 0, losses: 0 }] : [])].reduce<Required<SportScore>>(
     (sum, score) => ({
       picks: sum.picks + score.picks,
       wins: sum.wins + score.wins,
@@ -14,9 +14,10 @@ export function prizePoolScore(scores: PrizeScores, day: string) {
   );
 }
 
-export function prizePoolQualified(scores: PrizeScores, counts: { mlb: number; nfl: number; ncaaf: number; nhl: number; nba?: number }, day: string): boolean {
+export function prizePoolQualified(scores: PrizeScores, counts: { mlb: number; nfl: number; ncaaf: number; nhl: number; nba?: number; mls?: number }, day: string): boolean {
   return scores.mlb.picks >= counts.mlb && scores.nfl.picks >= counts.nfl &&
     scores.ncaaf.picks >= counts.ncaaf &&
     (!isNhlRequired(day) || (scores.nhl?.picks ?? 0) >= counts.nhl) &&
-    (!isNbaRequired(day) || (scores.nba?.picks ?? 0) >= (counts.nba ?? 0));
+    (!isNbaRequired(day) || (scores.nba?.picks ?? 0) >= (counts.nba ?? 0)) &&
+    (!isMlsRequired(day) || (scores.mls?.picks ?? 0) >= (counts.mls ?? 0));
 }

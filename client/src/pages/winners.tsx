@@ -18,7 +18,7 @@ import { Link } from "wouter";
 import { ExpertBadge, isExpertAnalyst } from "@/components/ExpertBadge";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
-import { isNhlRequired, isNbaRequired } from "@shared/prizePoolRules";
+import { isNhlRequired, isNbaRequired, isMlsRequired, PRIZE_POOL_NOTICE, OPTIONAL_SPORTS_NOTICE } from "@shared/prizePoolRules";
 
 type PrizePoolData = {
   amount: number;
@@ -233,7 +233,7 @@ function DailyWinners({ poolAmount }: { poolAmount: number }) {
           <CardContent className="p-5 text-center">
             <Trophy size={28} className="text-muted-foreground/20 mx-auto mb-2" />
             <p className="text-muted-foreground text-sm">No qualifying picks today</p>
-            <p className="text-xs text-muted-foreground/50 mt-1">Pick every MLB, NFL & NCAA FBS Top 25 game{isNhlRequired(scorecard?.period?.label ?? "") ? ", plus every NHL game" : ""}{isNbaRequired(scorecard?.period?.label ?? "") ? " and every NBA game" : ""} to qualify</p>
+            <p className="text-xs text-muted-foreground/50 mt-1">Pick every MLB, NFL & NCAA FBS Top 25 game{isNhlRequired(scorecard?.period?.label ?? "") ? ", plus every NHL game" : ""}{isNbaRequired(scorecard?.period?.label ?? "") ? " and every NBA game" : ""}{isMlsRequired(scorecard?.period?.label ?? "") ? ", plus every 2026 MLS playoff game" : ""} to qualify</p>
           </CardContent>
         </Card>
       ) : (
@@ -331,6 +331,7 @@ function DailyMemberScorecard() {
   const label = data?.period?.label ?? "";
   const nhlRequired = label ? isNhlRequired(label) : false;
   const nbaRequired = label ? isNbaRequired(label) : false;
+  const mlsRequired = label ? isMlsRequired(label) : false;
   const winner = data?.winner ?? null;
 
   // Prize Pool scorecard uses required-sport totals; ordinary leaderboards retain all-sport totals.
@@ -429,6 +430,7 @@ function DailyMemberScorecard() {
                 <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-orange-400">NBA <span className={cn("block text-[8px]", nbaRequired ? "text-yellow-400" : "text-muted-foreground")}>{nbaRequired ? "Required" : "Optional"}</span></th>
                 <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-cyan-400">NHL <span className={cn("block text-[8px]", nhlRequired ? "text-yellow-400" : "text-muted-foreground")}>{nhlRequired ? "Required" : "Optional"}</span></th>
                 {games.wc > 0 && <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-emerald-400">🌍 WC <span className="block text-[8px] text-muted-foreground">Optional</span></th>}
+                {games.mls > 0 && <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-sky-400">MLS <span className={cn("block text-[8px]", mlsRequired ? "text-yellow-400" : "text-muted-foreground")}>{mlsRequired ? "Required" : "Optional"}</span></th>}
                 {games.epl > 0 && <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-indigo-400">⚽ EPL <span className="block text-[8px] text-muted-foreground">Optional</span></th>}
                 {games.ucl > 0 && <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-violet-400">🏆 UCL <span className="block text-[8px] text-muted-foreground">Optional</span></th>}
                 <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-foreground">Total W-L</th>
@@ -447,7 +449,7 @@ function DailyMemberScorecard() {
                 const prizeRecord = prizePoolRecord(m);
                 const prizeGameTotal = typeof games.prizePoolTotal === "number"
                   ? games.prizePoolTotal
-                  : games.mlb + (games.ncaaf ?? 0) + (games.nfl ?? 0) + (nhlRequired ? (games.nhl ?? 0) : 0) + (nbaRequired ? (games.nba ?? 0) : 0);
+                  : games.mlb + (games.ncaaf ?? 0) + (games.nfl ?? 0) + (nhlRequired ? (games.nhl ?? 0) : 0) + (nbaRequired ? (games.nba ?? 0) : 0) + (mlsRequired ? (games.mls ?? 0) : 0);
                 return (
                   <tr
                     key={m.userId}
@@ -497,6 +499,7 @@ function DailyMemberScorecard() {
                     <SportCell wins={m.nba.wins} losses={m.nba.losses} picks={m.nba.picks} total={games.nba} qualified={games.nba === 0 || m.nba.picks >= games.nba} />
                     <SportCell wins={m.nhl.wins} losses={m.nhl.losses} picks={m.nhl.picks} total={games.nhl} qualified={games.nhl === 0 || m.nhl.picks >= games.nhl} />
                     {games.wc > 0 && <SportCell wins={m.wc?.wins ?? 0} losses={m.wc?.losses ?? 0} picks={m.wc?.picks ?? 0} total={games.wc} qualified={games.wc === 0 || (m.wc?.picks ?? 0) >= games.wc} />}
+                    {games.mls > 0 && <SportCell wins={m.mls?.wins ?? 0} losses={m.mls?.losses ?? 0} picks={m.mls?.picks ?? 0} total={games.mls} qualified={!mlsRequired || (m.mls?.picks ?? 0) >= games.mls} />}
                    {games.epl > 0 && <SportCell wins={m.epl?.wins ?? 0} losses={m.epl?.losses ?? 0} picks={m.epl?.picks ?? 0} total={games.epl} qualified />}
                     {games.ucl > 0 && <SportCell wins={m.ucl?.wins ?? 0} losses={m.ucl?.losses ?? 0} picks={m.ucl?.picks ?? 0} total={games.ucl} qualified />}
                     {games.ncaabb > 0 && <SportCell wins={m.ncaabb?.wins ?? 0} losses={m.ncaabb?.losses ?? 0} picks={m.ncaabb?.picks ?? 0} total={games.ncaabb} qualified={games.ncaabb === 0 || (m.ncaabb?.picks ?? 0) >= games.ncaabb} />}
@@ -767,7 +770,7 @@ export default function Winners() {
             </div>
             <div className="mt-4 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/25">
               <p className="text-xs text-yellow-300 leading-relaxed">
-                <strong className="text-yellow-200">Qualification Rule:</strong> Pick every MLB, NFL, and NCAA FBS Top 25 game on its Pacific day; beginning September 29, 2026, pick every NHL game too. Other sports are optional Skill Play. Missing a required game disqualifies you from that day's pool.
+                <strong className="text-yellow-200">Qualification Rule:</strong> {PRIZE_POOL_NOTICE} {OPTIONAL_SPORTS_NOTICE} Missing a required game disqualifies you from that day's pool.
               </p>
             </div>
             <div className="mt-3 p-3 rounded-lg bg-white/5 border border-white/5">

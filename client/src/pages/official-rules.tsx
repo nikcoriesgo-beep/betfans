@@ -195,6 +195,7 @@ export default function OfficialRules() {
                 "Submit a prediction on EVERY scheduled NCAA Division I FBS Top 25 game for that day, AND",
                 "Beginning September 29, 2026, submit a prediction on EVERY scheduled NHL game for that Pacific day.",
                 "Beginning October 20, 2026 (Pacific Time), submit a prediction on EVERY scheduled NBA game for that day.",
+                "Beginning November 18th, 2026 (Pacific Time), submit a prediction on EVERY scheduled MLS Soccer Playoff 2026 game for that day. MLB, NFL, NHL, NBA and NCAA FBS Top 25 games remain required.",
               ]} />
               <p className="font-semibold text-foreground">Missing even one (1) required game on a given Pacific day will result in disqualification from that day's prize pool distribution. There are NO exceptions to this requirement.</p>
               <p className="italic">WBC Boxing and all other sports are optional Skill Play for ordinary rankings and do not count toward Prize Pool qualification. NBA games before October 20, 2026 and NHL games before September 29, 2026 remain optional and do not affect past prize scores.</p>

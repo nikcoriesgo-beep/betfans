@@ -57,11 +57,11 @@ const slides = [
     tag: "Step 4",
     title: "Win Real\nCash",
     subtitle: "Pick every required game on its Pacific day. Get paid.",
-    description: "50% of all membership fees go into the live prize pool. Pick every MLB, NFL, and NCAA FBS Top 25 game scheduled that Pacific day; beginning September 29, 2026, pick every NHL game too. Other sports are optional Skill Play for rankings. Payouts go directly to the card you signed up with.",
+    description: "50% of all membership fees go into the live prize pool. Pick every MLB, NFL, NHL, NBA and NCAA FBS Top 25 game scheduled that Pacific day. Beginning November 18th, 2026 (Pacific Time), all scheduled MLS Soccer Playoff 2026 games are required too. All other sports are optional Skill Play for rankings, not Prize Pool qualification. Payouts go directly to the card you signed up with.",
     icon: DollarSign,
     gradient: "from-yellow-400 via-amber-500 to-orange-500",
     bgAccent: "bg-yellow-500/10",
-    features: ["MLB, NFL, FBS Top 25 & NHL from Sep 29", "Required Games", "Optional Skill Play", "Live Prize Pool"],
+    features: ["MLB, NFL, NHL, NBA & FBS Top 25", "2026 MLS Playoffs from Nov 18", "Optional Skill Play", "Live Prize Pool"],
   },
   {
     step: 5,
@@ -150,7 +150,7 @@ function SlideContent({ slide, index }: { slide: typeof slides[0]; index: number
           <div className="rounded-lg border border-yellow-400/50 bg-yellow-500/10 px-4 py-3 mb-4 max-w-sm mx-auto text-left">
             <p className="text-xs font-black text-yellow-300 uppercase tracking-wide mb-1">To Qualify:</p>
             <ul className="space-y-1 text-xs text-yellow-100/90">
-              <li>✓ <strong className="text-yellow-200">Pick every MLB, NFL & FBS Top 25 game</strong> on its Pacific day; NHL joins September 29, 2026</li>
+              <li>✓ <strong className="text-yellow-200">Pick every MLB, NFL, NHL, NBA & FBS Top 25 game</strong> on its Pacific day; 2026 MLS playoff games join November 18th, 2026</li>
                <li>✓ <strong className="text-yellow-200">Every NBA game is required beginning October 20, 2026 (Pacific Time)</strong></li>
                <li>✓ <strong className="text-yellow-200">WBC and other sports are optional</strong> Skill Play for rankings</li>
               <li>✗ Miss one required game = <strong className="text-yellow-200">disqualified</strong> from that day's payout</li>
