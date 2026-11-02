@@ -1,4 +1,5 @@
 import { db } from "./db";
+import { hasTop25Team } from "@shared/dailyPickEligibility";
 import { games, predictions, leaderboardEntries } from "@shared/schema";
 import { eq, and, sql, inArray } from "drizzle-orm";
 
@@ -323,7 +324,7 @@ async function fetchLeagueGames(league: string): Promise<any[]> {
     // can expose the next FBS/NFL game day even when neither league plays today.
     // ESPN rejects football date ranges with HTTP 400. Request individual days.
     const dateParam = todayET;
-    const limitParam = league === "NFL" || league === "NCAAF" ? "limit=300&" : "";
+    const limitParam = "limit=300&";
     const response = await fetch(`${url}${separator}${limitParam}dates=${dateParam}`, { signal: AbortSignal.timeout(15000) });
     if (!response.ok) {
       console.log(`[spider] ESPN ${league} returned ${response.status}`);
@@ -394,9 +395,8 @@ async function fetchLeagueGames(league: string): Promise<any[]> {
       const awayTeam = awayComp.team.displayName;
       const homeRank = homeComp.curatedRank?.current;
       const awayRank = awayComp.curatedRank?.current;
-      const isTop25 = league === "NCAAF" &&
-        ((typeof homeRank === "number" && homeRank >= 1 && homeRank <= 25) ||
-         (typeof awayRank === "number" && awayRank >= 1 && awayRank <= 25));
+      const isTop25 = (league === "NCAAF" || league === "NCAAB") &&
+        hasTop25Team(homeRank, awayRank);
       if (league === "NCAAF" && !isTop25) continue;
       const status = mapStatus(event.status.type.state, event.status.type.name);
       const homeScore = homeComp.score ? parseInt(homeComp.score) : null;

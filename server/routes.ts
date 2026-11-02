@@ -3,6 +3,7 @@ import { isPrizePoolExempt } from "@shared/prizePoolExemptions";
 import { createServer, type Server } from "http";
 import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integrations/auth";
 import { storage } from "./storage";
+import { isDailyPickEligible } from "@shared/dailyPickEligibility";
 import { prizePoolScore, prizePoolQualified } from "./prizePoolRules";
 import { isNhlRequired, isNbaRequired, isMlsRequired, pacificDay, pacificDayWindow, previousPacificDay } from "@shared/prizePoolRules";
 import { db } from "./db";
@@ -580,9 +581,10 @@ export async function registerRoutes(
     try {
       const league = req.query.league as string | undefined;
       const includeUpcomingFootball = req.query.includeUpcomingFootball === "true";
-      const dbGames = includeUpcomingFootball && (!league || league === "ALL")
+      const candidateGames = includeUpcomingFootball && (!league || league === "ALL")
         ? await storage.getDailyPicksGames()
         : await storage.getGames(league);
+      const dbGames = candidateGames.filter(isDailyPickEligible);
 
       // Enrich MLB games with live probable pitcher data from MLB Stats API
       let pitcherMap = new Map<string, { home: string | null; away: string | null }>();
@@ -649,7 +651,7 @@ export async function registerRoutes(
       // Self-heal: if the submitted gameId no longer exists (e.g. cleaned up as a duplicate),
       // find the canonical game with the same matchup for today and redirect to it.
       let resolvedGameId: number = req.body.gameId;
-      const [gameCheck] = await db.select({ id: games.id, gameTime: games.gameTime, status: games.status })
+      const [gameCheck] = await db.select({ id: games.id, gameTime: games.gameTime, status: games.status, league: games.league, isTop25: games.isTop25 })
         .from(games).where(eq(games.id, resolvedGameId)).limit(1);
       if (!gameCheck) {
         // Can't get team names from a missing row, so reject with a meaningful message instead of FK crash
@@ -660,6 +662,7 @@ export async function registerRoutes(
       }
 
       // Block picks on games that have already started, are live, or are finished
+      if (!isDailyPickEligible(gameCheck)) return res.status(400).json({ message: "NCAA basketball Daily Picks are limited to games featuring a Top 25 team." });
       const now = new Date();
       const gameStarted = new Date(gameCheck.gameTime) <= now;
       const gameLocked = gameStarted || gameCheck.status === "live" || gameCheck.status === "finished";

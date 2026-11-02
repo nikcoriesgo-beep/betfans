@@ -60,7 +60,7 @@ const LEAGUE_LABEL: Record<string, string> = {
   MLS: "Soccer",
   EPL: "Premier League",
   UCL: "Champions League",
-  NCAAB: "College BB",
+  NCAAB: "College BB Top 25",
   NCAABB: "College Baseball",
 };
 
