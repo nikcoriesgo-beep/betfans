@@ -5,7 +5,7 @@ import { gradeStuckGames } from "./sportsDataService";
 import { db } from "./db";
 import { games, predictions, users } from "@shared/schema";
 import { sql, inArray } from "drizzle-orm";
-import { isNhlRequired, isNbaRequired, isMlsRequired, pacificDay, pacificDayWindow, previousPacificDay, requiredPrizePoolLeagues } from "@shared/prizePoolRules";
+import { isNhlRequired, isNbaRequired, isMlsRequired, isNcaabRequired, pacificDay, pacificDayWindow, previousPacificDay, requiredPrizePoolLeagues } from "@shared/prizePoolRules";
 import { prizePoolQualified, prizePoolScore } from "./prizePoolRules";
 
 async function sendAndRecordPayout(
@@ -68,6 +68,7 @@ async function computeScorecardForPeriod(periodStart: Date, periodEnd: Date, log
     sql`${games.gameTime} >= ${periodStart} AND ${games.gameTime} < ${periodEnd}
         AND ${games.status} != 'postponed'
         AND (${games.league} != 'NCAAF' OR COALESCE(${games.isTop25}, FALSE))
+        AND (${games.league} != 'NCAAB' OR COALESCE(${games.isTop25}, FALSE))
         AND ${inArray(games.league, leagues)}`
   )).filter(g => !isPrizePoolExempt(g));
 
@@ -85,6 +86,7 @@ async function computeScorecardForPeriod(periodStart: Date, periodEnd: Date, log
 
   const mlbMatchups    = [...matchupGroups.entries()].filter(([k]) => k.startsWith("MLB|"));
   const mlsMatchups    = [...matchupGroups.entries()].filter(([k]) => k.startsWith("MLS|"));
+  const ncaabMatchups = [...matchupGroups.entries()].filter(([k]) => k.startsWith("NCAAB|"));
   const nbaMatchups    = [...matchupGroups.entries()].filter(([k]) => k.startsWith("NBA|"));
   const nhlMatchups    = [...matchupGroups.entries()].filter(([k]) => k.startsWith("NHL|"));
   const wcMatchups     = [...matchupGroups.entries()].filter(([k]) => k.startsWith("FIFA_WC|"));
@@ -125,6 +127,7 @@ async function computeScorecardForPeriod(periodStart: Date, periodEnd: Date, log
     };
     const mlb    = forSport(mlbMatchups);
     const mls    = forSport(mlsMatchups);
+    const ncaab = forSport(ncaabMatchups);
     const nba    = forSport(nbaMatchups);
     const nhl    = forSport(nhlMatchups);
     const wc     = forSport(wcMatchups);
@@ -134,17 +137,18 @@ async function computeScorecardForPeriod(periodStart: Date, periodEnd: Date, log
     const ncaaf  = forSport(ncaafMatchups);
     const nfl    = forSport(nflMatchups);
     const boxing = forSport(boxingMatchups);
-    const scores = { mlb, ncaaf, nfl, nhl, nba, mls };
+    const scores = { mlb, ncaaf, nfl, nhl, nba, mls, ncaab };
     const prizeTotal = prizePoolScore(scores, day);
     const qualified = prizePoolQualified(scores, {
       mlb: mlbMatchups.length, ncaaf: ncaafMatchups.length,
       nfl: nflMatchups.length, nhl: nhlMatchups.length, nba: nbaMatchups.length,
       mls: mlsMatchups.length,
+      ncaab: ncaabMatchups.length,
     }, day);
     return { userId: u.id, user: u, wins: prizeTotal.wins, losses: prizeTotal.losses, totalPicks: prizeTotal.picks, qualified };
   });
 
-  return { memberRows, mlsCount: mlsMatchups.length, mlbCount: mlbMatchups.length, ncaafCount: ncaafMatchups.length, nflCount: nflMatchups.length, boxingCount: boxingMatchups.length, nbaCount: nbaMatchups.length, nhlCount: nhlMatchups.length, wcCount: wcMatchups.length, eplCount: eplMatchups.length, uclCount: uclMatchups.length, ncaabbCount: ncaabbMatchups.length, totalCount: matchupGroups.size };
+  return { memberRows, ncaabCount: ncaabMatchups.length, mlsCount: mlsMatchups.length, mlbCount: mlbMatchups.length, ncaafCount: ncaafMatchups.length, nflCount: nflMatchups.length, boxingCount: boxingMatchups.length, nbaCount: nbaMatchups.length, nhlCount: nhlMatchups.length, wcCount: wcMatchups.length, eplCount: eplMatchups.length, uclCount: uclMatchups.length, ncaabbCount: ncaabbMatchups.length, totalCount: matchupGroups.size };
 }
 
 async function processDailyPayout(
@@ -170,9 +174,9 @@ async function processDailyPayout(
   const dailyShare = Math.floor(poolAmount * 0.10); // whole dollars only
 
   // Use game-time-based scorecard (same logic as /api/daily-scorecard) for correctness
-  const { memberRows, mlbCount, nflCount, ncaafCount, nhlCount, nbaCount, mlsCount } = await computeScorecardForPeriod(periodStart, periodEnd, log);
+  const { memberRows, mlbCount, nflCount, ncaafCount, nhlCount, nbaCount, mlsCount, ncaabCount } = await computeScorecardForPeriod(periodStart, periodEnd, log);
   const day = pacificDay(periodStart);
-  const totalCount = mlbCount + nflCount + ncaafCount + (isNhlRequired(day) ? nhlCount : 0) + (isNbaRequired(day) ? nbaCount : 0) + (isMlsRequired(day) ? mlsCount : 0);
+  const totalCount = mlbCount + nflCount + ncaafCount + (isNhlRequired(day) ? nhlCount : 0) + (isNbaRequired(day) ? nbaCount : 0) + (isMlsRequired(day) ? mlsCount : 0) + (isNcaabRequired(day) ? ncaabCount : 0);
   if (memberRows.every(m => m.totalPicks === 0)) {
     return { paid: 0, skipped: 0, detail: `No picks recorded for daily ${periodLabel}` };
   }

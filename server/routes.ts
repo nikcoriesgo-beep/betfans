@@ -5,7 +5,7 @@ import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integra
 import { storage } from "./storage";
 import { isDailyPickEligible } from "@shared/dailyPickEligibility";
 import { prizePoolScore, prizePoolQualified } from "./prizePoolRules";
-import { isNhlRequired, isNbaRequired, isMlsRequired, pacificDay, pacificDayWindow, previousPacificDay } from "@shared/prizePoolRules";
+import { isNhlRequired, isNbaRequired, isMlsRequired, isNcaabRequired, pacificDay, pacificDayWindow, previousPacificDay } from "@shared/prizePoolRules";
 import { db } from "./db";
 import { users, referrals, games, predictions, leaderboardEntries } from "@shared/schema";
 import { eq, sql, and, desc, asc, inArray } from "drizzle-orm";
@@ -763,10 +763,13 @@ export async function registerRoutes(
       const mlsGames = await db.select().from(games).where(sql`${games.league} = 'MLS' AND ${games.gameTime} >= ${start} AND ${games.gameTime} < ${end} AND ${games.status} != 'postponed'`);
       const mlsCount = dedup(mlsGames);
       const mlsRequired = isMlsRequired(day);
+      const ncaabGames = await db.select().from(games).where(sql`${games.league} = 'NCAAB' AND COALESCE(${games.isTop25}, FALSE) AND ${games.gameTime} >= ${start} AND ${games.gameTime} < ${end} AND ${games.status} != 'postponed'`);
+      const ncaabCount = dedup(ncaabGames);
+      const ncaabRequired = isNcaabRequired(day);
       const nhlRequired = isNhlRequired(day);
       const nbaRequired = isNbaRequired(day);
-      const count = mlbCount + ncaafCount + nflCount + (nhlRequired ? nhlCount : 0) + (nbaRequired ? nbaCount : 0) + (mlsRequired ? mlsCount : 0);
-      res.json({ count, mlbCount, nbaCount, nhlCount, ncaafCount, nflCount, boxingCount, mlsCount, mlsRequired, fbsRequired: true, nflRequired: true, nhlRequired, nbaRequired, boxingRequired: false, periodStart: start, periodEnd: end });
+      const count = mlbCount + ncaafCount + nflCount + (nhlRequired ? nhlCount : 0) + (nbaRequired ? nbaCount : 0) + (mlsRequired ? mlsCount : 0) + (ncaabRequired ? ncaabCount : 0);
+      res.json({ count, ncaabCount, ncaabRequired, mlbCount, nbaCount, nhlCount, ncaafCount, nflCount, boxingCount, mlsCount, mlsRequired, fbsRequired: true, nflRequired: true, nhlRequired, nbaRequired, boxingRequired: false, periodStart: start, periodEnd: end });
     } catch (e) {
       console.error("[mlb-game-count]", e);
       res.status(500).json({ message: "Failed to fetch required game counts" });
@@ -796,7 +799,8 @@ export async function registerRoutes(
           sql`${games.gameTime} >= ${start} AND ${games.gameTime} < ${end}
               AND ${games.status} != 'postponed'
               AND (${games.league} != 'NCAAF' OR COALESCE(${games.isTop25}, FALSE))
-              AND ${games.league} IN ('MLB','NBA','NHL','FIFA_WC','EPL','UCL','NCAABB','NCAAF','NFL','BOXING','MLS')`
+              AND (${games.league} != 'NCAAB' OR COALESCE(${games.isTop25}, FALSE))
+              AND ${games.league} IN ('MLB','NBA','NHL','FIFA_WC','EPL','UCL','NCAABB','NCAAB','NCAAF','NFL','BOXING','MLS')`
         );
 
         // Check if any of these games are finished (graded)
@@ -825,6 +829,7 @@ export async function registerRoutes(
 
       const mlbMatchups    = [...matchupGroups.entries()].filter(([k]) => k.startsWith("MLB|"));
       const mlsMatchups    = [...matchupGroups.entries()].filter(([k]) => k.startsWith("MLS|"));
+      const ncaabMatchups = [...matchupGroups.entries()].filter(([k]) => k.startsWith("NCAAB|"));
       const nbaMatchups    = [...matchupGroups.entries()].filter(([k]) => k.startsWith("NBA|"));
       const nhlMatchups    = [...matchupGroups.entries()].filter(([k]) => k.startsWith("NHL|"));
       const wcMatchups     = [...matchupGroups.entries()].filter(([k]) => k.startsWith("FIFA_WC|"));
@@ -868,6 +873,7 @@ export async function registerRoutes(
         };
         const mlb    = forSport(mlbMatchups);
         const mls    = forSport(mlsMatchups);
+        const ncaab = forSport(ncaabMatchups);
         const nba    = forSport(nbaMatchups);
         const nhl    = forSport(nhlMatchups);
         const wc     = forSport(wcMatchups);
@@ -883,12 +889,17 @@ export async function registerRoutes(
           losses:  mls.losses + mlb.losses  + ncaaf.losses  + nfl.losses  + boxing.losses  + nba.losses  + nhl.losses  + wc.losses  + epl.losses  + ucl.losses  + ncaabb.losses,
           pending: mls.pending + mlb.pending + ncaaf.pending + nfl.pending + boxing.pending + nba.pending + nhl.pending + wc.pending + epl.pending + ucl.pending + ncaabb.pending,
         };
-        const scores = { mlb, nfl, ncaaf, nhl, nba, mls };
+        total.picks += ncaab.picks;
+        total.wins += ncaab.wins;
+        total.losses += ncaab.losses;
+        total.pending += ncaab.pending;
+        const scores = { mlb, nfl, ncaaf, nhl, nba, mls, ncaab };
         const prizePoolTotal = prizePoolScore(scores, dateLabel);
         const qualified = u.membershipTier !== "free_play" && prizePoolQualified(scores, {
           mlb: mlbMatchups.length, nfl: nflMatchups.length,
           ncaaf: ncaafMatchups.length, nhl: nhlMatchups.length, nba: nbaMatchups.length,
           mls: mlsMatchups.length,
+          ncaab: ncaabMatchups.length,
         }, dateLabel);
 
         // Pick submission timestamps in PST
@@ -914,7 +925,7 @@ export async function registerRoutes(
           referralCode: u.referralCode || null,
           tier:   u.membershipTier,
           avatar: u.profileImageUrl || null,
-          mlb, ncaaf, nfl, nba, nhl, mls, wc, epl, ucl, ncaabb, total, prizePoolTotal, qualified,
+          mlb, ncaaf, nfl, nba, nhl, mls, ncaab, wc, epl, ucl, ncaabb, total, prizePoolTotal, qualified,
           firstPickAt,
           lastPickAt,
         };
@@ -931,7 +942,7 @@ export async function registerRoutes(
 
       res.json({
         period: { start: periodStart, end: periodEnd, label: dateLabel },
-        games:  { mlb: mlbMatchups.length, ncaaf: ncaafMatchups.length, nfl: nflMatchups.length, nba: nbaMatchups.length, nhl: nhlMatchups.length, mls: mlsMatchups.length, wc: wcMatchups.length, epl: eplMatchups.length, ucl: uclMatchups.length, ncaabb: ncaabbMatchups.length, total: matchupGroups.size, prizePoolTotal: mlbMatchups.length + ncaafMatchups.length + nflMatchups.length + (isNhlRequired(dateLabel) ? nhlMatchups.length : 0) + (isNbaRequired(dateLabel) ? nbaMatchups.length : 0) + (isMlsRequired(dateLabel) ? mlsMatchups.length : 0), nhlRequired: isNhlRequired(dateLabel), nbaRequired: isNbaRequired(dateLabel), mlsRequired: isMlsRequired(dateLabel) },
+        games:  { ncaab: ncaabMatchups.length, ncaabRequired: isNcaabRequired(dateLabel), mlb: mlbMatchups.length, ncaaf: ncaafMatchups.length, nfl: nflMatchups.length, nba: nbaMatchups.length, nhl: nhlMatchups.length, mls: mlsMatchups.length, wc: wcMatchups.length, epl: eplMatchups.length, ucl: uclMatchups.length, ncaabb: ncaabbMatchups.length, total: matchupGroups.size, prizePoolTotal: mlbMatchups.length + ncaafMatchups.length + nflMatchups.length + (isNhlRequired(dateLabel) ? nhlMatchups.length : 0) + (isNbaRequired(dateLabel) ? nbaMatchups.length : 0) + (isMlsRequired(dateLabel) ? mlsMatchups.length : 0) + (isNcaabRequired(dateLabel) ? ncaabMatchups.length : 0), nhlRequired: isNhlRequired(dateLabel), nbaRequired: isNbaRequired(dateLabel), mlsRequired: isMlsRequired(dateLabel) },
         members: memberRows,
         winner: winner ? { userId: winner.userId, name: winner.name, wins: winner.prizePoolTotal.wins, losses: winner.prizePoolTotal.losses } : null,
       });

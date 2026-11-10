@@ -57,7 +57,7 @@ const slides = [
     tag: "Step 4",
     title: "Win Real\nCash",
     subtitle: "Pick every required game on its Pacific day. Get paid.",
-    description: "50% of all membership fees go into the live prize pool. Pick every MLB, NFL, NHL, NBA and NCAA FBS Top 25 game scheduled that Pacific day. Beginning November 18th, 2026 (Pacific Time), all scheduled MLS Soccer Playoff 2026 games are required too. All other sports are optional Skill Play for rankings, not Prize Pool qualification. Payouts go directly to the card you signed up with.",
+    description: "50% of all membership fees go into the live prize pool. Pick every MLB, NFL, NHL, NBA and NCAA FBS Top 25 game scheduled that Pacific day. Beginning November 11th, 2026 (Pacific Time), NCAA Basketball Top 25 games are also required. Beginning November 18th, 2026 (Pacific Time), all scheduled MLS Soccer Playoff 2026 games are required too. All other sports are optional Skill Play for rankings, not Prize Pool qualification. Payouts go directly to the card you signed up with.",
     icon: DollarSign,
     gradient: "from-yellow-400 via-amber-500 to-orange-500",
     bgAccent: "bg-yellow-500/10",

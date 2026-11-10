@@ -381,7 +381,7 @@ export default function DailyPicks() {
                           <Badge className="bg-primary/10 text-primary text-[9px]">FREE SKILL PLAY</Badge>
                         ) : isPrizePoolExempt(game) ? (
                           <Badge className="text-[9px]">EXEMPT — LATE SCHEDULE ADDITION</Badge>
-                        ) : isPrizePoolLeague(game.league, pacificDay(new Date(game.gameTime)), game.league === "NCAAF" && game.isTop25 === true) ? (
+                        ) : isPrizePoolLeague(game.league, pacificDay(new Date(game.gameTime)), game.isTop25 === true) ? (
                           <Badge className="bg-yellow-500/20 text-yellow-700 border-yellow-500/30 text-[9px] gap-0.5">
                             <Trophy size={8} />PRIZE POOL REQUIRED
                           </Badge>

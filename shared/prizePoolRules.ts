@@ -1,8 +1,9 @@
 // Apply eligibility to the game's Pacific calendar day, including preseason games.
 export const NHL_PRIZE_POOL_START = "2026-09-29";
 export const NBA_PRIZE_POOL_START = "2026-10-20";
+export const NCAAB_PRIZE_POOL_START = "2026-11-11";
 export const MLS_PLAYOFF_PRIZE_POOL_START = "2026-11-18";
-export const PRIZE_POOL_NOTICE = "Beginning November 18th, 2026 (Pacific Time), all scheduled MLS Soccer Playoff 2026 games must be selected along with all MLB, NFL, NHL, NBA and NCAA FBS Top 25 games for daily Prize Pool qualification.";
+export const PRIZE_POOL_NOTICE = "Beginning November 11th, 2026 (Pacific Time), all scheduled NCAA College Basketball Top 25 games must be selected along with MLB, NFL, NHL, NBA and NCAA FBS Top 25 games for daily Prize Pool qualification. Beginning November 18th, 2026 (Pacific Time), all scheduled MLS Soccer Playoff 2026 games are also required.";
 export const OPTIONAL_SPORTS_NOTICE = "All other sports are optional Skill Play. They count toward rankings, not Prize Pool qualification.";
 
 // This is the owner's 2026 MLS playoff window, not a permanent MLS rule.
@@ -13,6 +14,9 @@ export function isMlsRequired(day: string): boolean {
 
 export function isNbaRequired(day: string): boolean {
   return day >= NBA_PRIZE_POOL_START;
+}
+export function isNcaabRequired(day: string): boolean {
+  return day >= NCAAB_PRIZE_POOL_START;
 }
 
 export function pacificDay(date: Date): string {
@@ -26,11 +30,12 @@ export function isNhlRequired(day: string): boolean {
 export function isPrizePoolLeague(league: string, day: string, isTop25 = false): boolean {
   return league === "MLB" || league === "NFL" ||
     (league === "NCAAF" && isTop25) || (league === "NHL" && isNhlRequired(day)) ||
-    (league === "NBA" && isNbaRequired(day)) || (league === "MLS" && isMlsRequired(day));
+    (league === "NBA" && isNbaRequired(day)) || (league === "MLS" && isMlsRequired(day)) ||
+    (league === "NCAAB" && isTop25 && isNcaabRequired(day));
 }
 
 export function requiredPrizePoolLeagues(day: string): string[] {
-  return ["MLB", "NFL", "NCAAF", ...(isNhlRequired(day) ? ["NHL"] : []), ...(isNbaRequired(day) ? ["NBA"] : []), ...(isMlsRequired(day) ? ["MLS"] : [])];
+  return ["MLB", "NFL", "NCAAF", ...(isNhlRequired(day) ? ["NHL"] : []), ...(isNbaRequired(day) ? ["NBA"] : []), ...(isMlsRequired(day) ? ["MLS"] : []), ...(isNcaabRequired(day) ? ["NCAAB"] : [])];
 }
 
 export function pacificDayWindow(day: string): { start: Date; end: Date } {

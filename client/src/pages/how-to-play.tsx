@@ -225,7 +225,7 @@ export default function HowToPlay() {
               {[
                 {
                   title: "Daily Leaderboard",
-                  desc: "Resets each Pacific day. Pick every MLB, NFL, NHL, NBA & NCAA FBS Top 25 game. Beginning November 18th, 2026 (Pacific Time), all scheduled MLS Soccer Playoff 2026 games are required too. All other sports are optional Skill Play for rankings, not Prize Pool qualification.",
+                  desc: "Resets each Pacific day. Pick every MLB, NFL, NHL, NBA & NCAA FBS Top 25 game. Beginning November 11th, 2026 (Pacific Time), NCAA Basketball Top 25 games are also required. Beginning November 18th, 2026 (Pacific Time), all scheduled MLS Soccer Playoff 2026 games are required too. All other sports are optional Skill Play for rankings, not Prize Pool qualification.",
                   icon: Zap,
                   gradient: "from-emerald-500 to-teal-500",
                 },
@@ -268,7 +268,7 @@ export default function HowToPlay() {
               <ul className="space-y-2 text-sm text-yellow-100/90">
                 <li className="flex items-start gap-2">
                   <CheckCircle2 size={16} className="text-yellow-400 mt-0.5 shrink-0" />
-                  <span><strong className="text-yellow-200">Pick every MLB, NFL, NHL, NBA & NCAA FBS Top 25 game</strong> scheduled that Pacific day. Beginning November 18th, 2026, all scheduled MLS Soccer Playoff 2026 games are required too.</span>
+                  <span><strong className="text-yellow-200">Pick every MLB, NFL, NHL, NBA & NCAA FBS Top 25 game</strong> scheduled that Pacific day. Beginning November 11th, 2026, NCAA Basketball Top 25 games are also required. Beginning November 18th, 2026, all scheduled MLS Soccer Playoff 2026 games are required too.</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <CheckCircle2 size={16} className="text-yellow-400 mt-0.5 shrink-0" />

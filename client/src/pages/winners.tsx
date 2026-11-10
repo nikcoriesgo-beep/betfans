@@ -18,7 +18,7 @@ import { Link } from "wouter";
 import { ExpertBadge, isExpertAnalyst } from "@/components/ExpertBadge";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
-import { isNhlRequired, isNbaRequired, isMlsRequired, PRIZE_POOL_NOTICE, OPTIONAL_SPORTS_NOTICE } from "@shared/prizePoolRules";
+import { isNhlRequired, isNbaRequired, isMlsRequired, isNcaabRequired, PRIZE_POOL_NOTICE, OPTIONAL_SPORTS_NOTICE } from "@shared/prizePoolRules";
 
 type PrizePoolData = {
   amount: number;
@@ -233,7 +233,7 @@ function DailyWinners({ poolAmount }: { poolAmount: number }) {
           <CardContent className="p-5 text-center">
             <Trophy size={28} className="text-muted-foreground/20 mx-auto mb-2" />
             <p className="text-muted-foreground text-sm">No qualifying picks today</p>
-            <p className="text-xs text-muted-foreground/50 mt-1">Pick every MLB, NFL & NCAA FBS Top 25 game{isNhlRequired(scorecard?.period?.label ?? "") ? ", plus every NHL game" : ""}{isNbaRequired(scorecard?.period?.label ?? "") ? " and every NBA game" : ""}{isMlsRequired(scorecard?.period?.label ?? "") ? ", plus every 2026 MLS playoff game" : ""} to qualify</p>
+            <p className="text-xs text-muted-foreground/50 mt-1">Pick every MLB, NFL & NCAA FBS Top 25 game{isNhlRequired(scorecard?.period?.label ?? "") ? ", plus every NHL game" : ""}{isNbaRequired(scorecard?.period?.label ?? "") ? " and every NBA game" : ""}{isNcaabRequired(scorecard?.period?.label ?? "") ? ", plus every NCAA Basketball Top 25 game" : ""}{isMlsRequired(scorecard?.period?.label ?? "") ? ", plus every 2026 MLS playoff game" : ""} to qualify</p>
           </CardContent>
         </Card>
       ) : (
@@ -332,6 +332,7 @@ function DailyMemberScorecard() {
   const nhlRequired = label ? isNhlRequired(label) : false;
   const nbaRequired = label ? isNbaRequired(label) : false;
   const mlsRequired = label ? isMlsRequired(label) : false;
+  const ncaabRequired = label ? isNcaabRequired(label) : false;
   const winner = data?.winner ?? null;
 
   // Prize Pool scorecard uses required-sport totals; ordinary leaderboards retain all-sport totals.
@@ -433,6 +434,7 @@ function DailyMemberScorecard() {
                 {games.mls > 0 && <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-sky-400">MLS <span className={cn("block text-[8px]", mlsRequired ? "text-yellow-400" : "text-muted-foreground")}>{mlsRequired ? "Required" : "Optional"}</span></th>}
                 {games.epl > 0 && <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-indigo-400">⚽ EPL <span className="block text-[8px] text-muted-foreground">Optional</span></th>}
                 {games.ucl > 0 && <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-violet-400">🏆 UCL <span className="block text-[8px] text-muted-foreground">Optional</span></th>}
+                {games.ncaab > 0 && <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-purple-400">NCAA Basketball Top 25 <span className={cn("block text-[8px]", ncaabRequired ? "text-yellow-400" : "text-muted-foreground")}>{ncaabRequired ? "Required" : "Optional"}</span></th>}
                 <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-foreground">Total W-L</th>
                 <th className="py-3 px-3 text-center text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Status</th>
               </tr>
@@ -449,7 +451,7 @@ function DailyMemberScorecard() {
                 const prizeRecord = prizePoolRecord(m);
                 const prizeGameTotal = typeof games.prizePoolTotal === "number"
                   ? games.prizePoolTotal
-                  : games.mlb + (games.ncaaf ?? 0) + (games.nfl ?? 0) + (nhlRequired ? (games.nhl ?? 0) : 0) + (nbaRequired ? (games.nba ?? 0) : 0) + (mlsRequired ? (games.mls ?? 0) : 0);
+                  : games.mlb + (games.ncaaf ?? 0) + (games.nfl ?? 0) + (nhlRequired ? (games.nhl ?? 0) : 0) + (nbaRequired ? (games.nba ?? 0) : 0) + (mlsRequired ? (games.mls ?? 0) : 0) + (ncaabRequired ? (games.ncaab ?? 0) : 0);
                 return (
                   <tr
                     key={m.userId}
@@ -503,6 +505,7 @@ function DailyMemberScorecard() {
                    {games.epl > 0 && <SportCell wins={m.epl?.wins ?? 0} losses={m.epl?.losses ?? 0} picks={m.epl?.picks ?? 0} total={games.epl} qualified />}
                     {games.ucl > 0 && <SportCell wins={m.ucl?.wins ?? 0} losses={m.ucl?.losses ?? 0} picks={m.ucl?.picks ?? 0} total={games.ucl} qualified />}
                     {games.ncaabb > 0 && <SportCell wins={m.ncaabb?.wins ?? 0} losses={m.ncaabb?.losses ?? 0} picks={m.ncaabb?.picks ?? 0} total={games.ncaabb} qualified={games.ncaabb === 0 || (m.ncaabb?.picks ?? 0) >= games.ncaabb} />}
+                    {games.ncaab > 0 && <SportCell wins={m.ncaab?.wins ?? 0} losses={m.ncaab?.losses ?? 0} picks={m.ncaab?.picks ?? 0} total={games.ncaab} qualified={!ncaabRequired || (m.ncaab?.picks ?? 0) >= games.ncaab} />}
                     <td className="py-3 px-2 text-center align-middle">
                       <div className={cn("font-mono text-base font-black tabular-nums", isWinner ? "text-yellow-300" : "")}>
                         <span className="text-green-400">{prizeRecord.wins}</span>

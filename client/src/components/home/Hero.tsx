@@ -3,10 +3,11 @@ import { Button } from "@/components/ui/button";
 import { ArrowRight, Trophy, Target, Users, DollarSign, LogIn } from "lucide-react";
 import heroBg from "@assets/generated_images/futuristic_sports_data_background.png";
 import { Link } from "wouter";
+import { PRIZE_POOL_NOTICE } from "@shared/prizePoolRules";
 
 function HeroAnnouncements() {
   const announcements = [
-    "Beginning November 18th, 2026 (Pacific Time), all scheduled MLS Soccer Playoff 2026 games must be selected along with all MLB, NFL, NHL, NBA and NCAA FBS Top 25 games for daily Prize Pool qualification.",
+    PRIZE_POOL_NOTICE,
     "All other sports are optional Skill Play. They count toward rankings, not Prize Pool qualification.",
   ];
   if (!announcements.length) return null;

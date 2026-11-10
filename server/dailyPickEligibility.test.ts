@@ -14,8 +14,9 @@ test("college basketball includes either ranked team and excludes unranked match
   assert.equal(isDailyPickEligible({ league: "NCAABB" }), true);
 });
 
-test("Top 25 basketball stays optional Skill Play on every prize-rule date", () => {
-  for (const day of ["2026-11-01", "2026-11-18", "2027-03-01"]) {
-    assert.equal(isPrizePoolLeague("NCAAB", day, true), false);
+test("Top 25 basketball becomes required November 11 without including unranked games", () => {
+  for (const day of ["2026-11-01", "2026-11-10", "2026-11-11", "2026-11-18", "2027-03-01"]) {
+    assert.equal(isPrizePoolLeague("NCAAB", day, true), day >= "2026-11-11");
+    assert.equal(isPrizePoolLeague("NCAAB", day, false), false);
   }
 });
