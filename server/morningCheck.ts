@@ -378,7 +378,7 @@ async function runSweep() {
     const lapsedManual = await mcDb.execute(mcSql`
       SELECT id, first_name, last_name, membership_tier, subscription_paid_until, referral_code
       FROM users
-      WHERE membership_tier NOT IN ('free')
+      WHERE membership_tier IN ('rookie', 'pro', 'legend', 'corporate', 'premium_corporate')
         AND (paypal_subscription_id IS NULL OR paypal_subscription_id = '')
         AND referral_code NOT IN ('NIKCOX', 'DAMON822')
         AND (
@@ -394,6 +394,9 @@ async function runSweep() {
         SET membership_tier = 'free',
             subscription_cancelled_at = NOW()
         WHERE id = ${row.id}
+          AND membership_tier IN ('rookie', 'pro', 'legend', 'corporate', 'premium_corporate')
+          AND (paypal_subscription_id IS NULL OR paypal_subscription_id = '')
+          AND (subscription_paid_until IS NULL OR subscription_paid_until < NOW())
       `);
       log(`⚠ Manual-pay lapse: ${row.first_name} ${row.last_name} (${row.membership_tier}) — subscription_paid_until=${row.subscription_paid_until ?? 'never set'} → downgraded to free`);
       manualLapsed++;
