@@ -1,4 +1,7 @@
 export const PAID_MEMBERSHIPS = ["rookie", "pro", "legend", "corporate", "premium_corporate"];
+export function isFreeMembership(tier: string | null | undefined) {
+  return tier === "free" || tier === "free_play";
+}
 // Browsing membership pages is separate from entering paid competitions.
 export function canBrowseMemberPages(tier: string | null | undefined) {
   return tier === "free_play" || PAID_MEMBERSHIPS.includes(tier ?? "");

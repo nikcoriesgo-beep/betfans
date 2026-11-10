@@ -849,7 +849,7 @@ export async function registerRoutes(
 
       // Include Free Play records for transparency, but never prize eligibility.
       const allUsers = await db.select().from(users).where(
-        sql`${users.membershipTier} IN ('rookie', 'pro', 'legend', 'corporate', 'premium_corporate', 'free_play')`
+        sql`${users.membershipTier} IN ('rookie', 'pro', 'legend', 'corporate', 'premium_corporate', 'free_play', 'free')`
       );
 
       const memberRows = allUsers.map(u => {
@@ -895,7 +895,7 @@ export async function registerRoutes(
         total.pending += ncaab.pending;
         const scores = { mlb, nfl, ncaaf, nhl, nba, mls, ncaab };
         const prizePoolTotal = prizePoolScore(scores, dateLabel);
-        const qualified = u.membershipTier !== "free_play" && prizePoolQualified(scores, {
+        const qualified = u.membershipTier !== "free_play" && u.membershipTier !== "free" && prizePoolQualified(scores, {
           mlb: mlbMatchups.length, nfl: nflMatchups.length,
           ncaaf: ncaafMatchups.length, nhl: nhlMatchups.length, nba: nbaMatchups.length,
           mls: mlsMatchups.length,
