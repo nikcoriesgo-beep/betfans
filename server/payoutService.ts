@@ -5,7 +5,7 @@ import { gradeStuckGames } from "./sportsDataService";
 import { db } from "./db";
 import { games, predictions, users } from "@shared/schema";
 import { sql, inArray } from "drizzle-orm";
-import { isNhlRequired, isNbaRequired, isMlsRequired, isNcaabRequired, pacificDay, pacificDayWindow, previousPacificDay, requiredPrizePoolLeagues } from "@shared/prizePoolRules";
+import { isNhlRequired, isNbaRequired, isMlsRequired, isMlsPlayoffRequired, isNcaabRequired, pacificDay, pacificDayWindow, previousPacificDay, requiredPrizePoolLeagues } from "@shared/prizePoolRules";
 import { prizePoolQualified, prizePoolScore } from "./prizePoolRules";
 
 async function sendAndRecordPayout(
@@ -70,7 +70,7 @@ async function computeScorecardForPeriod(periodStart: Date, periodEnd: Date, log
         AND (${games.league} != 'NCAAF' OR COALESCE(${games.isTop25}, FALSE))
         AND (${games.league} != 'NCAAB' OR COALESCE(${games.isTop25}, FALSE))
         AND ${inArray(games.league, leagues)}`
-  )).filter(g => !isPrizePoolExempt(g));
+  )).filter(g => !isPrizePoolExempt(g) && (g.league !== "MLS" || isMlsPlayoffRequired(day, g.mlsStage)));
 
   // Deduplicate provider duplicates while preserving same-day doubleheaders.
   const matchupGroups = new Map<string, MatchupGroup>();

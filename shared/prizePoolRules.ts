@@ -3,13 +3,20 @@ export const NHL_PRIZE_POOL_START = "2026-09-29";
 export const NBA_PRIZE_POOL_START = "2026-10-20";
 export const NCAAB_PRIZE_POOL_START = "2026-11-11";
 export const MLS_PLAYOFF_PRIZE_POOL_START = "2026-11-18";
-export const PRIZE_POOL_NOTICE = "Beginning November 11th, 2026 (Pacific Time), all scheduled NCAA College Basketball Top 25 games must be selected along with MLB, NFL, NHL, NBA and NCAA FBS Top 25 games for daily Prize Pool qualification. Beginning November 18th, 2026 (Pacific Time), all scheduled MLS Soccer Playoff 2026 games are also required.";
+export const PRIZE_POOL_NOTICE = "Beginning November 11th, 2026 (Pacific Time), all scheduled NCAA College Basketball Top 25 games must be selected along with MLB, NFL, NHL, NBA and NCAA FBS Top 25 games for daily Prize Pool qualification. Beginning November 18th, 2026 (Pacific Time), all scheduled MLS playoff games, including Wild Card games and MLS Cup, are also required.";
 export const OPTIONAL_SPORTS_NOTICE = "All other sports are optional Skill Play. They count toward rankings, not Prize Pool qualification.";
 
-// This is the owner's 2026 MLS playoff window, not a permanent MLS rule.
-// MLS regular-season games in subsequent seasons must remain optional.
+// Aggregates receive only playoff fixtures; do not expire the rule after MLS Cup.
 export function isMlsRequired(day: string): boolean {
-  return day >= MLS_PLAYOFF_PRIZE_POOL_START && day < "2027-01-01";
+  return day >= MLS_PLAYOFF_PRIZE_POOL_START;
+}
+
+export function isMlsPlayoffRequired(day: string, stage?: string | null): boolean {
+  if (!isMlsRequired(day)) return false;
+  // Existing 2026 playoff fixtures predate stage storage. Do not use that
+  // historical fallback to classify unknown fixtures in subsequent seasons.
+  if (!stage) return day < "2027-01-01";
+  return /(?:^|-)(?:playoffs?|postseason|wild-card|mls-cup|conference-finals?)(?:-|$)/i.test(stage);
 }
 
 export function isNbaRequired(day: string): boolean {
@@ -27,10 +34,10 @@ export function isNhlRequired(day: string): boolean {
   return day >= NHL_PRIZE_POOL_START;
 }
 
-export function isPrizePoolLeague(league: string, day: string, isTop25 = false): boolean {
+export function isPrizePoolLeague(league: string, day: string, isTop25 = false, stage?: string | null): boolean {
   return league === "MLB" || league === "NFL" ||
     (league === "NCAAF" && isTop25) || (league === "NHL" && isNhlRequired(day)) ||
-    (league === "NBA" && isNbaRequired(day)) || (league === "MLS" && isMlsRequired(day)) ||
+    (league === "NBA" && isNbaRequired(day)) || (league === "MLS" && isMlsPlayoffRequired(day, stage)) ||
     (league === "NCAAB" && isTop25 && isNcaabRequired(day));
 }
 

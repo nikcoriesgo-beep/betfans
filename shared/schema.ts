@@ -50,6 +50,7 @@ export const games = pgTable("games", {
   spiderPick: text("spider_pick"),
   spiderConfidence: integer("spider_confidence"),
   isProLocked: boolean("is_pro_locked").default(false),
+  mlsStage: text("mls_stage"),
   isTop25: boolean("is_top_25").default(false),
   homePitcher: text("home_pitcher"),
   awayPitcher: text("away_pitcher"),

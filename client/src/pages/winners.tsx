@@ -234,7 +234,7 @@ function DailyWinners({ poolAmount }: { poolAmount: number }) {
           <CardContent className="p-5 text-center">
             <Trophy size={28} className="text-muted-foreground/20 mx-auto mb-2" />
             <p className="text-muted-foreground text-sm">No qualifying picks today</p>
-            <p className="text-xs text-muted-foreground/50 mt-1">Pick every MLB, NFL & NCAA FBS Top 25 game{isNhlRequired(scorecard?.period?.label ?? "") ? ", plus every NHL game" : ""}{isNbaRequired(scorecard?.period?.label ?? "") ? " and every NBA game" : ""}{isNcaabRequired(scorecard?.period?.label ?? "") ? ", plus every NCAA Basketball Top 25 game" : ""}{isMlsRequired(scorecard?.period?.label ?? "") ? ", plus every 2026 MLS playoff game" : ""} to qualify</p>
+            <p className="text-xs text-muted-foreground/50 mt-1">Pick every MLB, NFL & NCAA FBS Top 25 game{isNhlRequired(scorecard?.period?.label ?? "") ? ", plus every NHL game" : ""}{isNbaRequired(scorecard?.period?.label ?? "") ? " and every NBA game" : ""}{isNcaabRequired(scorecard?.period?.label ?? "") ? ", plus every NCAA Basketball Top 25 game" : ""}{isMlsRequired(scorecard?.period?.label ?? "") ? ", plus every MLS playoff game, including Wild Card games" : ""} to qualify</p>
           </CardContent>
         </Card>
       ) : (
@@ -332,7 +332,7 @@ function DailyMemberScorecard() {
   const label = data?.period?.label ?? "";
   const nhlRequired = label ? isNhlRequired(label) : false;
   const nbaRequired = label ? isNbaRequired(label) : false;
-  const mlsRequired = label ? isMlsRequired(label) : false;
+  const mlsRequired = games.mlsRequired === true;
   const ncaabRequired = label ? isNcaabRequired(label) : false;
   const winner = data?.winner ?? null;
 
@@ -432,7 +432,7 @@ function DailyMemberScorecard() {
                 <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-orange-400">NBA <span className={cn("block text-[8px]", nbaRequired ? "text-yellow-400" : "text-muted-foreground")}>{nbaRequired ? "Required" : "Optional"}</span></th>
                 <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-cyan-400">NHL <span className={cn("block text-[8px]", nhlRequired ? "text-yellow-400" : "text-muted-foreground")}>{nhlRequired ? "Required" : "Optional"}</span></th>
                 {games.wc > 0 && <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-emerald-400">🌍 WC <span className="block text-[8px] text-muted-foreground">Optional</span></th>}
-                {games.mls > 0 && <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-sky-400">MLS <span className={cn("block text-[8px]", mlsRequired ? "text-yellow-400" : "text-muted-foreground")}>{mlsRequired ? "Required" : "Optional"}</span></th>}
+                {games.mls > 0 && <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-sky-400">MLS <span className={cn("block text-[8px]", mlsRequired ? "text-yellow-400" : "text-muted-foreground")}>{mlsRequired ? "Playoffs required" : "Optional"}</span></th>}
                 {games.epl > 0 && <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-indigo-400">⚽ EPL <span className="block text-[8px] text-muted-foreground">Optional</span></th>}
                 {games.ucl > 0 && <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-violet-400">🏆 UCL <span className="block text-[8px] text-muted-foreground">Optional</span></th>}
                 {games.ncaab > 0 && <th className="py-3 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-purple-400">NCAA Basketball Top 25 <span className={cn("block text-[8px]", ncaabRequired ? "text-yellow-400" : "text-muted-foreground")}>{ncaabRequired ? "Required" : "Optional"}</span></th>}
@@ -502,7 +502,7 @@ function DailyMemberScorecard() {
                     <SportCell wins={m.nba.wins} losses={m.nba.losses} picks={m.nba.picks} total={games.nba} qualified={games.nba === 0 || m.nba.picks >= games.nba} />
                     <SportCell wins={m.nhl.wins} losses={m.nhl.losses} picks={m.nhl.picks} total={games.nhl} qualified={games.nhl === 0 || m.nhl.picks >= games.nhl} />
                     {games.wc > 0 && <SportCell wins={m.wc?.wins ?? 0} losses={m.wc?.losses ?? 0} picks={m.wc?.picks ?? 0} total={games.wc} qualified={games.wc === 0 || (m.wc?.picks ?? 0) >= games.wc} />}
-                    {games.mls > 0 && <SportCell wins={m.mls?.wins ?? 0} losses={m.mls?.losses ?? 0} picks={m.mls?.picks ?? 0} total={games.mls} qualified={!mlsRequired || (m.mls?.picks ?? 0) >= games.mls} />}
+                    {games.mls > 0 && <SportCell wins={(mlsRequired ? m.mlsPlayoffs : m.mls)?.wins ?? 0} losses={(mlsRequired ? m.mlsPlayoffs : m.mls)?.losses ?? 0} picks={(mlsRequired ? m.mlsPlayoffs : m.mls)?.picks ?? 0} total={mlsRequired ? games.mlsRequiredCount : games.mls} qualified={!mlsRequired || (m.mlsPlayoffs?.picks ?? 0) >= games.mlsRequiredCount} />}
                    {games.epl > 0 && <SportCell wins={m.epl?.wins ?? 0} losses={m.epl?.losses ?? 0} picks={m.epl?.picks ?? 0} total={games.epl} qualified />}
                     {games.ucl > 0 && <SportCell wins={m.ucl?.wins ?? 0} losses={m.ucl?.losses ?? 0} picks={m.ucl?.picks ?? 0} total={games.ucl} qualified />}
                     {games.ncaabb > 0 && <SportCell wins={m.ncaabb?.wins ?? 0} losses={m.ncaabb?.losses ?? 0} picks={m.ncaabb?.picks ?? 0} total={games.ncaabb} qualified={games.ncaabb === 0 || (m.ncaabb?.picks ?? 0) >= games.ncaabb} />}

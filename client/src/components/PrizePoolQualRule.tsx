@@ -11,7 +11,7 @@ export function PrizePoolQualRule({ compact = false, className }: Props) {
   const nhlRequired = isNhlRequired(pacificDay(new Date()));
   const nbaRequired = isNbaRequired(pacificDay(new Date()));
   const optional = nbaRequired ? "WBC Boxing and all other sports" : nhlRequired ? "NBA, WBC Boxing, and all other sports" : "NBA, NHL, WBC Boxing, and all other sports";
-  const required = <>every MLB, NFL, and NCAA FBS Top 25 game{nhlRequired ? ", plus every NHL game" : ""}{nbaRequired ? " and every NBA game" : ""}{isNcaabRequired(pacificDay(new Date())) ? ", plus every NCAA Basketball Top 25 game" : ""}{isMlsRequired(pacificDay(new Date())) ? ", plus every 2026 MLS playoff game" : ""}</>;
+  const required = <>every MLB, NFL, and NCAA FBS Top 25 game{nhlRequired ? ", plus every NHL game" : ""}{nbaRequired ? " and every NBA game" : ""}{isNcaabRequired(pacificDay(new Date())) ? ", plus every NCAA Basketball Top 25 game" : ""}{isMlsRequired(pacificDay(new Date())) ? ", plus every MLS playoff game, including Wild Card games" : ""}</>;
   if (compact) {
     return (
       <div className={cn("rounded-lg border border-yellow-400/40 bg-yellow-500/10 px-4 py-3 flex items-start gap-3", className)} data-testid="prize-pool-qual-rule-compact">

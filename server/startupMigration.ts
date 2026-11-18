@@ -242,6 +242,7 @@ export async function runStartupMigration() {
       // Ensure certified_expert column exists (added Aug 2026)
       await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS certified_expert BOOLEAN DEFAULT FALSE`);
       await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS paypal_sender_email TEXT`);
+      await client.query(`ALTER TABLE games ADD COLUMN IF NOT EXISTS mls_stage TEXT`);
       await client.query(`ALTER TABLE games ADD COLUMN IF NOT EXISTS is_top_25 BOOLEAN DEFAULT FALSE`);
       // Preserve player-chosen passwords, but make every player account with a
       // phone number and no password usable with the established temp password.
@@ -478,6 +479,7 @@ export async function runStartupMigration() {
         created_at TIMESTAMP DEFAULT NOW()
       )
     `);
+    await client.query(`ALTER TABLE games ADD COLUMN IF NOT EXISTS mls_stage TEXT`);
     await client.query(`ALTER TABLE games ADD COLUMN IF NOT EXISTS external_id TEXT`);
     await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS games_external_id_unique ON games (external_id)`);
 

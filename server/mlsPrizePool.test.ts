@@ -15,7 +15,7 @@ test("2026 MLS playoffs become required at November 18 Pacific midnight only", (
   }
   for (const day of ["2026-11-17", "2027-01-01", "2027-11-18"]) {
     assert.equal(isPrizePoolLeague("MLS", day), false);
-    assert.ok(!requiredPrizePoolLeagues(day).includes("MLS"));
+    assert.equal(requiredPrizePoolLeagues(day).includes("MLS"), day >= "2026-11-18");
   }
 });
 
@@ -30,6 +30,18 @@ test("MLS picks affect qualification and prize scores only within the playoff wi
   assert.equal(prizePoolQualified(picked, counts, "2026-11-18"), true);
   assert.equal(prizePoolScore(picked, "2026-11-17").wins, 5);
   assert.equal(prizePoolScore(picked, "2026-11-18").wins, 6);
-  assert.equal(prizePoolScore(picked, "2027-01-01").wins, 5);
+  assert.equal(prizePoolScore(picked, "2027-01-01").wins, 6);
   assert.equal(prizePoolQualified(scores, { ...counts, mls: 0 }, "2026-11-18"), true);
+});
+
+test("both Wild Cards, later rounds and MLS Cup count in future seasons, not regular MLS games", () => {
+  const stages = ["eastern-conference-playoffs---wild-card", "western-conference-playoffs---wild-card",
+    "western-conference-playoffs---round-one", "eastern-conference-playoffs---semifinals",
+    "western-conference-playoffs---final", "mls-cup"];
+  for (const day of ["2026-11-19", "2027-10-20", "2028-05-15"]) {
+    for (const stage of stages) assert.equal(isPrizePoolLeague("MLS", day, false, stage), true);
+    assert.equal(isPrizePoolLeague("MLS", day, false, "regular-season"), false);
+    assert.equal(isPrizePoolLeague("MLS", day, false, "preseason"), false);
+  }
+  assert.equal(isPrizePoolLeague("MLS", "2026-11-17", false, stages[0]), false);
 });

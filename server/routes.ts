@@ -5,7 +5,7 @@ import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integra
 import { storage } from "./storage";
 import { isDailyPickEligible } from "@shared/dailyPickEligibility";
 import { prizePoolScore, prizePoolQualified } from "./prizePoolRules";
-import { isNhlRequired, isNbaRequired, isMlsRequired, isNcaabRequired, pacificDay, pacificDayWindow, previousPacificDay } from "@shared/prizePoolRules";
+import { isNhlRequired, isNbaRequired, isMlsRequired, isMlsPlayoffRequired, isNcaabRequired, pacificDay, pacificDayWindow, previousPacificDay } from "@shared/prizePoolRules";
 import { db } from "./db";
 import { users, referrals, games, predictions, leaderboardEntries } from "@shared/schema";
 import { eq, sql, and, desc, asc, inArray } from "drizzle-orm";
@@ -762,14 +762,15 @@ export async function registerRoutes(
       const boxingCount = dedup(boxingGames);
       const mlsGames = await db.select().from(games).where(sql`${games.league} = 'MLS' AND ${games.gameTime} >= ${start} AND ${games.gameTime} < ${end} AND ${games.status} != 'postponed'`);
       const mlsCount = dedup(mlsGames);
-      const mlsRequired = isMlsRequired(day);
+      const mlsRequiredCount = dedup(mlsGames.filter(g => isMlsPlayoffRequired(day, g.mlsStage)));
+      const mlsRequired = mlsRequiredCount > 0;
       const ncaabGames = await db.select().from(games).where(sql`${games.league} = 'NCAAB' AND COALESCE(${games.isTop25}, FALSE) AND ${games.gameTime} >= ${start} AND ${games.gameTime} < ${end} AND ${games.status} != 'postponed'`);
       const ncaabCount = dedup(ncaabGames);
       const ncaabRequired = isNcaabRequired(day);
       const nhlRequired = isNhlRequired(day);
       const nbaRequired = isNbaRequired(day);
-      const count = mlbCount + ncaafCount + nflCount + (nhlRequired ? nhlCount : 0) + (nbaRequired ? nbaCount : 0) + (mlsRequired ? mlsCount : 0) + (ncaabRequired ? ncaabCount : 0);
-      res.json({ count, ncaabCount, ncaabRequired, mlbCount, nbaCount, nhlCount, ncaafCount, nflCount, boxingCount, mlsCount, mlsRequired, fbsRequired: true, nflRequired: true, nhlRequired, nbaRequired, boxingRequired: false, periodStart: start, periodEnd: end });
+      const count = mlbCount + ncaafCount + nflCount + (nhlRequired ? nhlCount : 0) + (nbaRequired ? nbaCount : 0) + mlsRequiredCount + (ncaabRequired ? ncaabCount : 0);
+      res.json({ count, ncaabCount, ncaabRequired, mlbCount, nbaCount, nhlCount, ncaafCount, nflCount, boxingCount, mlsCount, mlsRequiredCount, mlsRequired, fbsRequired: true, nflRequired: true, nhlRequired, nbaRequired, boxingRequired: false, periodStart: start, periodEnd: end });
     } catch (e) {
       console.error("[mlb-game-count]", e);
       res.status(500).json({ message: "Failed to fetch required game counts" });
@@ -829,6 +830,8 @@ export async function registerRoutes(
 
       const mlbMatchups    = [...matchupGroups.entries()].filter(([k]) => k.startsWith("MLB|"));
       const mlsMatchups    = [...matchupGroups.entries()].filter(([k]) => k.startsWith("MLS|"));
+      const playoffIds = new Set(dayGamesRaw.filter(g => g.league === "MLS" && isMlsPlayoffRequired(dateLabel, g.mlsStage)).map(g => g.id));
+      const playoffMatchups = mlsMatchups.filter(([, group]) => [...group.allIds].some(id => playoffIds.has(id)));
       const ncaabMatchups = [...matchupGroups.entries()].filter(([k]) => k.startsWith("NCAAB|"));
       const nbaMatchups    = [...matchupGroups.entries()].filter(([k]) => k.startsWith("NBA|"));
       const nhlMatchups    = [...matchupGroups.entries()].filter(([k]) => k.startsWith("NHL|"));
@@ -893,12 +896,13 @@ export async function registerRoutes(
         total.wins += ncaab.wins;
         total.losses += ncaab.losses;
         total.pending += ncaab.pending;
-        const scores = { mlb, nfl, ncaaf, nhl, nba, mls, ncaab };
+        const mlsPlayoffs = forSport(playoffMatchups);
+        const scores = { mlb, nfl, ncaaf, nhl, nba, mls: mlsPlayoffs, ncaab };
         const prizePoolTotal = prizePoolScore(scores, dateLabel);
         const qualified = u.membershipTier !== "free_play" && u.membershipTier !== "free" && prizePoolQualified(scores, {
           mlb: mlbMatchups.length, nfl: nflMatchups.length,
           ncaaf: ncaafMatchups.length, nhl: nhlMatchups.length, nba: nbaMatchups.length,
-          mls: mlsMatchups.length,
+          mls: playoffMatchups.length,
           ncaab: ncaabMatchups.length,
         }, dateLabel);
 
@@ -925,7 +929,7 @@ export async function registerRoutes(
           referralCode: u.referralCode || null,
           tier:   u.membershipTier,
           avatar: u.profileImageUrl || null,
-          mlb, ncaaf, nfl, nba, nhl, mls, ncaab, wc, epl, ucl, ncaabb, total, prizePoolTotal, qualified,
+          mlb, ncaaf, nfl, nba, nhl, mls, mlsPlayoffs, ncaab, wc, epl, ucl, ncaabb, total, prizePoolTotal, qualified,
           firstPickAt,
           lastPickAt,
         };
@@ -942,7 +946,7 @@ export async function registerRoutes(
 
       res.json({
         period: { start: periodStart, end: periodEnd, label: dateLabel },
-        games:  { ncaab: ncaabMatchups.length, ncaabRequired: isNcaabRequired(dateLabel), mlb: mlbMatchups.length, ncaaf: ncaafMatchups.length, nfl: nflMatchups.length, nba: nbaMatchups.length, nhl: nhlMatchups.length, mls: mlsMatchups.length, wc: wcMatchups.length, epl: eplMatchups.length, ucl: uclMatchups.length, ncaabb: ncaabbMatchups.length, total: matchupGroups.size, prizePoolTotal: mlbMatchups.length + ncaafMatchups.length + nflMatchups.length + (isNhlRequired(dateLabel) ? nhlMatchups.length : 0) + (isNbaRequired(dateLabel) ? nbaMatchups.length : 0) + (isMlsRequired(dateLabel) ? mlsMatchups.length : 0) + (isNcaabRequired(dateLabel) ? ncaabMatchups.length : 0), nhlRequired: isNhlRequired(dateLabel), nbaRequired: isNbaRequired(dateLabel), mlsRequired: isMlsRequired(dateLabel) },
+        games:  { ncaab: ncaabMatchups.length, ncaabRequired: isNcaabRequired(dateLabel), mlb: mlbMatchups.length, ncaaf: ncaafMatchups.length, nfl: nflMatchups.length, nba: nbaMatchups.length, nhl: nhlMatchups.length, mls: mlsMatchups.length, wc: wcMatchups.length, epl: eplMatchups.length, ucl: uclMatchups.length, ncaabb: ncaabbMatchups.length, total: matchupGroups.size, prizePoolTotal: mlbMatchups.length + ncaafMatchups.length + nflMatchups.length + (isNhlRequired(dateLabel) ? nhlMatchups.length : 0) + (isNbaRequired(dateLabel) ? nbaMatchups.length : 0) + playoffMatchups.length + (isNcaabRequired(dateLabel) ? ncaabMatchups.length : 0), nhlRequired: isNhlRequired(dateLabel), nbaRequired: isNbaRequired(dateLabel), mlsRequired: playoffMatchups.length > 0, mlsRequiredCount: playoffMatchups.length },
         members: memberRows,
         winner: winner ? { userId: winner.userId, name: winner.name, wins: winner.prizePoolTotal.wins, losses: winner.prizePoolTotal.losses } : null,
       });

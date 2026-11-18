@@ -20,6 +20,7 @@ const ESPN_ENDPOINTS: Record<string, string> = {
 interface ESPNEvent {
   id: string;
   date: string;
+  season?: { slug?: string };
   status: { type: { name: string; state: string } };
   competitions: Array<{
     competitors: Array<{
@@ -429,6 +430,7 @@ async function fetchLeagueGames(league: string): Promise<any[]> {
         spiderPick: spider.pick,
         spiderConfidence: spider.confidence,
         isProLocked: spider.isProLocked,
+        mlsStage: league === "MLS" ? event.season?.slug : undefined,
         isTop25,
       });
     }
@@ -758,7 +760,7 @@ export async function syncSportsData(): Promise<{ synced: number; leagues: strin
     NBA: month >= 10 || month <= 6,
     // NHL preseason starts in September; fetch the September 29 slate on the 28th.
     NHL: month >= 9 || month <= 6,
-    MLS: month >= 2 && month <= 12, // Include December MLS Cup playoff fixtures.
+    MLS: true, // Track playoff fixtures even when future seasons change calendars.
     NCAAB: month >= 11 || month <= 4,
     NCAABB: month >= 2 && month <= 7, // Feb–July covers regular season + tournament + CWS (June 12-22)
     // FIFA World Cup 2026: June 11 – July 19
@@ -840,6 +842,7 @@ export async function syncSportsData(): Promise<{ synced: number; leagues: strin
           spiderPick: game.spiderPick,
           spiderConfidence: game.spiderConfidence,
           isProLocked: game.isProLocked,
+          mlsStage: game.mlsStage,
           isTop25: game.isTop25,
         }).where(eq(games.id, prev.id));
 
@@ -885,6 +888,7 @@ export async function syncSportsData(): Promise<{ synced: number; leagues: strin
             awayScore: game.status === "upcoming" ? null : game.awayScore,
             spiderPick: game.spiderPick,
             spiderConfidence: game.spiderConfidence,
+            mlsStage: game.mlsStage,
             isTop25: game.isTop25,
           }).where(eq(games.id, existingId));
         } else {
